@@ -1,0 +1,25 @@
+# Gradle build outputs and caches
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# IDE and editor files
+.idea/
+*.iml
+.vscode/
+
+# Local environment: copy .env.example to .env and adjust; .env is never committed
+.env
+.env.*
+!.env.example
+
+# Reference data: the supplied supplier documents ARE committed byte-for-byte,
+# so they must not be ignored. The 100-document bulk sandbox is not part of
+# the graded set and is large.
+data/bulk/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
