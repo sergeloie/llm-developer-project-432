@@ -13,7 +13,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
@@ -75,11 +75,13 @@ class SpringAiLlmClientLiveTest {
     void reviewsARealDraftAgainstRealFacts() {
         SupplierFacts facts = new SupplierFacts("Блендер МиксерПро 800",
                 java.util.Map.of("Мощность", "800 Вт"), List.of("Цвет"));
-        CardDraft draft = new CardDraft(
+        ProductCard draft = new ProductCard(
                 "Блендер погружной МиксерПро 800 с мощностью 800 Вт и чашей из нержавеющей стали",
                 "Погружной блендер для ежедневного приготовления.",
                 java.util.Map.of("Мощность", "800 Вт"),
-                List.of("Шесть скоростей", "Турбо-режим"));
+                List.of("Шесть скоростей", "Турбо-режим"),
+                List.of("Цвет"), 0.85, java.util.Map.of());
+
 
         CritiqueReport report = llmClient.reviewDraft(facts, draft);
 

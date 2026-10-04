@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.llm.LlmClient;
 
@@ -30,7 +30,7 @@ public class PipelineService {
         SupplierFacts facts = llmClient.extractFacts(supplierText);
 
         List<String> issues = List.of();
-        CardDraft draft = null;
+        ProductCard draft = null;
         int attempts = 0;
 
         while (attempts < settings.maxRewriteRounds()) {
@@ -38,13 +38,13 @@ public class PipelineService {
             draft = llmClient.draftCard(facts, issues);
             var report = llmClient.reviewDraft(facts, draft);
             if (report.verdict() == com.carddraft.agents.Verdict.APPROVE) {
-                return new PipelineOutcome(draft, attempts, PipelineVerdict.APPROVED);
+                return new PipelineOutcome(draft, attempts, PipelineVerdict.APPROVED, draft.awaitsHuman(settings.confidenceThreshold()));
             }
             issues = report.issues();
             log.info("pipeline_regenerate attempt={} issues={}", attempts, issues);
         }
 
-        return new PipelineOutcome(draft, attempts, PipelineVerdict.REJECTED);
+        return new PipelineOutcome(draft, attempts, PipelineVerdict.REJECTED, true);
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PipelineService.class);

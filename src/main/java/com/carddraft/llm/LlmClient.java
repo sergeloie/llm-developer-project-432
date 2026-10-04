@@ -2,8 +2,8 @@ package com.carddraft.llm;
 
 import java.util.List;
 
-import com.carddraft.agents.CardDraft;
 import com.carddraft.agents.CritiqueReport;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 
 /**
@@ -14,6 +14,10 @@ import com.carddraft.agents.SupplierFacts;
  * stylistic: a generic method cannot be substituted meaningfully, and this interface is the seam
  * every pipeline and security test observes. A caller asking for "facts" cannot accidentally
  * receive prose.
+ *
+ * <p>It also owns the response contract. Every method here returns something the application has
+ * already checked, or throws with a message that says what was wrong — a caller never receives a
+ * half-formed result and has to decide what to do about it.
  */
 public interface LlmClient {
 
@@ -22,7 +26,18 @@ public interface LlmClient {
     /**
      * @param issues the reviewer's objections to the previous draft, empty on the first round
      */
-    CardDraft draftCard(SupplierFacts facts, List<String> issues);
+    ProductCard draftCard(SupplierFacts facts, List<String> issues);
 
-    CritiqueReport reviewDraft(SupplierFacts facts, CardDraft draft);
+    CritiqueReport reviewDraft(SupplierFacts facts, ProductCard draft);
+
+    /**
+     * Repairs one named field of the current draft, leaving the rest as it is.
+     *
+     * <p>Cheaper and faster than regenerating the whole card, and the difference is visible in the
+     * call records: one call, and the untouched fields are identical afterwards.
+     *
+     * @param field   the field to fix
+     * @param problem what is wrong with it, in the wording the contract uses
+     */
+    ProductCard repairCardField(ProductCard current, String field, String problem);
 }

@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.services.PipelineOutcome;
 import com.carddraft.services.PipelineService;
 
@@ -38,17 +38,25 @@ public class CardsController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
-    public CardDraft generate(@RequestBody GenerateCardRequest request) {
-        PipelineOutcome outcome = pipeline.run(request.supplierText());
-        return outcome.draft();
+    public ProductCard generate(@RequestBody GenerateCardRequest request) {
+        return pipeline.run(request.supplierText()).draft();
     }
 
+    /**
+     * The same generation with its outcome attached.
+     *
+     * <p>Separate rather than folded into the first response, because a caller that only wants the
+     * card should not have to read a verdict, and a caller that wants to know whether a person has
+     * to look at it should not have to infer that from the absence of a field.
+     */
     @PostMapping("/outcome")
     public Map<String, Object> generateWithOutcome(@RequestBody GenerateCardRequest request) {
         PipelineOutcome outcome = pipeline.run(request.supplierText());
         return Map.of(
                 "draft", outcome.draft(),
                 "attempts", outcome.attempts(),
-                "verdict", outcome.verdict());
+                "verdict", outcome.verdict(),
+                "awaitingHuman", outcome.awaitingHuman(),
+                "approved", outcome.approved());
     }
 }

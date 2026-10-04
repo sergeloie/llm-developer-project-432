@@ -18,7 +18,7 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
@@ -46,7 +46,7 @@ class PipelineServiceTest {
 
     @BeforeEach
     void setUp() {
-        pipeline = new PipelineService(llmClient, new GenerationSettings(3));
+        pipeline = new PipelineService(llmClient, new GenerationSettings(3, 0.7));
     }
 
     @Test
@@ -116,7 +116,8 @@ class PipelineServiceTest {
         verify(llmClient, times(1)).extractFacts("supplier text");
     }
 
-    private CardDraft draft(String title) {
-        return new CardDraft(title, "A blender.", Map.of("Power", "800 W"), List.of("Quiet"));
+    private ProductCard draft(String title) {
+        return new ProductCard(title, "A blender.", Map.of("Power", "800 W"),
+                List.of("Quiet"), List.of(), 0.9, Map.of());
     }
 }

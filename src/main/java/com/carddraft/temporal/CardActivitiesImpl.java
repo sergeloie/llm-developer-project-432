@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import tools.jackson.databind.ObjectMapper;
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
@@ -49,7 +49,7 @@ public class CardActivitiesImpl implements CardActivities {
     public ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson) {
         CritiqueReport report = llmClient.reviewDraft(
                 fromJson(factsJson, SupplierFacts.class),
-                fromJson(draftJson, CardDraft.class));
+                fromJson(draftJson, ProductCard.class));
         return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
     }
 

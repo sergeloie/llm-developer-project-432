@@ -32,7 +32,16 @@ public record LlmSettings(
         @DefaultValue("3") @Min(1) int maxAttempts,
 
         @DefaultValue("500ms") @NotNull Duration retryBaseDelay,
-        @DefaultValue("8s") @NotNull Duration retryMaxDelay) {
+        @DefaultValue("8s") @NotNull Duration retryMaxDelay,
+
+        /**
+         * Repair rounds for a response that arrived unusable.
+         *
+         * <p>Bounded, because repair is a generation too: a model that cannot satisfy the
+         * contract will not satisfy it on the fourth attempt either, and an unbounded loop here
+         * costs more than the generation it was meant to rescue.
+         */
+        @DefaultValue("2") @Min(0) int maxRepairAttempts) {
 
     /**
      * Delay before attempt {@code nextAttempt}, growing exponentially to a ceiling and carrying

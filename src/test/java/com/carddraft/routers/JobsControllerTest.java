@@ -39,7 +39,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import com.carddraft.agents.CardDraft;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
@@ -126,7 +126,8 @@ class JobsControllerTest {
         given(llmClient.extractFacts(anyString()))
                 .willReturn(new SupplierFacts("Blender MixerPro 800", Map.of("Power", "800 W"), List.of()));
         given(llmClient.draftCard(any(), any()))
-                .willReturn(new CardDraft("Blender MixerPro 800", "A blender.", Map.of("Power", "800 W"), List.of("Quiet")));
+                .willReturn(new ProductCard("Blender MixerPro 800", "A blender.",
+                Map.of("Power", "800 W"), List.of("Quiet"), List.of(), 0.9, Map.of()));
         given(llmClient.reviewDraft(any(), any()))
                 .willReturn(new CritiqueReport(Verdict.APPROVE, List.of()));
     }
