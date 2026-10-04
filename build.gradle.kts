@@ -33,6 +33,13 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
+    // The SDK directly rather than the Spring Boot starter. That starter discovers workers via
+    // annotations this SDK version does not have - there is no @WorkflowImpl or @ActivityImpl -
+    // so its auto-discovery has nothing to bind to, and it drags in a Spring Boot 2.7 BOM.
+    // Registering the worker and the client explicitly is fewer moving parts and is verifiable.
+    implementation("io.temporal:temporal-sdk:1.40.0")
+    testImplementation("io.temporal:temporal-testing:1.40.0")
+    testImplementation("org.awaitility:awaitility:4.3.0")
     runtimeOnly("org.postgresql:postgresql")
 
     compileOnly("org.springframework.boot:spring-boot-configuration-processor")

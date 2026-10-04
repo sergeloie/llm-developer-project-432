@@ -55,6 +55,13 @@ card:
   generation:
     max-rewrite-rounds: ${CARD_GENERATION_MAX_REWRITE_ROUNDS:3}
 
+  temporal:
+    # "local" runs an in-process server; otherwise host:port of the compose stack.
+    target: ${CARD_TEMPORAL_TARGET:local}
+    namespace: ${CARD_TEMPORAL_NAMESPACE:default}
+    task-queue: ${CARD_TEMPORAL_TASK_QUEUE:card-drafting}
+    result-timeout: ${CARD_TEMPORAL_RESULT_TIMEOUT:PT0.5S}
+
   jackson:
     default-property-inclusion: non_null
 

@@ -32,6 +32,8 @@ import com.carddraft.agents.Verdict;
 @Tag("live-model")
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
+
+@TestPropertySource(properties = "test.context-id=live")
 @TestPropertySource(properties = {
         "spring.ai.openai.base-url=${CARD_LLM_BASE_URL:http://127.0.0.1:1234}",
         "spring.ai.openai.api-key=${CARD_LLM_API_KEY:lm-studio}"

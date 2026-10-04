@@ -22,8 +22,18 @@ public class JobsRepository {
         this.jdbc = jdbc;
     }
 
-    public record Job(String id, String idempotencyKey, String status, String payload, String result,
-                      int attempts, String error, Instant createdAt, Instant updatedAt) {
+    public record Job(String id, String idempotencyKey, String status, String detail, String payload,
+                      String result, int attempts, String error, Instant createdAt, Instant updatedAt) {
+    }
+
+    /**
+     * Whether this call created the row or found an existing one.
+     *
+     * <p>The caller needs the difference: a repeated request must return the original job
+     * <em>and</em> must not start a second process for it. Starting a process for a job that
+     * already has one is not idempotent — it is a second charge with the same identifier.
+     */
+    public record JobCreation(Job job, boolean created) {
     }
 
     /**
@@ -32,11 +42,11 @@ public class JobsRepository {
      * <p>The unique constraint does the real work. Checking first and then inserting would leave
      * a window where two concurrent identical requests both find nothing and both insert.
      */
-    public Job createOrFindByIdempotencyKey(String idempotencyKey, String status, String payload) {
+    public JobCreation createOrFindByIdempotencyKey(String idempotencyKey, String status, String payload) {
         if (idempotencyKey != null) {
             Optional<Job> existing = findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
-                return existing.get();
+                return new JobCreation(existing.get(), false);
             }
         }
         String id = newJobId();
@@ -51,11 +61,13 @@ public class JobsRepository {
                     .param("payload", payload)
                     .update();
         } catch (org.springframework.dao.DuplicateKeyException raced) {
-            return findByIdempotencyKey(idempotencyKey)
+            return new JobCreation(findByIdempotencyKey(idempotencyKey)
                     .orElseThrow(() -> new IllegalStateException(
-                            "job " + id + " collided with an existing idempotency key", raced));
+                            "job " + id + " collided with an existing idempotency key", raced)), false);
         }
-        return findById(id).orElseThrow(() -> new IllegalStateException("job " + id + " vanished after insert"));
+        return new JobCreation(
+                findById(id).orElseThrow(() -> new IllegalStateException("job " + id + " vanished after insert")),
+                true);
     }
 
     public Optional<Job> findById(String id) {
@@ -73,8 +85,19 @@ public class JobsRepository {
     }
 
     public void setStatus(String id, String status) {
-        jdbc.sql("UPDATE jobs SET status = :status, updated_at = now() WHERE id = :id")
+        setStatus(id, status, null);
+    }
+
+    public void setStatus(String id, String status, String detail) {
+        jdbc.sql("""
+                        UPDATE jobs
+                           SET status = :status,
+                               detail = COALESCE(:detail, detail),
+                               updated_at = now()
+                         WHERE id = :id
+                        """)
                 .param("status", status)
+                .param("detail", detail)
                 .param("id", id)
                 .update();
     }

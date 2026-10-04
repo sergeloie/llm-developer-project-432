@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -25,6 +26,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
+
+@TestPropertySource(properties = "test.context-id=jobs-repo")
 class JobsRepositoryTest {
 
     @Container
@@ -53,12 +56,11 @@ class JobsRepositoryTest {
 
     @Test
     void storesAndReadsBackAJob() {
-        JobsRepository.Job created = jobs.createOrFindByIdempotencyKey(
-                "key-1", "pending", "{\"supplierText\":\"a blender\"}");
+        String id = createNew("key-1", "{\"supplierText\":\"a blender\"}");
 
-        JobsRepository.Job found = jobs.findById(created.id()).orElseThrow();
+        JobsRepository.Job found = jobs.findById(id).orElseThrow();
 
-        assertThat(found.id()).isEqualTo(created.id());
+        assertThat(found.id()).isEqualTo(id);
         assertThat(found.status()).isEqualTo("pending");
         assertThat(found.payload()).contains("a blender");
         assertThat(found.attempts()).isZero();
@@ -67,10 +69,12 @@ class JobsRepositoryTest {
 
     @Test
     void theSameIdempotencyKeyReturnsTheOriginalJobRatherThanASecond() {
-        JobsRepository.Job first = jobs.createOrFindByIdempotencyKey("key-2", "pending", "{}");
-        JobsRepository.Job second = jobs.createOrFindByIdempotencyKey("key-2", "pending", "{}");
+        JobsRepository.JobCreation first = jobs.createOrFindByIdempotencyKey("key-2", "pending", "{}");
+        JobsRepository.JobCreation second = jobs.createOrFindByIdempotencyKey("key-2", "pending", "{}");
 
-        assertThat(second.id()).isEqualTo(first.id());
+        assertThat(second.job().id()).isEqualTo(first.job().id());
+        assertThat(first.created()).isTrue();
+        assertThat(second.created()).as("a repeated request must not create a second row").isFalse();
         assertThat(countJobs()).isEqualTo(1);
     }
 
@@ -84,40 +88,45 @@ class JobsRepositoryTest {
 
     @Test
     void theAttemptCounterIsIncrementedByTheDatabase() {
-        JobsRepository.Job job = jobs.createOrFindByIdempotencyKey("key-3", "pending", "{}");
+        String id = createNew("key-3", "{}");
 
-        jobs.recordAttempt(job.id());
-        jobs.recordAttempt(job.id());
+        jobs.recordAttempt(id);
+        jobs.recordAttempt(id);
 
-        assertThat(jobs.findById(job.id()).orElseThrow().attempts()).isEqualTo(2);
+        assertThat(jobs.findById(id).orElseThrow().attempts()).isEqualTo(2);
     }
 
     @Test
     void changingStatusAdvancesTheLastModifiedTimestamp() throws InterruptedException {
-        JobsRepository.Job job = jobs.createOrFindByIdempotencyKey("key-4", "pending", "{}");
-        Instant before = jobs.findById(job.id()).orElseThrow().updatedAt();
+        String id = createNew("key-4", "{}");
+        Instant before = jobs.findById(id).orElseThrow().updatedAt();
 
         Thread.sleep(1100);
-        jobs.setStatus(job.id(), "generating");
+        jobs.setStatus(id, "generating", "attempt 2");
 
-        JobsRepository.Job after = jobs.findById(job.id()).orElseThrow();
+        JobsRepository.Job after = jobs.findById(id).orElseThrow();
         assertThat(after.status()).isEqualTo("generating");
+        assertThat(after.detail()).isEqualTo("attempt 2");
         assertThat(Duration.between(before, after.updatedAt()).toSeconds())
                 .as("updated_at is what makes a stuck job detectable at all")
                 .isGreaterThanOrEqualTo(1);
     }
 
     @Test
-    void aRejectedJobKeepsItsDraftAndAnError() {
-        JobsRepository.Job job = jobs.createOrFindByIdempotencyKey("key-5", "pending", "{}");
+    void aFailedJobKeepsItsDraftAndAnError() {
+        String id = createNew("key-5", "{}");
 
-        jobs.complete(job.id(), "rejected", "{\"title\":\"kept\"}");
-        jobs.fail(job.id(), "provider unreachable");
+        jobs.complete(id, "rejected", "{\"title\":\"kept\"}");
+        jobs.fail(id, "provider unreachable");
 
-        JobsRepository.Job after = jobs.findById(job.id()).orElseThrow();
+        JobsRepository.Job after = jobs.findById(id).orElseThrow();
         assertThat(after.status()).isEqualTo("failed");
         assertThat(after.error()).isEqualTo("provider unreachable");
         assertThat(after.result()).as("the rejected draft is still kept").contains("kept");
+    }
+
+    private String createNew(String key, String payload) {
+        return jobs.createOrFindByIdempotencyKey(key, "pending", payload).job().id();
     }
 
     private int countJobs() {

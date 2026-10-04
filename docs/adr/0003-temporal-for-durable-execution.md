@@ -24,3 +24,23 @@ Job status is written by its own activity, never from inside the pipeline, so th
 state and the engine history stay separate. The pipeline loop is bounded at three rounds;
 the engine's own unlimited default retry policy is narrowed per activity, because by
 default a failing activity repeats forever and the only real limit is an overall timeout.
+
+**The worker runs inside the application by default, and can be switched off.** With
+virtual threads a blocking step costs a thread rather than a fixed pool slot that cannot be
+replenished, so the operational reason for a second process — a pool to size and a host for
+it — is gone. `card.temporal.worker.enabled=false` turns the client and worker off for a
+deployment that runs them elsewhere. Nothing in the workflow or the services knows which it
+is, so splitting the process is a configuration change.
+
+**The SDK directly, not the Spring Boot starter.** The starter discovers workers and
+activities by annotation, and this SDK version has no workflow or activity implementation
+annotation to discover — implementations are handed to `registerWorkflowImplementationTypes`
+by name. An auto-discovery layer with nothing to match is one more thing whose behaviour has
+to be guessed at, and it drags in a Spring Boot 2.7 BOM. Registering explicitly is fewer
+moving parts and is verifiable by reading the configuration class.
+
+**The local development server is process-wide.** An embedded server is a JVM-level resource
+like the connection pool, and treating it as per-context breaks a test run: several cached
+contexts each build one, and the first to close shuts down the server the others are still
+polling. The symptom is silence — a worker polling a dead server never hears about a
+workflow — which is why tests supply their own isolated in-memory engine instead.

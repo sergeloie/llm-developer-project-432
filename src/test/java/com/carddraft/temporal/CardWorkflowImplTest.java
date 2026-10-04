@@ -1,0 +1,242 @@
+package com.carddraft.temporal;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowOptions;
+import io.temporal.testing.TestWorkflowEnvironment;
+import io.temporal.worker.Worker;
+
+/**
+ * The workflow, in an in-memory engine.
+ *
+ * <p>No Docker and no server: the engine the SDK ships for tests runs the real workflow code,
+ * records a real history and replays it. That is what makes these tests worth more than a unit
+ * test with a mocked engine — the loop bound, the signal and the recorded history are the things
+ * that actually break, and all three are exercised here.
+ *
+ * <p>The model client is a recording fake, so nothing is paid and nothing is awaited on a provider.
+ */
+class CardWorkflowImplTest {
+
+    private TestWorkflowEnvironment testEnvironment;
+    private WorkflowClient client;
+    private RecordingActivities activities;
+
+    @BeforeEach
+    void setUp() {
+        testEnvironment = TestWorkflowEnvironment.newInstance();
+        activities = new RecordingActivities();
+
+        Worker worker = testEnvironment.newWorker("card-drafting");
+        worker.registerWorkflowImplementationTypes(CardWorkflowImpl.class);
+        worker.registerActivitiesImplementations(activities);
+
+        client = testEnvironment.getWorkflowClient();
+        testEnvironment.start();
+    }
+
+    @AfterEach
+    void tearDown() {
+        testEnvironment.shutdown();
+    }
+
+    @Test
+    void walksThroughItsStatesAndWaitsForAHuman() {
+        activities.approveReview();
+        String workflowId = start("job-states", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+
+        assertThat(activities.statuses)
+                .containsSubsequence("extracting", "generating", "reviewing", "awaiting_human");
+
+        client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
+
+        WorkflowResult result = resultOf(workflowId);
+        assertThat(result.attempts()).isEqualTo(1);
+        assertThat(result.reviewerVerdict()).isTrue();
+        assertThat(result.humanDecision()).isEqualTo("approve");
+    }
+
+    @Test
+    void theProcessStaysCheapWhileItWaits() {
+        activities.approveReview();
+        String workflowId = start("job-waiting", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+
+        long callsWhileWaiting = activities.statuses.size();
+        Duration waited = Duration.ofSeconds(2);
+        sleep(waited);
+
+        assertThat(activities.statuses)
+                .as("a process standing on a condition must not keep executing steps")
+                .hasSize((int) callsWhileWaiting);
+        assertThat(activities.statuses).doesNotContain("approved", "rejected");
+    }
+
+    @Test
+    void stopsAtTheBudgetWhenTheReviewerNeverApproves() {
+        activities.alwaysRegenerate("title is longer than 60 characters");
+        String workflowId = start("job-budget", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+
+        assertThat(activities.generateCalls).hasValue(3);
+        assertThat(activities.issuesSeen.get(0)).as("the first round has no feedback").isEmpty();
+        assertThat(activities.issuesSeen.get(1))
+                .as("feedback from the reviewer reaches the generator")
+                .containsExactly("title is longer than 60 characters");
+    }
+
+    @Test
+    void aRejectionSignalFinishesTheProcessAsRejected() {
+        activities.alwaysRegenerate("no good");
+        String workflowId = start("job-rejected", 1);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+
+        client.newWorkflowStub(CardWorkflow.class, workflowId).reject();
+
+        WorkflowResult result = resultOf(workflowId);
+        assertThat(result.humanDecision()).isEqualTo("reject");
+        assertThat(activities.statuses).containsSubsequence("awaiting_human", "rejected");
+    }
+
+    @Test
+    void aFailingStepEndsTheJobAsFailedRatherThanRetryingForever() {
+        activities.failExtraction = true;
+        String workflowId = start("job-failed", 3);
+
+        await().atMost(Duration.ofSeconds(15))
+                .until(() -> activities.statuses.contains("failed"));
+    }
+
+    @Test
+    void theAttemptCounterIsWrittenByTheWorkflowRatherThanHeldInMemory() {
+        activities.alwaysRegenerate("no good");
+        String workflowId = start("job-attempts", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+
+        assertThat(activities.attemptCounts)
+                .as("each round increments the database counter, so a replay cannot reset it")
+                .hasValue(3);
+    }
+
+    private String start(String workflowId, int maxRounds) {
+        WorkflowOptions options = WorkflowOptions.newBuilder()
+                .setWorkflowId(workflowId)
+                .setTaskQueue("card-drafting")
+                .build();
+        CardWorkflow workflow = client.newWorkflowStub(CardWorkflow.class, options);
+        io.temporal.client.WorkflowStub.fromTyped(workflow)
+                .start(new WorkflowRequest(workflowId, "supplier text", maxRounds));
+        return workflowId;
+    }
+
+    private String statusOf(String workflowId) {
+        return client.newWorkflowStub(CardWorkflow.class, workflowId).currentStatus();
+    }
+
+    private WorkflowResult resultOf(String workflowId) {
+        try {
+            return io.temporal.client.WorkflowStub
+                    .fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId))
+                    .getResult(10, java.util.concurrent.TimeUnit.SECONDS, WorkflowResult.class);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new AssertionError("workflow " + workflowId + " did not finish in time", e);
+        }
+    }
+
+    private void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * A recording stand-in for the steps.
+     *
+     * <p>Records what it was asked to do and in what order, which is the only thing the workflow's
+     * own behaviour consists of. It is not a mock: it holds no expectations, so it cannot fail a
+     * test by disagreeing with one.
+     */
+    static class RecordingActivities implements CardActivities {
+
+        final List<String> statuses = new ArrayList<>();
+        final List<List<String>> issuesSeen = new ArrayList<>();
+        final AtomicInteger generateCalls = new AtomicInteger();
+        final AtomicInteger attemptCounts = new AtomicInteger();
+
+        volatile boolean approve = true;
+        volatile boolean failExtraction = false;
+        volatile String issue = "";
+
+        void approveReview() {
+            approve = true;
+        }
+
+        void alwaysRegenerate(String issue) {
+            approve = false;
+            this.issue = issue;
+        }
+
+        @Override
+        public synchronized String extractFacts(String jobId, String supplierText) {
+            record("extracting");
+            if (failExtraction) {
+                throw new IllegalStateException("provider unreachable");
+            }
+            return "{\"productName\":\"Blender\"}";
+        }
+
+        @Override
+        public synchronized String generateDraft(String jobId, String factsJson, List<String> issues) {
+            generateCalls.incrementAndGet();
+            issuesSeen.add(List.copyOf(issues));
+            return "{\"title\":\"draft " + generateCalls.get() + "\"}";
+        }
+
+        @Override
+        public synchronized ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson) {
+            return new ReviewOutcome(approve, approve ? List.of() : List.of(issue));
+        }
+
+        @Override
+        public synchronized void writeStatus(String jobId, String state, String detail) {
+            statuses.add(state);
+        }
+
+        @Override
+        public synchronized void countAttempt(String jobId) {
+            attemptCounts.incrementAndGet();
+        }
+
+        @Override
+        public void recordFailure(String jobId, String error) {
+        }
+
+        private synchronized void record(String state) {
+            statuses.add(state);
+        }
+    }
+}
