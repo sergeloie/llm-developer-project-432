@@ -25,17 +25,35 @@ spring:
 
   ai:
     openai:
-      base-url: ${CARD_LLM_BASE_URL:http://127.0.0.1:1234}
+      # The /v1 suffix is required. Without it the SDK posts to /chat/completions, and this
+      # server answers HTTP 200 with an error object rather than a 404 — so the failure surfaces
+      # as "choices is not set" rather than as a wrong-address error. Same class of trap as the
+      # chat-completions versus responses split, and worth knowing before debugging it twice.
+      base-url: ${CARD_LLM_BASE_URL:http://127.0.0.1:1234/v1}
       api-key: ${CARD_LLM_API_KEY:lm-studio}
       chat:
-        options:
-          model: ${CARD_LLM_MAIN_MODEL:qwen/qwen3.5-9b}
-          temperature: 0.0
-      # Our client owns retry classification and writes the call record itself (ADR-0005).
-      # Leaving Spring AI's own retry enabled would multiply attempts: a 3-attempt loop over
-      # a retrying SDK client is up to 9 requests to the provider.
-      retry:
-        max-attempts: 1
+        # A local reasoning model answers in tens of seconds; the ceiling bounds one request so
+        # a hung call cannot occupy a worker slot forever.
+        timeout: ${CARD_LLM_TIMEOUT:120s}
+        # Our client owns retry classification and writes the call record itself (ADR-0005).
+        # Leaving either retry layer enabled would multiply attempts: a three-attempt loop over
+        # a retrying client is up to nine requests to the provider, and nine times the bill.
+        max-retries: 0
+  # Spring AI's own retry template, disabled for the same reason.
+  retry:
+    max-attempts: 1
+
+card:
+  llm:
+    main-model: ${CARD_LLM_MAIN_MODEL:qwen/qwen3.5-9b}
+    utility-model: ${CARD_LLM_UTILITY_MODEL:qwen/qwen3-4b-2507}
+    timeout: ${CARD_LLM_TIMEOUT:120s}
+    max-attempts: ${CARD_LLM_MAX_ATTEMPTS:3}
+    retry-base-delay: ${CARD_LLM_RETRY_BASE_DELAY:500ms}
+    retry-max-delay: ${CARD_LLM_RETRY_MAX_DELAY:8s}
+
+  generation:
+    max-rewrite-rounds: ${CARD_GENERATION_MAX_REWRITE_ROUNDS:3}
 
   jackson:
     default-property-inclusion: non_null

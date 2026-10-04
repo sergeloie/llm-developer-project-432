@@ -25,6 +25,7 @@ dependencies {
     annotationProcessor(platform(springAiBom))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-json")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
@@ -36,9 +37,7 @@ dependencies {
 
     compileOnly("org.springframework.boot:spring-boot-configuration-processor")
 
-    testImplementation("org.springframework.boot:spring-boot-starter-test") {
-        exclude(group = "org.mockito")
-    }
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.springframework.boot:spring-boot-resttestclient")
@@ -47,7 +46,15 @@ dependencies {
 }
 
 tasks.withType<Test> {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // The live-model suite is the one thing that proves a real provider's response reaches
+        // the parser. It needs a running model server and costs seconds per call, so it is opt-in:
+        //   ./gradlew test          - everything except it
+        //   ./gradlew test -PliveModel   - include it
+        if (!project.hasProperty("liveModel")) {
+            excludeTags("live-model")
+        }
+    }
     testLogging {
         events("passed", "skipped", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

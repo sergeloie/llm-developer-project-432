@@ -30,5 +30,11 @@ model are configuration, and cost is `BigDecimal` — for local models the price
 the arithmetic is covered by a unit test with non-zero prices instead, so the cloud path is
 proven before it is used. A response that finishes with no content — measured on two of the
 candidate models, which spent the whole token budget on reasoning and returned nothing — is
-reported as a non-retryable error naming the model and quoting its reasoning, because a
-retry would reproduce the same deterministic failure at full cost.
+reported as a non-retryable error naming the model and the finish reason, because a retry reproduces the same deterministic failure at full cost.
+
+**The provider address must include the `/v1` prefix.** Without it the SDK posts to
+`/chat/completions`, and a local server answers HTTP 200 with an error object rather than a
+404 — so the failure surfaces as `choices is not set` from the parser, pointing at the response
+format instead of at the address. This is the same class of trap as the
+chat-completions-versus-responses split, and it cost real debugging time; the live-model suite
+exists partly so that a change of address is caught by a test rather than by a person.
