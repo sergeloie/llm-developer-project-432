@@ -1,0 +1,64 @@
+# Infrastructure for local development.
+#
+# Addresses are bound to 127.0.0.1 rather than published on every interface. Inside this
+# network the names resolve directly, so `localhost` would only add the Windows resolver
+# ambiguity described in ADR-0007.
+
+name: card-drafting
+
+# Host ports are overridable because the defaults collide with a local PostgreSQL install or
+# another stack. Override in `.env` (never committed); `.env.example` documents the knobs.
+services:
+  postgres:
+    # pgvector is built into this image. `CREATE EXTENSION vector` only activates an
+    # extension that is already compiled in; on a stock postgres image it fails.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: card
+      POSTGRES_PASSWORD: card
+      POSTGRES_DB: card
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U card -d card"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  temporal:
+    image: temporalio/auto-setup:1.29.7
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=card
+      - POSTGRES_PWD=card
+      - POSTGRES_SEEDS=postgres
+      - VISIBILITY_DUPLICATE_WORKFLOW_ID_ENABLED=true
+    ports:
+      - "127.0.0.1:${TEMPORAL_PORT:-7233}:7233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  temporal-ui:
+    image: temporalio/ui:2.55.0
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://127.0.0.1:8080
+    ports:
+      - "127.0.0.1:${TEMPORAL_UI_PORT:-8233}:8080"
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+volumes:
+  pgdata:

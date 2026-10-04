@@ -1,0 +1,15 @@
+# Normalise text in the repository to LF; check it out as LF everywhere.
+# Without this, a Windows checkout rewrites text files to CRLF and a diff between two
+# machines is dominated by line endings.
+* text=auto eol=lf
+
+# The graded supplier documents are compared byte-for-byte by the autograder, so they must
+# never be touched by line-ending normalisation. The JSON one is text, and would otherwise be
+# rewritten.
+data/** -text
+
+# Gradle wrapper jar is binary.
+gradle/wrapper/gradle-wrapper.jar -text
+
+# Shell and batch scripts keep their own conventions.
+*.bat text eol=crlf

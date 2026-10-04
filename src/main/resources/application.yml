@@ -1,0 +1,70 @@
+# Loads `.env` as a properties source when it exists, so the same file configures Docker
+# Compose and the application. `optional:` keeps the context loadable without it.
+spring:
+  config:
+    import: "optional:file:.env[.properties]"
+  application:
+    name: card-drafting-service
+  threads:
+    virtual:
+      enabled: true
+
+  # The application defines its own DataSource bean from these, which switches off Boot's
+  # datasource autoconfiguration. One source of truth, validated at startup.
+  db:
+    url: ${CARD_DB_URL:jdbc:postgresql://127.0.0.1:5432/card}
+    username: ${CARD_DB_USER:card}
+    password: ${CARD_DB_PASSWORD:card}
+    pool-size: ${CARD_DB_POOL_SIZE:10}
+    connection-timeout: ${CARD_DB_CONNECTION_TIMEOUT:5s}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  ai:
+    openai:
+      base-url: ${CARD_LLM_BASE_URL:http://127.0.0.1:1234}
+      api-key: ${CARD_LLM_API_KEY:lm-studio}
+      chat:
+        options:
+          model: ${CARD_LLM_MAIN_MODEL:qwen/qwen3.5-9b}
+          temperature: 0.0
+      # Our client owns retry classification and writes the call record itself (ADR-0005).
+      # Leaving Spring AI's own retry enabled would multiply attempts: a 3-attempt loop over
+      # a retrying SDK client is up to 9 requests to the provider.
+      retry:
+        max-attempts: 1
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.carddraft: INFO
+  structured:
+    format:
+      # One JSON object per line rather than one line of prose, so logs can be filtered,
+      # grouped and graphed without parsing text. The MDC (which carries the request and job
+      # identifiers) is merged into every record.
+      console: ecs
+    ecs:
+      service:
+        name: card-drafting-service
