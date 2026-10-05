@@ -70,3 +70,37 @@ tasks.withType<Test> {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
+
+// The metrics harness, as a start target rather than a shell script.
+//
+// A Gradle task rather than `bootRun` with a property, because the harness is a command someone
+// runs deliberately and compares with the last run - not a mode the service happens to have. The
+// report lands in build/reports/metrics/ where the next run can be diffed against it.
+//
+//   ./gradlew metrics            - the reference set's declared default subset
+//   ./gradlew metrics -Pfull     - every document in the reference set
+//
+// Both need the model server and the compose stack up. Neither runs as part of `build`.
+tasks.register<JavaExec>("metrics") {
+    group = "verification"
+    description = "Generates cards for the reference set and writes a quality report."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "org.springframework.boot.loader.launch.JarLauncher"
+    if (project.hasProperty("full")) {
+        args = listOf("--spring.profiles.active=default")
+    }
+    // Boot's launcher wants a packaged jar; running the class directly keeps the task usable
+    // without a repackage, and the application class is what the harness is reached through.
+    mainClass = "com.carddraft.CardDraftingApplication"
+    systemProperty("card.metrics.enabled", "true")
+    if (project.hasProperty("full")) {
+        systemProperty("card.metrics.full-set", "true")
+    }
+    // The compose stack the harness reads and writes must be up; the ports are not the defaults
+    // on this machine, so they are passed through rather than assumed.
+    listOf("CARD_DB_URL", "CARD_DB_USERNAME", "CARD_DB_PASSWORD",
+           "CARD_LLM_BASE_URL", "CARD_EMBEDDING_BASE_URL",
+           "CARD_TEMPORAL_TARGET").forEach { name ->
+        System.getenv(name)?.let { environment(name, it) }
+    }
+}

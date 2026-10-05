@@ -77,11 +77,18 @@ public class SpringAiLlmClient implements LlmClient {
                 ProductCard.class, ResultContract::problemsWith);
     }
 
-    @Override
+@Override
     public CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft) {
         return invoke("reviewCardAgainstContext", ModelTier.UTILITY,
                 Prompts.criticAgainstContext(contextText, toJson(draft)), CritiqueReport.class,
                 ignored -> List.of());
+    }
+
+    @Override
+    public String judgeSupport(String judgePrompt) {
+        // The utility tier deliberately: judging is a judgement, not a generation, and it is the
+        // larger volume of the two calls per card once metrics are being collected.
+        return invoke("judgeSupport", ModelTier.UTILITY, judgePrompt, String.class, ignored -> List.of());
     }
 
     @Override

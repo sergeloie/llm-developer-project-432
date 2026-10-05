@@ -65,8 +65,15 @@ card:
   generation:
     max-rewrite-rounds: ${CARD_GENERATION_MAX_REWRITE_ROUNDS:3}
 
-  temporal:
-    # "local" runs an in-process server; otherwise host:port of the compose stack.
+  metrics:
+    # Off by default. A full run costs several minutes of local model time, and a service that
+    # measured itself on every restart would be a service nobody could restart.
+    enabled: ${CARD_METRICS_ENABLED:false}
+    # The reference set declares its own cheap subset, because a local model is slow enough that
+    # measuring everything is a measure nobody performs.
+    full-set: ${CARD_METRICS_FULL_SET:false}
+
+  temporal:    # "local" runs an in-process server; otherwise host:port of the compose stack.
     target: ${CARD_TEMPORAL_TARGET:local}
     namespace: ${CARD_TEMPORAL_NAMESPACE:default}
     task-queue: ${CARD_TEMPORAL_TASK_QUEUE:card-drafting}

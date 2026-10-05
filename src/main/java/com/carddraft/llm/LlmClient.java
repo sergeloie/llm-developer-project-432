@@ -63,4 +63,16 @@ public interface LlmClient {
      * for that value actually says it.
      */
     CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft);
+
+    /**
+     * Judges whether a card's claims are supported by the fragments it cites, for the metrics
+     * harness.
+     *
+     * <p>A separate method because this is the one call in the service whose answer is used as a
+     * measurement rather than as a decision, and that difference has to be visible at the call
+     * site. A reviewer that says REGENERATE changes the card; a judge that says "unsupported"
+     * produces a number in a report, and conflating them would make the harness's own uncertainty
+     * indistinguishable from the pipeline's.
+     */
+    String judgeSupport(String judgePrompt);
 }
