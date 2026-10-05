@@ -85,6 +85,88 @@ public final class Prompts {
                 """.formatted(factsJson, draftJson);
     }
 
+/**
+     * The generator, working from retrieved fragments rather than extracted facts.
+     *
+     * <p>The difference from {@link #generator} is not stylistic. Here the model is shown numbered
+     * fragments and is required to name the number for every characteristic, which is the only way
+     * a claim can later be tied to a source a reviewer can open. It also states the failure mode
+     * explicitly: a characteristic that no fragment supports belongs in missingFields, because the
+     * alternative — citing the nearest plausible fragment — produces a card that cites well and
+     * says nothing true.
+     *
+     * <p>The prohibition on inventing labels is not a warning. Labels are allocated by the
+     * application and verified against the retained set, so an invented one does not merely read
+     * wrong, it fails the card.
+     */
+    public static String generatorFromContext(String contextText, List<String> issues) {
+        StringBuilder prompt = new StringBuilder("""
+                You are the generator. Write a product card using only the fragments below.
+
+                Each fragment is labelled, for example [C3]. For every characteristic you write, \
+                sources must map that characteristic name to the label of the fragment it came \
+                from. Use a label that appears in the fragments above and no other. Never invent a \
+                label: if no fragment supports a characteristic, leave that characteristic out and \
+                name it in missingFields instead. A characteristic with no supporting fragment is \
+                far better than a characteristic citing a fragment that does not support it.
+
+                Reply with a JSON object matching this schema and nothing else. No prose, no \
+                markdown fences. The title must be at most 60 characters.
+
+                SCHEMA:
+                %s
+
+                FRAGMENTS:
+                %s
+                """.formatted(ResultContract.schemaFor(ProductCard.class), contextText));
+
+        if (issues != null && !issues.isEmpty()) {
+            prompt.append("\nThe previous draft was rejected. Address every point:\n");
+            for (String issue : issues) {
+                prompt.append("- ").append(issue).append('\n');
+            }
+        }
+        return prompt.toString();
+    }
+
+    /**
+     * The reviewer, checking claims against the fragments they cite.
+     *
+     * <p>This is the review's new job in the retrieval branch: not just that a characteristic is in
+     * the card, but that the fragment it names actually says so. The instruction names the specific
+     * error worth catching — a right fact attributed to the wrong fragment — because that is the
+     * one a reader cannot see, since both the fact and the fragment are individually plausible.
+     *
+     * <p>Checking is the model's judgement and is not sufficient on its own; the application then
+     * verifies the labels mechanically. Both are kept because they fail differently: the model
+     * catches a wrong attribution the label cannot express, and the check catches a plausible label
+     * pointing at a fragment the model never saw.
+     */
+    public static String criticAgainstContext(String contextText, String draftJson) {
+        return """
+                You are the reviewer. Check the draft card against the fragments it cites.
+
+                For each characteristic, find the label the card gives it in sources, then read \
+                the fragment with that label and decide whether the fragment supports the value. A \
+                right fact attributed to the wrong fragment is a failure: the value and the \
+                fragment are both plausible, and a reader cannot see the mismatch.
+
+                Reply with a JSON object and nothing else:
+                  verdict  string  "APPROVE" if every cited characteristic is supported, \
+                otherwise "REGENERATE"
+                  issues   array   what is wrong, one item per problem, naming the \
+                characteristic and the label; empty when approving
+
+                Do not wrap the JSON in markdown. Do not add commentary.
+
+                FRAGMENTS:
+                %s
+
+                DRAFT TO REVIEW:
+                %s
+                """.formatted(contextText, draftJson);
+    }
+
     /**
      * Repairs exactly one field and nothing else.
      *

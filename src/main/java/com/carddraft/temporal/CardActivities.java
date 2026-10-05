@@ -27,6 +27,41 @@ public interface CardActivities {
     ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson);
 
     /**
+     * Retrieves fragments for the chosen documents, assembles them, and retains the result.
+     *
+     * <p>One activity rather than three, and the retention is the reason. Retrieval, assembly and
+     * writing down what was assembled have to describe the same set of fragments; splitting them
+     * would mean a step boundary where the context the model was shown and the context recorded for
+     * verification could come to disagree, and the verification would then be checking a set nobody
+     * was shown.
+     *
+     * <p>Returns the rendered context rather than an identifier, so the prompt the model receives is
+     * in the workflow history and a replay does not depend on the chunks still being where they were.
+     *
+     * @param documentIds restricts retrieval to what the caller selected; empty means every document
+     */
+    @ActivityMethod
+    String retrieveAndAssemble(String jobId, String productHint, List<String> documentIds);
+
+    @ActivityMethod
+    String generateFromContext(String jobId, String contextText, List<String> issues);
+
+    /**
+     * Checks every citation on a draft against the fragments that were retained for this job.
+     *
+     * <p>Reads the context back from the database rather than taking it as an argument, on purpose.
+     * The check is only worth anything if it runs against the set as it was recorded, and passing
+     * the rendered text alongside would make it trivially possible to verify against a different
+     * set than the one the model saw.
+     */
+    @ActivityMethod
+    CitationCheck checkCitations(String jobId, String draftJson);
+
+    /** The reviewer's own judgement of a card built from fragments. */
+    @ActivityMethod
+    ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson);
+
+    /**
      * Records a state transition.
      *
      * <p>A step of its own, not something the pipeline does from inside itself. The client polls

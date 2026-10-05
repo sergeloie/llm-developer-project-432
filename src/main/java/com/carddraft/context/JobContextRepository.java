@@ -64,22 +64,18 @@ public class JobContextRepository {
     }
 
     /**
-     * Whether a chunk exists anywhere in the corpus, regardless of whether it was shown.
+     * The chunk a stored label names, if this job was shown it.
      *
-     * <p>Exists to tell a fabricated label apart from an invented one. A label pointing at a real
-     * fragment the model never saw is a provenance failure and points at the context; a label
-     * pointing at nothing is a hallucination and points at the model.
+     * <p>Scoped to the job on purpose, and that scoping is what makes fabrication simple to detect:
+     * labels are allocated per job, so a label outside this job's retained set names nothing this
+     * submission can be held to.
+     *
+     * <p>It also means the {@code NOT_IN_CONTEXT} case — a citation to a real fragment that was
+     * never shown — is not reachable through this lookup, because a label belonging to another
+     * job's context cannot be resolved here at all. A shared label namespace would make it
+     * reachable, and {@code CitationVerifier} already handles it; this repository does not
+     * pretend to.
      */
-    public boolean chunkExists(long chunkId) {
-        return Boolean.TRUE.equals(jdbc.sql("SELECT 1 FROM chunks WHERE id = :id")
-                .param("id", chunkId)
-                .query(Integer.class)
-                .optional()
-                .map(found -> 1)
-                .orElse(null));
-    }
-
-    /** By reference label, for the existence check above: which chunk, if any, does this name. */
     public java.util.Optional<Long> chunkIdForReference(String jobId, String reference) {
         return jdbc.sql("SELECT chunk_id FROM job_context_chunks WHERE job_id = :jobId AND reference = :ref")
                 .param("jobId", jobId)

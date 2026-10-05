@@ -26,6 +26,7 @@ import java.util.Set;
  * the context necessarily names a chunk that exists. Existence is still checked as a defence against
  * a corrupted retention record, and reported separately so the two are distinguishable in a log.
  */
+@org.springframework.stereotype.Component
 public class CitationVerifier {
 
     /** The outcome for one claim's citation. */

@@ -221,6 +221,31 @@ class CardWorkflowImplTest {
             return new ReviewOutcome(approve, approve ? List.of() : List.of(issue));
         }
 
+        // The retrieval branch, which this test does not exercise. Answering here rather than
+        // throwing keeps the facts-branch assertions about the facts branch.
+        @Override
+        public synchronized String retrieveAndAssemble(String jobId, String productHint,
+                                                       List<String> documentIds) {
+            return "[C1] context";
+        }
+
+        @Override
+        public synchronized String generateFromContext(String jobId, String contextText,
+                                                       List<String> issues) {
+            return "{\"title\":\"context draft\"}";
+        }
+
+        @Override
+        public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText,
+                                                                   String draftJson) {
+            return new ReviewOutcome(true, List.of());
+        }
+
+        @Override
+        public synchronized CitationCheck checkCitations(String jobId, String draftJson) {
+            return new CitationCheck(true, List.of(), 0, 0);
+        }
+
         @Override
         public synchronized void writeStatus(String jobId, String state, String detail) {
             statuses.add(state);

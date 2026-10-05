@@ -11,13 +11,27 @@ package com.carddraft.temporal;
 public enum JobState {
 
     PENDING("pending"),
+    PARSING("parsing"),
+    INDEXING("indexing"),
     EXTRACTING("extracting"),
+    RETRIEVING("retrieving"),
     GENERATING("generating"),
     REVIEWING("reviewing"),
     AWAITING_HUMAN("awaiting_human"),
     APPROVED("approved"),
     REJECTED("rejected"),
     FAILED("failed");
+
+    /**
+     * Whether the state means a person or a machine is currently responsible for the job.
+     *
+     * <p>Exists so the client can tell "still working" from "waiting on you" without hard-coding the
+     * list. A job that is merely slow and a job that needs a decision look identical from outside
+     * unless the states themselves say which, and the difference is the whole reason a person polls.
+     */
+    public boolean awaitsHuman() {
+        return this == AWAITING_HUMAN;
+    }
 
     private final String wireName;
 

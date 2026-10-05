@@ -68,6 +68,20 @@ public class SpringAiLlmClient implements LlmClient {
     }
 
     @Override
+    public ProductCard draftCardFromContext(String contextText, List<String> issues) {
+        return invoke("draftCardFromContext", settings.mainModel(),
+                Prompts.generatorFromContext(contextText, issues),
+                ProductCard.class, ResultContract::problemsWith);
+    }
+
+    @Override
+    public CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft) {
+        return invoke("reviewCardAgainstContext", settings.utilityModel(),
+                Prompts.criticAgainstContext(contextText, toJson(draft)), CritiqueReport.class,
+                ignored -> List.of());
+    }
+
+    @Override
     public ProductCard repairCardField(ProductCard current, String field, String problem) {
         ProductCard repaired = invoke("repairField:" + field, settings.mainModel(),
                 Prompts.repairField(current, field, problem), ProductCard.class,

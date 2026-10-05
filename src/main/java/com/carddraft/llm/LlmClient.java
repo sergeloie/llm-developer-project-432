@@ -40,4 +40,27 @@ public interface LlmClient {
      * @param problem what is wrong with it, in the wording the contract uses
      */
     ProductCard repairCardField(ProductCard current, String field, String problem);
+
+    /**
+     * Drafts from retrieved fragments rather than from extracted facts.
+     *
+     * <p>A separate method because the two are genuinely different requests, not variants of one.
+     * The facts path summarises a body of text; the context path reads a numbered set of fragments
+     * and must attribute each claim to one of them. A single prompt-in, string-out method could not
+     * express that difference, and a caller asking for a card would be unable to say which kind it
+     * wanted — which is the mistake this interface exists to prevent.
+     *
+     * @param contextText the labelled fragments, as assembled and retained for verification
+     * @param issues      citation failures from a previous round, empty on the first
+     */
+    ProductCard draftCardFromContext(String contextText, List<String> issues);
+
+    /**
+     * Reviews a card against the fragments it cites, rather than against extracted facts.
+     *
+     * <p>The reviewer's job differs in kind: it is checking attribution. Whether a value is in the
+     * facts was already established; what has to be checked is whether the fragment the card names
+     * for that value actually says it.
+     */
+    CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft);
 }
