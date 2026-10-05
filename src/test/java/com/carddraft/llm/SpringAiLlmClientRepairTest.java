@@ -8,12 +8,14 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import java.math.BigDecimal;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -60,6 +62,7 @@ class SpringAiLlmClientRepairTest {
     ArgumentCaptor<String> prompts;
 
     SpringAiLlmClient client;
+    RecordingCallRepository calls;
 
     @BeforeEach
     void setUp() {
@@ -70,11 +73,34 @@ class SpringAiLlmClientRepairTest {
                 .willReturn(requestSpec);
         given(requestSpec.call()).willReturn(callResponseSpec);
 
+        // Free rates, so these tests assert on repair behaviour rather than on a cost figure; the
+        // arithmetic is covered at non-zero rates in CostCalculatorTest, where a zero price would
+        // exercise none of it.
         LlmSettings settings = new LlmSettings(
                 "main-model", "utility-model",
                 java.time.Duration.ofSeconds(30), 3,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2);
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings);
+                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        // A recording repository rather than a mock, so "the client wrote a row per call" can be
+        // asserted by counting rows instead of by restating the expectation.
+        calls = new RecordingCallRepository();
+        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls);
+    }
+
+    /** Collects what the client recorded, with no expectations of its own. */
+    static final class RecordingCallRepository extends ModelCallRepository {
+
+        final List<ModelCallRecord> recorded = new ArrayList<>();
+
+        RecordingCallRepository() {
+            super(null);
+        }
+
+        @Override
+        public void record(ModelCallRecord call) {
+            recorded.add(call);
+        }
     }
 
     @Test

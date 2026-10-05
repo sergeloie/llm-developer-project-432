@@ -41,7 +41,46 @@ public record LlmSettings(
          * contract will not satisfy it on the fourth attempt either, and an unbounded loop here
          * costs more than the generation it was meant to rescue.
          */
-        @DefaultValue("2") @Min(0) int maxRepairAttempts) {
+        @DefaultValue("2") @Min(0) int maxRepairAttempts,
+
+        /**
+         * Prices per million tokens, per tier, as exact decimals.
+         *
+         * <p>Configuration rather than a constant because the local models are free and the
+         * arithmetic still has to be right: a rate of zero exercises none of it, so a bug in the
+         * cost calculation would sit hidden until the day someone pointed this at a paid model.
+         * The unit tests therefore use non-zero prices, and the paid path is proven before it is
+         * used rather than on its first day.
+         *
+         * <p>As {@code BigDecimal} because the values arrive from configuration as text and a
+         * double would lose the trailing precision a quoted price carries.
+         */
+        @DefaultValue("0") @NotNull java.math.BigDecimal mainInputPricePerMillion,
+        @DefaultValue("0") @NotNull java.math.BigDecimal mainOutputPricePerMillion,
+        @DefaultValue("0") @NotNull java.math.BigDecimal utilityInputPricePerMillion,
+        @DefaultValue("0") @NotNull java.math.BigDecimal utilityOutputPricePerMillion) {
+
+    /**
+     * The calculator for one tier.
+     *
+     * <p>Built on demand rather than held, because the settings are immutable and the two
+     * calculators are two pairs of numbers; caching them would be state that could disagree with the
+     * configuration it came from.
+     */
+    public CostCalculator calculatorFor(ModelTier tier) {
+        return switch (tier) {
+            case MAIN -> new CostCalculator(mainInputPricePerMillion, mainOutputPricePerMillion);
+            case UTILITY -> new CostCalculator(utilityInputPricePerMillion, utilityOutputPricePerMillion);
+        };
+    }
+
+    /** The model name for a tier, which is where the tier selection actually happens. */
+    public String modelFor(ModelTier tier) {
+        return switch (tier) {
+            case MAIN -> mainModel;
+            case UTILITY -> utilityModel;
+        };
+    }
 
     /**
      * Delay before attempt {@code nextAttempt}, growing exponentially to a ceiling and carrying

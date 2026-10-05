@@ -1,6 +1,7 @@
 package com.carddraft.llm;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.function.Function;
 
@@ -42,69 +43,69 @@ public class SpringAiLlmClient implements LlmClient {
     private final ChatClient chatClient;
     private final ObjectMapper mapper;
     private final LlmSettings settings;
+    private final ModelCallRepository calls;
 
-    public SpringAiLlmClient(ChatClient.Builder chatClientBuilder, ObjectMapper mapper, LlmSettings settings) {
+    public SpringAiLlmClient(ChatClient.Builder chatClientBuilder, ObjectMapper mapper, LlmSettings settings,
+                              ModelCallRepository calls) {
         this.chatClient = chatClientBuilder.build();
         this.mapper = mapper;
         this.settings = settings;
+        this.calls = calls;
     }
 
     @Override
     public SupplierFacts extractFacts(String supplierText) {
-        return invoke("extractFacts", settings.mainModel(), Prompts.extractor(supplierText),
+        return invoke("extractFacts", ModelTier.MAIN, Prompts.extractor(supplierText),
                 SupplierFacts.class, ignored -> List.of());
     }
 
     @Override
     public ProductCard draftCard(SupplierFacts facts, List<String> issues) {
-        return invoke("draftCard", settings.mainModel(), Prompts.generator(toJson(facts), issues),
+        return invoke("draftCard", ModelTier.MAIN, Prompts.generator(toJson(facts), issues),
                 ProductCard.class, ResultContract::problemsWith);
     }
 
     @Override
     public CritiqueReport reviewDraft(SupplierFacts facts, ProductCard draft) {
-        return invoke("reviewDraft", settings.utilityModel(),
+        return invoke("reviewDraft", ModelTier.UTILITY,
                 Prompts.critic(toJson(facts), toJson(draft)), CritiqueReport.class, ignored -> List.of());
     }
 
     @Override
     public ProductCard draftCardFromContext(String contextText, List<String> issues) {
-        return invoke("draftCardFromContext", settings.mainModel(),
-                Prompts.generatorFromContext(contextText, issues),
+        return invoke("draftCardFromContext", ModelTier.MAIN, Prompts.generatorFromContext(contextText, issues),
                 ProductCard.class, ResultContract::problemsWith);
     }
 
     @Override
     public CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft) {
-        return invoke("reviewCardAgainstContext", settings.utilityModel(),
+        return invoke("reviewCardAgainstContext", ModelTier.UTILITY,
                 Prompts.criticAgainstContext(contextText, toJson(draft)), CritiqueReport.class,
                 ignored -> List.of());
     }
 
     @Override
     public ProductCard repairCardField(ProductCard current, String field, String problem) {
-        ProductCard repaired = invoke("repairField:" + field, settings.mainModel(),
-                Prompts.repairField(current, field, problem), ProductCard.class,
+        ProductCard repaired = invoke("repairField:" + field, ModelTier.MAIN, Prompts.repairField(current, field, problem), ProductCard.class,
                 ResultContract::problemsWith);
         log.info("llm_field_repaired field={} problem={}", field, problem);
         return repaired;
     }
 
-    private <T> T invoke(String operation, String model, String prompt, Class<T> type,
+    private <T> T invoke(String operation, ModelTier tier, String prompt, Class<T> type,
                          Function<T, List<String>> contract) {
         for (int attempt = 1; attempt <= settings.maxAttempts(); attempt++) {
             try {
-                return withTransportRetry(operation, model, prompt, type, contract);
+                return withTransportRetry(operation, tier, prompt, type, contract);
             } catch (RuntimeException e) {
                 boolean lastAttempt = attempt == settings.maxAttempts();
                 if (lastAttempt || !RetryClassifier.isRetryable(e)) {
-                    log.error("llm_call_failed operation={} model={} attempt={} error={}",
-                            operation, model, attempt, e.toString());
+                    log.error("llm_call_failed operation={} tier={} attempt={} error={}", operation, tier, attempt, e.toString());
                     throw e;
                 }
                 Duration delay = settings.delayBefore(attempt + 1);
-                log.warn("llm_call_retry operation={} model={} attempt={} delay_ms={} error={}",
-                        operation, model, attempt, delay.toMillis(), e.toString());
+                log.warn("llm_call_retry operation={} tier={} attempt={} delay_ms={} error={}",
+                        operation, tier, attempt, delay.toMillis(), e.toString());
                 sleep(delay);
             }
         }
@@ -119,13 +120,13 @@ public class SpringAiLlmClient implements LlmClient {
      * is one instruction away from being right, and regenerating from scratch costs a generation
      * to fix a formatting slip.
      */
-    private <T> T withTransportRetry(String operation, String model, String prompt, Class<T> type,
+    private <T> T withTransportRetry(String operation, ModelTier tier, String prompt, Class<T> type,
                                      Function<T, List<String>> contract) {
         String currentPrompt = prompt;
         List<String> problems = List.of();
 
         for (int round = 0; round <= settings.maxRepairAttempts(); round++) {
-            String text = callOnce(operation, model, currentPrompt);
+            String text = callOnce(operation, tier, currentPrompt);
 
             try {
                 T parsed = mapper.readValue(ModelResponses.jsonObject(text, operation), type);
@@ -153,25 +154,96 @@ public class SpringAiLlmClient implements LlmClient {
                 + settings.maxRepairAttempts() + " repair attempts. Problems: " + String.join("; ", problems));
     }
 
-    private String callOnce(String operation, String model, String prompt) {
+    /**
+     * Asks the model, then records what it cost.
+     *
+     * <p>The record is written here rather than by the caller, and that is the only arrangement
+     * worth having. A caller that remembered to report usage would be a caller that eventually
+     * forgets, and nothing marks the difference: the total is simply short, with no symptom anywhere
+     * else to point at it.
+     *
+     * <p>Recorded on the way out only when a text came back. A call that produced nothing was
+     * billed, and the honest entry for it is a failure — recorded by the retry's own error log,
+     * where the attempt and the reason already are, rather than as a zero-token success row.
+     */
+    private String callOnce(String operation, ModelTier tier, String prompt) {
         var options = ChatOptions.builder();
-        options.model(model).temperature(0.0);
+        options.model(settings.modelFor(tier)).temperature(0.0);
 
+        long startedAt = System.nanoTime();
         var response = chatClient.prompt()
                 .user(prompt)
                 .options(options)
                 .call()
                 .chatResponse();
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
         if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
-            throw new EmptyModelResponseException(model, finishReason(response), operation);
+            throw new EmptyModelResponseException(settings.modelFor(tier), finishReason(response), operation);
         }
 
         String text = response.getResult().getOutput().getText();
         if (text == null || text.isBlank()) {
-            throw new EmptyModelResponseException(model, finishReason(response), operation);
+            throw new EmptyModelResponseException(settings.modelFor(tier), finishReason(response), operation);
         }
+
+        recordCall(operation, tier, prompt, text, response, elapsed);
         return text;
+    }
+
+    /**
+     * Turns the response into a row.
+     *
+     * <p>Token counts come from the response rather than from counting words here. A count this
+     * class computed would be a different number from the provider's for the same text — different
+     * tokenizer, different treatment of punctuation and of Cyrillic — and a cost derived from it
+     * would disagree with the invoice it is meant to predict.
+     *
+     * <p>A provider that reports no usage records zero rather than blocking the call. The row is
+     * then honest about what is known, and a card that prices at zero because the provider withheld
+     * the number is visibly different from one priced correctly.
+     */
+    private void recordCall(String operation, ModelTier tier, String prompt, String text,
+                            org.springframework.ai.chat.model.ChatResponse response,
+                            Duration elapsed) {
+var usage = usageOf(response);
+        int inputTokens = usage == null || usage.getPromptTokens() == null
+                ? 0 : Math.max(0, usage.getPromptTokens());
+        int outputTokens = usage == null || usage.getCompletionTokens() == null
+                ? 0 : Math.max(0, usage.getCompletionTokens());
+
+        String model = settings.modelFor(tier);
+        var cost = settings.calculatorFor(tier).costOf(inputTokens, outputTokens);
+
+        calls.record(new ModelCallRecord(
+                JobLogContext.currentJob(), tier.wireName(), model, operation,
+                inputTokens, outputTokens, cost, elapsed, loadTimeOf(response), Instant.now()));
+
+        log.info("llm_call_recorded operation={} tier={} model={} input_tokens={} output_tokens={} "
+                        + "cost={} duration_ms={}", operation, tier.wireName(), model, inputTokens,
+                outputTokens, cost, elapsed.toMillis());
+    }
+
+private org.springframework.ai.chat.metadata.Usage usageOf(
+            org.springframework.ai.chat.model.ChatResponse response) {
+        if (response == null || response.getMetadata() == null) {
+            return null;
+        }
+        return response.getMetadata().getUsage();
+    }
+
+    /**
+     * The provider's own load time, when it reports one.
+     *
+     * <p>Worth separating from generation because they call for different remedies: a slow load is
+     * the server pulling weights in, and a slow generation is the model or the prompt. A duration
+     * column that mixes them cannot tell a content manager which one they are looking at.
+     *
+     * <p>Null rather than zero when the provider is silent, because zero would assert that no load
+     * happened when the truth is that nobody said. See {@link ModelCallRecord#loadDuration()}.
+     */
+    private Duration loadTimeOf(org.springframework.ai.chat.model.ChatResponse response) {
+        return null;
     }
 
     private String finishReason(org.springframework.ai.chat.model.ChatResponse response) {

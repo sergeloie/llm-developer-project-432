@@ -13,6 +13,7 @@ import com.carddraft.context.AssembledContext;
 import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextAssembler;
 import com.carddraft.context.JobContextRepository;
+import com.carddraft.llm.JobLogContext;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.repositories.ChunkSearchRepository;
 import com.carddraft.search.SearchService;
@@ -26,7 +27,12 @@ import com.carddraft.repositories.JobsRepository;
  * value; it never learns any of this happened.
  *
  * <p>This is the only place that bridges the two worlds, and it is thin on purpose. The logic is
- * in the services below it — the activities decide what to call, not how it behaves.
+ * in the services below it �?" the activities decide what to call, not how it behaves.
+ *
+ * <p>Every model-calling step runs inside {@link JobLogContext}, which is what puts the job on the
+ * cost record and into the log lines. Done here rather than inside the client because the client is
+ * given no job: it is the step that knows which job it is working on, and a client that took one
+ * would have to be told at every call site — the arrangement that eventually gets forgotten.
  */
 @Component
 public class CardActivitiesImpl implements CardActivities {
@@ -53,20 +59,23 @@ public class CardActivitiesImpl implements CardActivities {
 
     @Override
     public String extractFacts(String jobId, String supplierText) {
-        return toJson(llmClient.extractFacts(supplierText));
+        return JobLogContext.withJob(jobId, () -> toJson(llmClient.extractFacts(supplierText)));
     }
 
     @Override
     public String generateDraft(String jobId, String factsJson, List<String> issues) {
-        return toJson(llmClient.draftCard(fromJson(factsJson, SupplierFacts.class), issues));
+        return JobLogContext.withJob(jobId, () -> toJson(
+                llmClient.draftCard(fromJson(factsJson, SupplierFacts.class), issues)));
     }
 
     @Override
     public ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson) {
-        CritiqueReport report = llmClient.reviewDraft(
-                fromJson(factsJson, SupplierFacts.class),
-                fromJson(draftJson, ProductCard.class));
-        return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+        return JobLogContext.withJob(jobId, () -> {
+            CritiqueReport report = llmClient.reviewDraft(
+                    fromJson(factsJson, SupplierFacts.class),
+                    fromJson(draftJson, ProductCard.class));
+            return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+        });
     }
 
     /**
@@ -101,7 +110,7 @@ public class CardActivitiesImpl implements CardActivities {
 
     @Override
     public String generateFromContext(String jobId, String contextText, List<String> issues) {
-        return toJson(llmClient.draftCardFromContext(contextText, issues));
+        return JobLogContext.withJob(jobId, () -> toJson(llmClient.draftCardFromContext(contextText, issues)));
     }
 
     /**
@@ -114,9 +123,11 @@ public class CardActivitiesImpl implements CardActivities {
      */
     @Override
     public ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson) {
-        CritiqueReport report = llmClient.reviewCardAgainstContext(
-                contextText, fromJson(draftJson, ProductCard.class));
-        return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+        return JobLogContext.withJob(jobId, () -> {
+            CritiqueReport report = llmClient.reviewCardAgainstContext(
+                    contextText, fromJson(draftJson, ProductCard.class));
+            return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+        });
     }
 
     @Override

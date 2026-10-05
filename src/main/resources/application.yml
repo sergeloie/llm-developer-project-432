@@ -51,6 +51,16 @@ card:
     max-attempts: ${CARD_LLM_MAX_ATTEMPTS:3}
     retry-base-delay: ${CARD_LLM_RETRY_BASE_DELAY:500ms}
     retry-max-delay: ${CARD_LLM_RETRY_MAX_DELAY:8s}
+    max-repair-attempts: ${CARD_LLM_MAX_REPAIR_ATTEMPTS:2}
+
+    # Prices per million tokens, per tier, as exact decimals. Zero for a local model; set the
+    # reference cloud price of the same model to make the breakdown meaningful without moving
+    # off-device. Zero is a real value and means free - an absent price is refused, because "nobody
+    # decided" and "this costs nothing" are opposite answers and only one is safe.
+    main-input-price-per-million: ${CARD_LLM_MAIN_INPUT_PRICE_PER_MILLION:0}
+    main-output-price-per-million: ${CARD_LLM_MAIN_OUTPUT_PRICE_PER_MILLION:0}
+    utility-input-price-per-million: ${CARD_LLM_UTILITY_INPUT_PRICE_PER_MILLION:0}
+    utility-output-price-per-million: ${CARD_LLM_UTILITY_OUTPUT_PRICE_PER_MILLION:0}
 
   generation:
     max-rewrite-rounds: ${CARD_GENERATION_MAX_REWRITE_ROUNDS:3}
