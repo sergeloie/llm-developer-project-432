@@ -73,6 +73,12 @@ card:
     # measuring everything is a measure nobody performs.
     full-set: ${CARD_METRICS_FULL_SET:false}
 
+  trust:
+    # Tolerance, not a prohibition: a false positive costs a specification, and supplier documents
+    # legitimately quote a support address. The model pass on top of the rules is what makes the
+    # tolerance affordable.
+    max-suspicious-chunks: ${CARD_SECURITY_MAX_SUSPICIOUS_CHUNKS:2}
+
   temporal:    # "local" runs an in-process server; otherwise host:port of the compose stack.
     target: ${CARD_TEMPORAL_TARGET:local}
     namespace: ${CARD_TEMPORAL_NAMESPACE:default}

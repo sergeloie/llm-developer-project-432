@@ -17,6 +17,8 @@ import com.carddraft.llm.JobLogContext;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.repositories.ChunkSearchRepository;
 import com.carddraft.search.SearchService;
+import com.carddraft.trust.TrustSettings;
+import com.carddraft.trust.TrustService;
 import com.carddraft.repositories.JobsRepository;
 
 /**
@@ -37,23 +39,31 @@ import com.carddraft.repositories.JobsRepository;
 @Component
 public class CardActivitiesImpl implements CardActivities {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(CardActivitiesImpl.class);
+
     private final LlmClient llmClient;
     private final JobsRepository jobs;
     private final ContextAssembler assembler;
     private final SearchService search;
     private final JobContextRepository contexts;
     private final CitationVerifier verifier;
+    private final TrustService trust;
+    private final TrustSettings trustSettings;
     private final ObjectMapper mapper;
 
     public CardActivitiesImpl(LlmClient llmClient, JobsRepository jobs, ContextAssembler assembler,
                               SearchService search, JobContextRepository contexts,
-                              CitationVerifier verifier, ObjectMapper mapper) {
+                              CitationVerifier verifier, TrustService trust,
+                              TrustSettings trustSettings, ObjectMapper mapper) {
         this.llmClient = llmClient;
         this.jobs = jobs;
         this.assembler = assembler;
         this.search = search;
         this.contexts = contexts;
         this.verifier = verifier;
+        this.trust = trust;
+        this.trustSettings = trustSettings;
         this.mapper = mapper;
     }
 
@@ -79,12 +89,16 @@ public class CardActivitiesImpl implements CardActivities {
     }
 
     /**
-     * Searches with the hint, falls back to what the documents are called.
+     * Searches, screens, assembles, and retains.
+ *
+     * <p>Screening sits between retrieval and assembly, which is the only place it can sit. A value
+     * has to be masked before the prompt is built and before the context is written down, and a
+     * suspicious fragment has to be gone before the model can read it — neither is possible once the
+     * context exists.
      *
-     * <p>A content manager who picks three documents and types nothing should still get a card.
-     * Retrieval needs a query, so when the hint is blank the document filenames are concatenated:
-     * approximate, and better than refusing, because the alternative is an empty context and a card
-     * that says nothing.
+     * <p>The query is sent unmasked on purpose. It is the caller's own words or a document's name,
+     * and masking it would change the retrieval without protecting anything: the values that matter
+     * are in the fragments being returned, not in the question.
      */
     @Override
     public String retrieveAndAssemble(String jobId, String productHint, List<String> documentIds) {
@@ -92,9 +106,16 @@ public class CardActivitiesImpl implements CardActivities {
         var hits = search.search(query, new ChunkSearchRepository.Filter(documentIds, null),
                 SearchService.Mode.HYBRID);
 
-        AssembledContext context = assembler.assemble(jobId, hits);
-        contexts.save(context);
-        return context.render();
+        AssembledContext assembled = assembler.assemble(jobId, hits);
+        TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
+        screened.excluded().forEach(reference -> log.info("llm_fragment_excluded job={} reference={}",
+                jobId, reference));
+
+        AssembledContext retained = new AssembledContext(jobId, screened.chunks(),
+                assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
+        contexts.save(retained);
+
+        return screened.render();
     }
 
     private String filenamesOf(List<String> documentIds) {

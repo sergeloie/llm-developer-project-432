@@ -92,6 +92,12 @@ public class SpringAiLlmClient implements LlmClient {
     }
 
     @Override
+    public String judgeInjection(String injectionPrompt) {
+        return invoke("judgeInjection", ModelTier.UTILITY, injectionPrompt, String.class,
+                ignored -> List.of());
+    }
+
+    @Override
     public ProductCard repairCardField(ProductCard current, String field, String problem) {
         ProductCard repaired = invoke("repairField:" + field, ModelTier.MAIN, Prompts.repairField(current, field, problem), ProductCard.class,
                 ResultContract::problemsWith);

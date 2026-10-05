@@ -75,4 +75,14 @@ public interface LlmClient {
      * indistinguishable from the pipeline's.
      */
     String judgeSupport(String judgePrompt);
+
+    /**
+     * Judges whether a supplier fragment carries instructions aimed at a model.
+     *
+     * <p>A separate method from {@link #judgeSupport} even though both are judgements, because the
+     * two are used for different decisions: this one decides whether a fragment is dropped, the
+     * other only produces a number in a report. A method that did both would make it far too easy to
+     * change a security decision by changing a reporting one.
+     */
+    String judgeInjection(String injectionPrompt);
 }
