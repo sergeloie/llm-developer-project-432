@@ -13,6 +13,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.carddraft.repositories.ChunkSearchRepository.Hit;
+import com.carddraft.repositories.JobContextRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

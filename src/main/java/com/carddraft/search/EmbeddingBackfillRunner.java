@@ -25,9 +25,15 @@ public class EmbeddingBackfillRunner implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(EmbeddingBackfillRunner.class);
 
     private final EmbeddingApplicationService embedding;
+    private final com.carddraft.repositories.DocumentsRepository documents;
+    private final IndexingSettings indexing;
 
-    public EmbeddingBackfillRunner(EmbeddingApplicationService embedding) {
+    public EmbeddingBackfillRunner(EmbeddingApplicationService embedding,
+                                   com.carddraft.repositories.DocumentsRepository documents,
+                                   IndexingSettings indexing) {
         this.embedding = embedding;
+        this.documents = documents;
+        this.indexing = indexing;
     }
 
     @Override
@@ -38,7 +44,14 @@ public class EmbeddingBackfillRunner implements ApplicationRunner {
             return;
         }
         log.info("backfill: {} chunks have no vector yet", pending);
-        int embedded = embedding.embedAll(Integer.MAX_VALUE);
-        log.info("backfill: embedded {} chunks, {} still pending", embedded, embedding.pendingCount());
+        int embedded = embedding.embedAll(indexing.maxBatches());
+
+        // Settling afterwards is what makes this a recovery rather than only a repair. A document
+        // whose embedding failed keeps its chunks and stays at 'parsing', and without this the
+        // sweep would fill in its vectors and leave it still claiming to be mid-parse — which reads
+        // as a hang rather than as the success it now is.
+        int settled = documents.settleIndexedDocuments();
+        log.info("backfill: embedded {} chunks, {} still pending, {} documents now searchable",
+                embedded, embedding.pendingCount(), settled);
     }
 }

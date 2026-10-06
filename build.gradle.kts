@@ -98,8 +98,8 @@ tasks.register<JavaExec>("metrics") {
     }
     // The compose stack the harness reads and writes must be up; the ports are not the defaults
     // on this machine, so they are passed through rather than assumed.
-    listOf("CARD_DB_URL", "CARD_DB_USERNAME", "CARD_DB_PASSWORD",
-           "CARD_LLM_BASE_URL", "CARD_EMBEDDING_BASE_URL",
+listOf("CARD_DB_URL", "CARD_DB_USER", "CARD_DB_PASSWORD",
+           "CARD_LLM_BASE_URL", "CARD_EMBEDDING_BASEURL",
            "CARD_TEMPORAL_TARGET").forEach { name ->
         System.getenv(name)?.let { environment(name, it) }
     }

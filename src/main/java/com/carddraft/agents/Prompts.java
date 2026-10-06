@@ -35,7 +35,7 @@ public final class Prompts {
                 """.formatted(ResultContract.schemaFor(SupplierFacts.class), supplierText);
     }
 
-    public static String generator(String factsJson, List<String> issues) {
+    public static String generator(String factsJson, List<ReviewIssue> issues) {
         StringBuilder prompt = new StringBuilder("""
                 You are the generator. Write a product card using only the facts below.
 
@@ -53,16 +53,16 @@ public final class Prompts {
                 %s
                 """.formatted(ResultContract.schemaFor(ProductCard.class), factsJson));
 
-        if (issues != null && !issues.isEmpty()) {
+if (issues != null && !issues.isEmpty()) {
             prompt.append("\nThe reviewer rejected the previous draft. Address every point:\n");
-            for (String issue : issues) {
-                prompt.append("- ").append(issue).append('\n');
+            for (ReviewIssue issue : issues) {
+                prompt.append("- ").append(issue.asFeedback()).append('\n');
             }
         }
         return prompt.toString();
     }
 
-    public static String critic(String factsJson, String draftJson) {
+public static String critic(String factsJson, String draftJson) {
         return """
                 You are the reviewer. Check the draft card against the facts by these rules:
                 1. the title is at most 60 characters;
@@ -71,18 +71,24 @@ public final class Prompts {
                 4. there are no empty promises such as "high quality" or "premium";
                 5. every characteristic has a source, or the facts carried no identifiers.
 
-                Reply with a JSON object and nothing else:
-                  verdict  string  "APPROVE" if the card is fit, otherwise "REGENERATE"
-                  issues   array   what is wrong, one item per problem; empty when approving
+                Reply with a JSON object matching this schema and nothing else, with these two \
+                keys:
+                  verdict  string   "APPROVE" if the card is fit, otherwise "REGENERATE"
+                  issues   array    one object per problem, each with `field` naming the \
+                characteristic or "" when the objection is about the card as a whole, and `problem` \
+                saying what is wrong in one sentence. Empty when approving.
 
                 Do not wrap the JSON in markdown. Do not add commentary.
+
+                SCHEMA:
+                %s
 
                 FACTS:
                 %s
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(factsJson, draftJson);
+                """.formatted(ResultContract.schemaFor(CritiqueReport.class), factsJson, draftJson);
     }
 
 /**
@@ -99,16 +105,17 @@ public final class Prompts {
      * application and verified against the retained set, so an invented one does not merely read
      * wrong, it fails the card.
      */
-    public static String generatorFromContext(String contextText, List<String> issues) {
+    public static String generatorFromContext(String contextText, List<ReviewIssue> issues) {
         StringBuilder prompt = new StringBuilder("""
                 You are the generator. Write a product card using only the fragments below.
 
-                Each fragment is labelled, for example [C3]. For every characteristic you write, \
-                sources must map that characteristic name to the label of the fragment it came \
-                from. Use a label that appears in the fragments above and no other. Never invent a \
-                label: if no fragment supports a characteristic, leave that characteristic out and \
-                name it in missingFields instead. A characteristic with no supporting fragment is \
-                far better than a characteristic citing a fragment that does not support it.
+Each fragment is labelled, for example [C3]. For every characteristic you write, \
+sources must map that characteristic name to the reference of the fragment it came from. Write \
+that reference exactly as it appears inside the brackets and without them: for the fragment shown \
+as [C3] the value is C3, not [C3]. Use a reference that appears in the fragments above and no \
+other. Never invent a reference: if no fragment supports a characteristic, leave that \
+characteristic out and name it in missingFields instead. A characteristic with no supporting \
+fragment is far better than a characteristic citing a fragment that does not support it.
 
                 Reply with a JSON object matching this schema and nothing else. No prose, no \
                 markdown fences. The title must be at most 60 characters.
@@ -122,8 +129,8 @@ public final class Prompts {
 
         if (issues != null && !issues.isEmpty()) {
             prompt.append("\nThe previous draft was rejected. Address every point:\n");
-            for (String issue : issues) {
-                prompt.append("- ").append(issue).append('\n');
+            for (ReviewIssue issue : issues) {
+                prompt.append("- ").append(issue.asFeedback()).append('\n');
             }
         }
         return prompt.toString();
@@ -151,20 +158,26 @@ public final class Prompts {
                 right fact attributed to the wrong fragment is a failure: the value and the \
                 fragment are both plausible, and a reader cannot see the mismatch.
 
-                Reply with a JSON object and nothing else:
-                  verdict  string  "APPROVE" if every cited characteristic is supported, \
+                Reply with a JSON object matching this schema and nothing else, with these two \
+                keys:
+                  verdict  string   "APPROVE" if every cited characteristic is supported, \
                 otherwise "REGENERATE"
-                  issues   array   what is wrong, one item per problem, naming the \
-                characteristic and the label; empty when approving
+                  issues   array    one object per problem, each with `field` naming the \
+                characteristic or "" when the objection is about the card as a whole, and `problem` \
+                saying in one sentence what is wrong - naming the fragment label when the problem \
+                is that the card cites the wrong one. Empty when approving.
 
                 Do not wrap the JSON in markdown. Do not add commentary.
+
+                SCHEMA:
+                %s
 
                 FRAGMENTS:
                 %s
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(contextText, draftJson);
+                """.formatted(ResultContract.schemaFor(CritiqueReport.class), contextText, draftJson);
     }
 
     /**

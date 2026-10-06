@@ -3,6 +3,7 @@ package com.carddraft.temporal;
 import java.time.Duration;
 import java.util.List;
 
+import com.carddraft.agents.ReviewIssue;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.failure.ApplicationFailure;
@@ -89,71 +90,31 @@ public class CardWorkflowImpl implements CardWorkflow {
         try {
             if (request.retrievesFromDocuments()) {
                 publish(jobId, JobState.RETRIEVING, null);
-                String contextText = steps.retrieveAndAssemble(
+                RetrievedContext retrieved = steps.retrieveAndAssemble(
                         jobId, request.productHint(), request.documentIds());
 
-                List<String> issues = List.of();
-                boolean escalated = false;
-                boolean clean = false;
-
-                // Held here rather than on the activity's result, because each check returns a
-                // fresh count and overwriting would reset it to zero on every round - leaving the
-                // allowance permanently unspent and the card in rework forever. Workflow-local
-                // state is also the only version that survives a replay correctly, since it is
-                // derived from the recorded decisions.
-                int citationFailures = 0;
-
-                // Bounded by both the caller's round budget and the citation allowance, because they
-                // are different limits answering different questions. maxRounds is what the caller
-                // was willing to pay for; the citation count is how many times a model may be
-                // asked to fix the same class of mistake before a person looks at it. Neither
-                // substitutes for the other: a reviewer that objects repeatedly is bounded by
-                // maxRounds alone, and letting it consume the citation allowance would escalate
-                // to a human for a reason that has nothing to do with citations.
-                while (attempts < request.maxRounds() && citationFailures <= MAX_CITATION_REWORKS) {
-                    attempts++;
-                    publish(jobId, JobState.GENERATING, "attempt " + attempts);
-                    steps.countAttempt(jobId);
-                    draftJson = steps.generateFromContext(jobId, contextText, issues);
-
-                    publish(jobId, JobState.REVIEWING, "attempt " + attempts);
-                    CritiqueStep review = reviewAgainstContext(jobId, contextText, draftJson);
-
-                    if (review.approved()) {
-                        reviewerApproved = true;
-                        citations = steps.checkCitations(jobId, draftJson);
-                        if (citations.clean()) {
-                            clean = true;
-                            break;
-                        }
-                        issues = citations.messages();
-                        citationFailures++;
-                        if (citationFailures > MAX_CITATION_REWORKS) {
-                            escalated = true;
-                        }
-                    } else {
-                        issues = review.issues();
-                    }
+                // A document that is mostly attack is not generated from the survivors. The
+                // omissions would be nobody's choice, and a card with unchosen omissions reads
+                // as complete — so the job waits for a person with the screening reason.
+                if (retrieved.escalated()) {
+                    status = "awaiting human decision after trust escalation";
+                    publish(jobId, JobState.AWAITING_HUMAN, retrieved.escalationReason());
+                    Workflow.await(() -> decision != null);
+                } else {
+                    RetrievalLoop loop = runRetrievalLoop(jobId, retrieved.contextText(),
+                            request.maxRounds());
+                    draftJson = loop.draftJson();
+                    attempts = loop.attempts();
+                    reviewerApproved = loop.reviewerApproved();
+                    status = loop.awaitingStatus();
+                    publish(jobId, JobState.AWAITING_HUMAN, loop.awaitingDetail());
+                    Workflow.await(() -> decision != null);
                 }
-
-                status = escalated
-                        ? "awaiting human decision after citation failures"
-                        : clean
-                                ? "awaiting human decision"
-                                : "awaiting human decision after review";
-                publish(jobId, JobState.AWAITING_HUMAN,
-                        escalated ? citations.messages().toString() : null);
-                Workflow.await(() -> decision != null);
-
-                status = escalated ? "awaiting human decision after citation failures"
-                        : "awaiting human decision";
-                publish(jobId, JobState.AWAITING_HUMAN, escalated ? citations.messages().toString() : null);
-                Workflow.await(() -> decision != null);
             } else {
                 publish(jobId, JobState.EXTRACTING, null);
                 String factsJson = steps.extractFacts(jobId, request.supplierText());
 
-                List<String> issues = List.of();
+                List<ReviewIssue> issues = List.of();
                 while (attempts < request.maxRounds()) {
                     attempts++;
                     publish(jobId, JobState.GENERATING, "attempt " + attempts);
@@ -181,9 +142,82 @@ public class CardWorkflowImpl implements CardWorkflow {
 
         JobState finalState = DECISION_APPROVE.equals(decision) ? JobState.APPROVED : JobState.REJECTED;
         status = finalState.wireName();
-        publish(jobId, finalState, null);
+        steps.recordOutcome(jobId, finalState.wireName(), draftJson);
 
         return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision);
+    }
+
+    /**
+     * The retrieval branch's generate-and-review loop, and how it ended.
+     *
+     * <p>Bounded by both the caller's round budget and the citation allowance, because they
+     * are different limits answering different questions. maxRounds is what the caller
+     * was willing to pay for; the citation count is how many times a model may be
+     * asked to fix the same class of mistake before a person looks at it. Neither
+     * substitutes for the other: a reviewer that objects repeatedly is bounded by
+     * maxRounds alone, and letting it consume the citation allowance would escalate
+     * to a human for a reason that has nothing to do with citations.
+     */
+    private record RetrievalLoop(String draftJson, int attempts, boolean reviewerApproved,
+                                 String awaitingStatus, String awaitingDetail) {
+    }
+
+    private RetrievalLoop runRetrievalLoop(String jobId, String contextText, int maxRounds) {
+        List<ReviewIssue> issues = List.of();
+        boolean escalated = false;
+        boolean clean = false;
+        String draftJson = "{}";
+        int attempts = 0;
+        boolean reviewerApproved = false;
+        CitationCheck citations = new CitationCheck(true, List.of(), 0, 0);
+
+        // Held here rather than on the activity's result, because each check returns a
+        // fresh count and overwriting would reset it to zero on every round - leaving the
+        // allowance permanently unspent and the card in rework forever. Workflow-local
+        // state is also the only version that survives a replay correctly, since it is
+        // derived from the recorded decisions.
+        int citationFailures = 0;
+
+        while (attempts < maxRounds && citationFailures <= MAX_CITATION_REWORKS) {
+            attempts++;
+            publish(jobId, JobState.GENERATING, "attempt " + attempts);
+            steps.countAttempt(jobId);
+            draftJson = steps.generateFromContext(jobId, contextText, issues);
+
+            publish(jobId, JobState.REVIEWING, "attempt " + attempts);
+            CritiqueStep review = reviewAgainstContext(jobId, contextText, draftJson);
+
+            if (review.approved()) {
+                reviewerApproved = true;
+                citations = steps.checkCitations(jobId, draftJson);
+                if (citations.clean()) {
+                    clean = true;
+                    break;
+                }
+                // Citation complaints arrive as sentences rather than as field-level issues, because the check
+                // reports which labels were fabricated rather than which line of the card
+                // they were attached to — so they are carried as objections about the card
+                // as a whole, which is what the data supports.
+                issues = citations.messages().stream()
+                        .map(ReviewIssue::new)
+                        .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+                citationFailures++;
+                if (citationFailures > MAX_CITATION_REWORKS) {
+                    escalated = true;
+                }
+            } else {
+                issues = review.issues();
+            }
+        }
+
+        String awaitingStatus = escalated
+                ? "awaiting human decision after citation failures"
+                : clean
+                        ? "awaiting human decision"
+                        : "awaiting human decision after review";
+        String awaitingDetail = escalated ? citations.messages().toString() : null;
+        return new RetrievalLoop(draftJson, attempts, reviewerApproved, awaitingStatus,
+                awaitingDetail);
     }
 
     /**
@@ -199,7 +233,7 @@ public class CardWorkflowImpl implements CardWorkflow {
         return new CritiqueStep(verdict.approved(), verdict.issues());
     }
 
-    private record CritiqueStep(boolean approved, List<String> issues) {
+    private record CritiqueStep(boolean approved, List<ReviewIssue> issues) {
     }
 
     @Override

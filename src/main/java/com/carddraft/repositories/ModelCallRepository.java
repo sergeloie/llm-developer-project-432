@@ -1,4 +1,4 @@
-package com.carddraft.llm;
+package com.carddraft.repositories;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -7,6 +7,9 @@ import java.util.List;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+
+import com.carddraft.llm.CostCalculator;
+import com.carddraft.llm.ModelCallRecord;
 
 /**
  * Reads and writes model call records.

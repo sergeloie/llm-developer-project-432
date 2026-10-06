@@ -3,6 +3,7 @@ package com.carddraft.repositories;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -26,9 +27,11 @@ public class ChunkSearchRepository {
     public static final int DEFAULT_RRF_K = 60;
 
     private final JdbcClient jdbc;
+    private final JdbcTemplate template;
 
-    public ChunkSearchRepository(JdbcClient jdbc) {
+    public ChunkSearchRepository(JdbcClient jdbc, JdbcTemplate template) {
         this.jdbc = jdbc;
+        this.template = template;
     }
 
     /**
@@ -69,26 +72,64 @@ public class ChunkSearchRepository {
         }
     }
 
+    /**
+     * Writes vectors in one round trip.
+     *
+     * <p>A batch rather than a loop of single updates: vectors are wide rows and a corpus is
+     * thousands of them, so one statement per chunk turns indexing into a round trip per row.
+     * {@code JdbcTemplate} carries the batch API that {@code JdbcClient} does not expose; the
+     * reads stay on {@code JdbcClient} because they never needed it.
+     */
     public void writeVectors(List<ChunkVector> vectors) {
-        for (ChunkVector vector : vectors) {
-            jdbc.sql("UPDATE chunks SET embedding = CAST(:vector AS vector) WHERE id = :id")
-                    .param("vector", toVectorLiteral(vector.values()))
-                    .param("id", vector.chunkId())
-                    .update();
+        if (vectors.isEmpty()) {
+            return;
         }
+        template.batchUpdate(
+                "UPDATE chunks SET embedding = CAST(? AS vector) WHERE id = ?",
+                vectors,
+                vectors.size(),
+                (statement, vector) -> {
+                    statement.setString(1, toVectorLiteral(vector.values()));
+                    statement.setLong(2, vector.chunkId());
+                });
     }
 
-    /** Chunks that have text and no vector — the backfill command's whole job. */
+    /**
+     * Chunks that have text and no vector — the whole of both the backfill sweep and the indexing
+     * step that follows a parse.
+     *
+     * <p>No filter on the document's state, and the absence is deliberate. It used to select only
+ * documents already marked {@code indexed}, on the reasoning that a chunk whose document never
+ * finished should not be embedded. That reasoning inverted once {@code indexed} came to mean "every
+ * chunk has a vector": gating the embedding on it asks for the thing being produced, so the sweep
+ * could only ever find documents that were already finished. The gate a chunk actually needs is the
+ * one that is not a choice — a row in this table exists because a parse wrote it, and a document the
+ * parser refused has no rows.
+     */
     public List<ChunkToEmbed> chunksWithoutVectors(int limit) {
         return jdbc.sql("""
                         SELECT c.id, c.document_id, c.section, c.text
                           FROM chunks c
-                          JOIN documents d ON d.id = c.document_id
                          WHERE c.embedding IS NULL
-                           AND d.state = 'indexed'
-                         ORDER BY c.document_id, c.ordinal
-                         LIMIT :limit
+                          ORDER BY c.document_id, c.ordinal
+                          LIMIT :limit
                         """)
+                .param("limit", limit)
+                .query(ChunkToEmbed.class)
+                .list();
+    }
+
+    /** The same, for one document, so an upload embeds what it just parsed and nothing else. */
+    public List<ChunkToEmbed> chunksWithoutVectors(String documentId, int limit) {
+        return jdbc.sql("""
+                        SELECT c.id, c.document_id, c.section, c.text
+                          FROM chunks c
+                         WHERE c.document_id = :documentId
+                           AND c.embedding IS NULL
+                          ORDER BY c.ordinal
+                          LIMIT :limit
+                        """)
+                .param("documentId", documentId)
                 .param("limit", limit)
                 .query(ChunkToEmbed.class)
                 .list();
@@ -96,6 +137,13 @@ public class ChunkSearchRepository {
 
     public int countWithoutVectors() {
         return jdbc.sql("SELECT count(*) AS c FROM chunks WHERE embedding IS NULL")
+                .query(Integer.class)
+                .single();
+    }
+
+    public int countWithoutVectors(String documentId) {
+        return jdbc.sql("SELECT count(*) AS c FROM chunks WHERE document_id = :id AND embedding IS NULL")
+                .param("id", documentId)
                 .query(Integer.class)
                 .single();
     }
@@ -246,7 +294,8 @@ public class ChunkSearchRepository {
         }
         List<Hit> hits = new ArrayList<>();
         jdbc.sql("""
-                        SELECT id AS chunk_id, document_id, page, section, text, 0.0 AS score
+                        SELECT id AS chunk_id, document_id, page, section, text, 0.0 AS score,
+                               'by-id' AS matched_by
                           FROM chunks WHERE id = ANY(:ids)
                         """)
                 .param("ids", ids.toArray(new Long[0]))

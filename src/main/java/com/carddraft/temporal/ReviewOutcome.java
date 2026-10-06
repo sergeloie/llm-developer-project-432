@@ -2,6 +2,8 @@ package com.carddraft.temporal;
 
 import java.util.List;
 
+import com.carddraft.agents.ReviewIssue;
+
 /**
  * What the review activity reports back to the workflow.
  *
@@ -13,7 +15,7 @@ import java.util.List;
  * @param approved whether the draft passed review
  * @param issues   what the reviewer objected to, carried into the next round
  */
-public record ReviewOutcome(boolean approved, List<String> issues) {
+public record ReviewOutcome(boolean approved, List<ReviewIssue> issues) {
 
     public ReviewOutcome {
         issues = issues == null ? List.of() : List.copyOf(issues);

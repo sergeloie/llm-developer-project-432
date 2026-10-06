@@ -14,9 +14,13 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.CritiqueReport;
+import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.Prompts;
 import com.carddraft.agents.SupplierFacts;
+import com.carddraft.agents.SupportJudgement;
+import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * The provider boundary.
@@ -60,7 +64,7 @@ public class SpringAiLlmClient implements LlmClient {
     }
 
     @Override
-    public ProductCard draftCard(SupplierFacts facts, List<String> issues) {
+    public ProductCard draftCard(SupplierFacts facts, List<ReviewIssue> issues) {
         return invoke("draftCard", ModelTier.MAIN, Prompts.generator(toJson(facts), issues),
                 ProductCard.class, ResultContract::problemsWith);
     }
@@ -68,11 +72,11 @@ public class SpringAiLlmClient implements LlmClient {
     @Override
     public CritiqueReport reviewDraft(SupplierFacts facts, ProductCard draft) {
         return invoke("reviewDraft", ModelTier.UTILITY,
-                Prompts.critic(toJson(facts), toJson(draft)), CritiqueReport.class, ignored -> List.of());
+                Prompts.critic(toJson(facts), toJson(draft)), CritiqueReport.class, ResultContract::problemsWith);
     }
 
     @Override
-    public ProductCard draftCardFromContext(String contextText, List<String> issues) {
+    public ProductCard draftCardFromContext(String contextText, List<ReviewIssue> issues) {
         return invoke("draftCardFromContext", ModelTier.MAIN, Prompts.generatorFromContext(contextText, issues),
                 ProductCard.class, ResultContract::problemsWith);
     }
@@ -81,20 +85,21 @@ public class SpringAiLlmClient implements LlmClient {
     public CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft) {
         return invoke("reviewCardAgainstContext", ModelTier.UTILITY,
                 Prompts.criticAgainstContext(contextText, toJson(draft)), CritiqueReport.class,
-                ignored -> List.of());
+                ResultContract::problemsWith);
     }
 
     @Override
-    public String judgeSupport(String judgePrompt) {
+    public SupportJudgement judgeSupport(String judgePrompt) {
         // The utility tier deliberately: judging is a judgement, not a generation, and it is the
         // larger volume of the two calls per card once metrics are being collected.
-        return invoke("judgeSupport", ModelTier.UTILITY, judgePrompt, String.class, ignored -> List.of());
+        return invoke("judgeSupport", ModelTier.UTILITY, judgePrompt, SupportJudgement.class,
+                ResultContract::problemsWith);
     }
 
-    @Override
-    public String judgeInjection(String injectionPrompt) {
-        return invoke("judgeInjection", ModelTier.UTILITY, injectionPrompt, String.class,
-                ignored -> List.of());
+@Override
+    public ModelVerdict judgeInjection(String injectionPrompt) {
+        return invoke("judgeInjection", ModelTier.UTILITY, injectionPrompt, ModelVerdict.class,
+                ResultContract::problemsWith);
     }
 
     @Override

@@ -3,8 +3,11 @@ package com.carddraft.llm;
 import java.util.List;
 
 import com.carddraft.agents.CritiqueReport;
+import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.SupplierFacts;
+import com.carddraft.agents.SupportJudgement;
 
 /**
  * The application's only route to a language model, and the only place that knows a provider
@@ -26,7 +29,7 @@ public interface LlmClient {
     /**
      * @param issues the reviewer's objections to the previous draft, empty on the first round
      */
-    ProductCard draftCard(SupplierFacts facts, List<String> issues);
+    ProductCard draftCard(SupplierFacts facts, List<ReviewIssue> issues);
 
     CritiqueReport reviewDraft(SupplierFacts facts, ProductCard draft);
 
@@ -53,7 +56,7 @@ public interface LlmClient {
      * @param contextText the labelled fragments, as assembled and retained for verification
      * @param issues      citation failures from a previous round, empty on the first
      */
-    ProductCard draftCardFromContext(String contextText, List<String> issues);
+    ProductCard draftCardFromContext(String contextText, List<ReviewIssue> issues);
 
     /**
      * Reviews a card against the fragments it cites, rather than against extracted facts.
@@ -73,8 +76,15 @@ public interface LlmClient {
      * site. A reviewer that says REGENERATE changes the card; a judge that says "unsupported"
      * produces a number in a report, and conflating them would make the harness's own uncertainty
      * indistinguishable from the pipeline's.
+     * <p>A {@link SupportJudgement} rather than the raw text, for the same reason as
+     * {@link #judgeInjection}: the prompt asks for an object, and a caller that re-parsed the text
+     * would be a second place that shape is written down. Handing back text and parsing it in the
+     * caller is what let the two disagree about the shape — the client was asked for a String, the
+     * model answered an object, and no judgement could ever be read. Here the disagreement had no
+     * catch above it either, so one unreadable answer ended the whole metrics run and wrote no
+     * report at all.
      */
-    String judgeSupport(String judgePrompt);
+    SupportJudgement judgeSupport(String judgePrompt);
 
     /**
      * Judges whether a supplier fragment carries instructions aimed at a model.
@@ -83,6 +93,12 @@ public interface LlmClient {
      * two are used for different decisions: this one decides whether a fragment is dropped, the
      * other only produces a number in a report. A method that did both would make it far too easy to
      * change a security decision by changing a reporting one.
+     *
+     * <p>A {@link ModelVerdict} rather than the raw text, because the prompt asks for an object and a
+     * caller that re-parsed the text would be the second place that shape is written down. Handing
+     * back text and parsing it here is what let the client and the caller disagree about the shape
+     * in the first place: the client was asked for a String, the model answered an object, and every
+     * verdict was unreadable — so every flagged fragment was dropped and the model pass did nothing.
      */
-    String judgeInjection(String injectionPrompt);
+    ModelVerdict judgeInjection(String injectionPrompt);
 }

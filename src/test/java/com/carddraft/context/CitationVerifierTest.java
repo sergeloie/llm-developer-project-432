@@ -48,16 +48,48 @@ class CitationVerifierTest {
      * <p>C7 does not exist in the corpus and never existed. The label is contiguous-checked, so no
      * database is consulted: with three fragments shown, anything past C3 was not sent.
      */
-    @Test
-    void aCitationBeyondTheContextIsFabricated() {
-        Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "C7"));
+/**
+ * A citation written the way the fragment was displayed still resolves.
+ *
+ * <p>Found by running the service, not by reading it: the context is rendered to the model as
+ * {@code [C1]}, the model copies what it was shown, and the lookup was being asked for the
+ * bracketed form against a retained reference that has no brackets. Every citation on a real card
+ * was therefore reported as fabricated — which is the gate designed to catch fabrications unable to
+ * tell one from a truth.
+ */
+@Test
+    void aCitationInTheDisplayedFormResolvesToTheReferenceItWasShownAs() {
+    Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "[C2]", "Weight", "[C1]"));
 
-        assertThat(verdict.isClean()).isFalse();
-        assertThat(verdict.fabricated()).singleElement()
-                .extracting(CitationVerifier.Finding::reference, CitationVerifier.Finding::status)
-                .containsExactly("C7", Status.UNKNOWN_REFERENCE);
-        assertThat(verdict.messages()).singleElement()
-                .asString()
+    assertThat(verdict.isClean()).isTrue();
+    assertThat(verdict.findings()).extracting(CitationVerifier.Finding::reference)
+            .as("and the finding reports the reference, so a reader is not left decoding brackets")
+            .containsExactlyInAnyOrder("C1", "C2");
+}
+
+@Test
+    void forgivingOneNotationDoesNotMakeTheCheckForgiving() {
+    Verdict verdict = verifier.verify(contextOf(2), Map.of(
+            "Power", "[c1]",
+            "Weight", "[]",
+            "Model", "[ C1 ]"));
+
+    assertThat(verdict.fabricated()).extracting(CitationVerifier.Finding::characteristic)
+            .as("unwrapping the display form is not the same as forgiving a near miss: the case, "
+                    + "an empty reference and a padded one are each still what the model wrote")
+            .containsExactlyInAnyOrder("Power", "Weight", "Model");
+}
+
+@Test
+    void aCitationBeyondTheContextIsFabricated() {
+    Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "C7"));
+
+    assertThat(verdict.isClean()).isFalse();
+    assertThat(verdict.fabricated()).singleElement()
+            .extracting(CitationVerifier.Finding::reference, CitationVerifier.Finding::status)
+            .containsExactly("C7", Status.UNKNOWN_REFERENCE);
+    assertThat(verdict.messages()).singleElement()
+            .asString()
                 .contains("'Power' cites C7");
     }
 

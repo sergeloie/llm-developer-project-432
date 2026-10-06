@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.repositories.ModelCallRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -252,7 +253,7 @@ class ModelCallRepositoryTest {
 
         RecordingRepository recorder = new RecordingRepository();
         LlmSettings settings = new LlmSettings("main-model", "utility-model",
-                Duration.ofSeconds(30), 1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
+                1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
                 new BigDecimal("3.00"), new BigDecimal("15.00"),
                 new BigDecimal("0.50"), new BigDecimal("1.50"));
         SpringAiLlmClient client =
@@ -290,7 +291,7 @@ class ModelCallRepositoryTest {
 
         RecordingRepository recorder = new RecordingRepository();
         LlmSettings settings = new LlmSettings("main-model", "utility-model",
-                Duration.ofSeconds(30), 1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
+                1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         SpringAiLlmClient client =
                 new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder);

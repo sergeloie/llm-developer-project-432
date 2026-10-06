@@ -18,22 +18,35 @@ import org.springframework.web.multipart.MultipartFile;
 import com.carddraft.documents.ChunkingSettings;
 import com.carddraft.documents.DocumentService;
 import com.carddraft.repositories.DocumentsRepository;
+import com.carddraft.temporal.DocumentWorkflowService;
 
 /**
  * Document upload and state.
  *
  * <p>202 and an identifier, not the parsed result. Parsing is real work over a file of unknown
- * size, and answering it inline would hold a connection open for as long as it takes.
+ * size, and answering it inline would hold a connection open for as long as it takes — which for a
+ * large supplier document is minutes, and for every other caller on the connection is a wait they
+ * did not ask for.
+ *
+ * <p>The upload starts the parse and returns. From there the document is readable at
+ * {@code GET /documents/{id}} while it moves from new to indexed or rejected, which is the same
+ * thing the metrics harness waits on and the same thing a content manager would watch. Registering
+ * the document and starting the parse are one action from the caller's side, and splitting them
+ * into two would make forgetting the second one look like success: a document with no chunks and
+ * nothing working on it is indistinguishable from one still being worked on.
  */
 @RestController
 @RequestMapping("/documents")
 public class DocumentsController {
 
     private final DocumentService documentService;
+    private final DocumentWorkflowService parses;
     private final ChunkingSettings settings;
 
-    public DocumentsController(DocumentService documentService, ChunkingSettings settings) {
+    public DocumentsController(DocumentService documentService, DocumentWorkflowService parses,
+                               ChunkingSettings settings) {
         this.documentService = documentService;
+        this.parses = parses;
         this.settings = settings;
     }
 
@@ -53,6 +66,7 @@ public class DocumentsController {
         try {
             DocumentsRepository.DocumentRow document =
                     documentService.register(filename, file.getBytes());
+            parses.start(document.id());
             return ResponseEntity.accepted().body(describe(document));
         } catch (IOException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "the upload could not be read"));

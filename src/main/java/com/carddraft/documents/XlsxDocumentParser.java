@@ -9,7 +9,8 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Component;
 
 import com.carddraft.agents.StructuralUnit;
@@ -44,13 +45,13 @@ public class XlsxDocumentParser implements DocumentParser {
         DataFormatter formatter = new DataFormatter();
         List<StructuralUnit> units = new ArrayList<>();
 
-        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(content))) {
             if (workbook.getNumberOfSheets() == 0) {
                 throw new DocumentRejectedException("the workbook has no sheets", null);
             }
             for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
                 Sheet sheet = workbook.getSheetAt(sheetIndex);
-                Row header = sheet.getRow(sheetIndex == 0 ? 0 : sheet.getFirstRowNum());
+                Row header = sheet.getRow(sheet.getFirstRowNum());
                 if (header == null) {
                     throw new DocumentRejectedException(
                             "sheet '" + sheet.getSheetName() + "' is empty, so it has no column headers", null);

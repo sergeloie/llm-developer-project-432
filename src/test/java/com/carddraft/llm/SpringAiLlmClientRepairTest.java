@@ -31,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
+import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * The repair loop, observed at the transport.
@@ -77,8 +78,7 @@ class SpringAiLlmClientRepairTest {
         // arithmetic is covered at non-zero rates in CostCalculatorTest, where a zero price would
         // exercise none of it.
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model",
-                java.time.Duration.ofSeconds(30), 3,
+                "main-model", "utility-model", 3,
                 java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 

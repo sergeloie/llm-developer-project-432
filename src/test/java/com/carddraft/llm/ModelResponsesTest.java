@@ -55,6 +55,23 @@ class ModelResponsesTest {
                 .isEqualTo("{\"title\":\"Blender\"}");
     }
 
+    @Test
+    void trailingProseWithBracesIsNotSwallowedIntoTheObject() {
+        String response = "{\"title\":\"Blender\",\"details\":{\"power\":\"800 W\"}} "
+                + "hope this helps {not json";
+
+        assertThat(ModelResponses.jsonObject(response, "op"))
+                .isEqualTo("{\"title\":\"Blender\",\"details\":{\"power\":\"800 W\"}}");
+    }
+
+    @Test
+    void bracesInsideStringValuesDoNotEndTheObject() {
+        String response = "Result: {\"title\":\"Blender (800 {W})\",\"confidence\":0.9} done.";
+
+        assertThat(ModelResponses.jsonObject(response, "op"))
+                .isEqualTo("{\"title\":\"Blender (800 {W})\",\"confidence\":0.9}");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "I could not find any product information in the text.",
@@ -155,8 +172,19 @@ class ModelResponsesTest {
     }
 
     @Test
-    void aCardBelowTheThresholdWaitsForAPerson() {
-        var weak = new com.carddraft.agents.ProductCard("T", "d", Map.of(), List.of("b"), List.of(), 0.4, Map.of());
+    void aCitationLabelAsACharacteristicValueIsSentBack() {
+        var card = new com.carddraft.agents.ProductCard(
+                "Blender", "A blender.",
+                Map.of("Power", "C1", "Weight", "[C2]"),
+                List.of("Fast"), List.of(), 0.9, Map.of("Power", "C1", "Weight", "C2"));
+
+        assertThat(ResultContract.problemsWith(card))
+                .anyMatch(p -> p.contains("'Power'") && p.contains("as its value"))
+                .anyMatch(p -> p.contains("'Weight'") && p.contains("as its value"));
+    }
+
+    @Test
+    void aCardBelowTheThresholdWaitsForAPerson() {        var weak = new com.carddraft.agents.ProductCard("T", "d", Map.of(), List.of("b"), List.of(), 0.4, Map.of());
         var strong = new com.carddraft.agents.ProductCard("T", "d", Map.of(), List.of("b"), List.of(), 0.9, Map.of());
 
         assertThat(weak.awaitsHuman(0.7)).as("low confidence must not read as done").isTrue();

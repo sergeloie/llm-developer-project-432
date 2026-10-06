@@ -25,6 +25,10 @@ import com.carddraft.repositories.DocumentsRepository;
  * <p>The refusal case is the one worth having here: a scan with no text layer must leave a row in
  * the rejected state carrying a reason, and no chunks. An empty chunk list with a state of
  * "indexed" is the failure this guards against, and only a real parse can produce it.
+ *
+ * <p>Nothing here hands {@code process} the bytes to parse. They are fetched from the row the upload
+ * created, which is the arrangement the whole upload path depends on and the one this test would
+ * still pass without if the service quietly accepted a file it had nowhere to keep.
  */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
@@ -66,17 +70,41 @@ class DocumentServiceTest {
 
     @Test
     @EnabledIf("dataIsPresent")
-    void aParseableDocumentIsIndexedWithChunks() throws Exception {
+    void aParseableDocumentIsParsedIntoChunksButNotYetIndexed() throws Exception {
         byte[] content = Files.readAllBytes(DATA.resolve("blender_passport.pdf"));
         var registered = documentService.register("blender_passport.pdf", content);
 
-        var processed = documentService.process(registered.id(), "blender_passport.pdf", content);
+        var parsed = documentService.process(registered.id());
 
-        assertThat(processed.state()).isEqualTo("indexed");
-        assertThat(processed.chunkCount()).isPositive();
-        assertThat(processed.rejectionReason()).isNull();
-        assertThat(documents.chunksOf(registered.id())).hasSize(processed.chunkCount());
+        assertThat(documents.chunksOf(registered.id()))
+                .as("the fragments exist before anything can search them")
+                .isNotEmpty();
+        assertThat(parsed.rejectionReason()).isNull();
+
+        assertThat(parsed.state())
+                .as("'indexed' has to mean searchable, and a stored chunk with no vector is not "
+                        + "searchable by meaning — the vector index is built WHERE embedding IS NOT "
+                        + "NULL, so an unembedded document contributes nothing to hybrid retrieval "
+                        + "while claiming to be indexed")
+                .isEqualTo("parsing");
+
+        assertThat(documentService.settle(registered.id()).state())
+                .as("and settling before the vectors exist cannot promote it, whatever the caller "
+                        + "believes about it")
+                .isEqualTo("parsing");
     }
+
+    @Test
+    @EnabledIf("dataIsPresent")
+    void theContentIsKeptSoTheParseCanHappenAfterTheUploadHasBeenAnswered() throws Exception {
+        byte[] content = Files.readAllBytes(DATA.resolve("blender_passport.pdf"));
+        var registered = documentService.register("blender_passport.pdf", content);
+
+        assertThat(documents.contentOf(registered.id()))
+                .as("the file the upload arrived as, read back unchanged")
+                .contains(content);
+    }
+
 
     @Test
     @EnabledIf("dataIsPresent")
@@ -84,7 +112,7 @@ class DocumentServiceTest {
         byte[] content = Files.readAllBytes(DATA.resolve("boiler_scan.pdf"));
         var registered = documentService.register("boiler_scan.pdf", content);
 
-        var processed = documentService.process(registered.id(), "boiler_scan.pdf", content);
+        var processed = documentService.process(registered.id());
 
         assertThat(processed.state()).isEqualTo("rejected");
         assertThat(processed.rejectionReason()).containsIgnoringCase("text layer");
@@ -113,9 +141,21 @@ class DocumentServiceTest {
     void anUnsupportedExtensionIsRefusedWithAReason() {
         var registered = documentService.register("supplier.exe", new byte[]{1, 2, 3});
 
-        var processed = documentService.process(registered.id(), "supplier.exe", new byte[]{1, 2, 3});
+        var processed = documentService.process(registered.id());
 
         assertThat(processed.state()).isEqualTo("rejected");
         assertThat(processed.rejectionReason()).containsIgnoringCase("unsupported");
+    }
+
+    @Test
+    void aDocumentWhoseContentIsGoneIsRefusedWithAReasonRatherThanParsedAsNothing() {
+        String id = "doc-no-content";
+        documents.create(id, "gone.pdf", "a".repeat(64), 7, null);
+
+        var processed = documentService.process(id);
+
+        assertThat(processed.state()).isEqualTo("rejected");
+        assertThat(processed.rejectionReason()).containsIgnoringCase("content");
+        assertThat(processed.chunkCount()).isZero();
     }
 }

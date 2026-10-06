@@ -19,6 +19,11 @@ public class DocumentsRepository {
      * <p>A star select binds the record to whatever the table happens to contain today: adding a
      * column breaks the mapping, removing one does the same, and neither is caught until a query
      * fails at runtime. Naming them also makes the shape of the record visible in the query.
+     *
+     * <p>The uploaded content is a column of the table and not of this record, which is the same
+     * rule applied to a question of size rather than of mapping: a document row is read on every
+     * state transition, and carrying the file in each of those reads would cost the upload limit
+     * in memory to serve a caller that wants the metadata. {@link #contentOf} fetches it.
      */
     private static final String DOCUMENT_COLUMNS = """
             SELECT id, filename, content_sha256, size_bytes, state, rejection_reason, chunk_count,
@@ -65,15 +70,22 @@ public class DocumentsRepository {
     }
 
 
-    public DocumentRow create(String id, String filename, String sha256, long sizeBytes) {
+/**
+     * Records the document and the bytes it arrived as.
+     *
+     * <p>The content is written in the same statement as the row, so a document can never be
+     * observed without the file that would have to be parsed out of it.
+     */
+    public DocumentRow create(String id, String filename, String sha256, long sizeBytes, byte[] content) {
         jdbc.sql("""
-                        INSERT INTO documents (id, filename, content_sha256, size_bytes, state)
-                        VALUES (:id, :filename, :sha, :size, 'new')
+                        INSERT INTO documents (id, filename, content_sha256, size_bytes, state, content)
+                        VALUES (:id, :filename, :sha, :size, 'new', :content)
                         """)
                 .param("id", id)
                 .param("filename", filename)
                 .param("sha", sha256)
                 .param("size", sizeBytes)
+                .param("content", content)
                 .update();
         return findById(id).orElseThrow();
     }
@@ -85,6 +97,19 @@ public class DocumentsRepository {
                 .optional();
     }
 
+    /**
+     * The file as it was uploaded, or empty when this row predates the column.
+     *
+     * <p>Empty rather than null so the caller has to decide what a document with no content is,
+     * which is the difference between a refusal with a reason and a parse of nothing.
+     */
+    public Optional<byte[]> contentOf(String id) {
+        return jdbc.sql("SELECT content FROM documents WHERE id = :id")
+                .param("id", id)
+                .query(byte[].class)
+                .optional();
+    }
+
 
     public void markParsing(String id) {
         jdbc.sql("UPDATE documents SET state = 'parsing', updated_at = now() WHERE id = :id")
@@ -92,17 +117,64 @@ public class DocumentsRepository {
                 .update();
     }
 
-    public DocumentsRepository.DocumentRow markIndexed(String id, int chunkCount) {
+/**
+     * Marks the document searchable, but only once every one of its chunks has a vector.
+ *
+     * <p>The condition is the whole point. {@code indexed} is what tells a caller the document can be
+ * *searched*, and a chunk with no vector is invisible to the vector index — which is built
+ * {@code WHERE embedding IS NOT NULL} — however much text it holds. Marking a document indexed
+ * before its vectors exist is how a service ends up reporting that four documents are ready and
+ * retrieving from none of them.
+     *
+     * <p>Also the only safe way to move the state, because the check and the write are one statement.
+     * A caller that asked first and wrote second would have to win a race against its own embedding
+     * pass, and would eventually settle a document as indexed on the strength of a count it read
+     * before the last vector landed.
+     *
+     * @return the document, whether or not the condition held — a document still waiting for
+     *         vectors is not an error, it is a document still being indexed
+     */
+    public DocumentsRepository.DocumentRow markIndexedIfComplete(String id) {
         jdbc.sql("""
-                        UPDATE documents
-                           SET state = 'indexed', chunk_count = :count, rejection_reason = NULL,
+                        UPDATE documents d
+                           SET state = 'indexed',
+                               chunk_count = (SELECT count(*) FROM chunks c WHERE c.document_id = d.id),
+                               rejection_reason = NULL,
                                updated_at = now()
-                         WHERE id = :id
+                         WHERE d.id = :id
+                           AND d.state = 'parsing'
+                           AND EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)
+                           AND NOT EXISTS (SELECT 1 FROM chunks c
+                                            WHERE c.document_id = d.id AND c.embedding IS NULL)
                         """)
-                .param("count", chunkCount)
                 .param("id", id)
                 .update();
         return findById(id).orElseThrow();
+    }
+
+    /**
+     * Settles every parsed document whose chunks have all been embedded.
+     *
+     * <p>Exists because a document whose embedding failed is left at {@code parsing} with its chunks
+     * stored, and the sweep that eventually embeds them runs on somebody's next restart rather than
+     * in the middle of the failure. Without this the recovery would fill in the vectors and leave the
+     * document still claiming to be mid-parse, which reads as a hang rather than as a success.
+     *
+     * @return how many documents were settled
+     */
+    public int settleIndexedDocuments() {
+        return jdbc.sql("""
+                        UPDATE documents d
+                           SET state = 'indexed',
+                               chunk_count = (SELECT count(*) FROM chunks c WHERE c.document_id = d.id),
+                               rejection_reason = NULL,
+                               updated_at = now()
+                         WHERE d.state = 'parsing'
+                           AND EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)
+                           AND NOT EXISTS (SELECT 1 FROM chunks c
+                                            WHERE c.document_id = d.id AND c.embedding IS NULL)
+                        """)
+                .update();
     }
 
     /**

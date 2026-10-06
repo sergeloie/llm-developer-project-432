@@ -6,17 +6,19 @@ import org.springframework.stereotype.Component;
 
 import tools.jackson.databind.ObjectMapper;
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextAssembler;
-import com.carddraft.context.JobContextRepository;
+import com.carddraft.repositories.JobContextRepository;
 import com.carddraft.llm.JobLogContext;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.repositories.ChunkSearchRepository;
 import com.carddraft.search.SearchService;
+import com.carddraft.trust.Finding;
 import com.carddraft.trust.TrustSettings;
 import com.carddraft.trust.TrustService;
 import com.carddraft.repositories.JobsRepository;
@@ -73,7 +75,7 @@ public class CardActivitiesImpl implements CardActivities {
     }
 
     @Override
-    public String generateDraft(String jobId, String factsJson, List<String> issues) {
+    public String generateDraft(String jobId, String factsJson, List<ReviewIssue> issues) {
         return JobLogContext.withJob(jobId, () -> toJson(
                 llmClient.draftCard(fromJson(factsJson, SupplierFacts.class), issues)));
     }
@@ -84,7 +86,7 @@ public class CardActivitiesImpl implements CardActivities {
             CritiqueReport report = llmClient.reviewDraft(
                     fromJson(factsJson, SupplierFacts.class),
                     fromJson(draftJson, ProductCard.class));
-            return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+            return new ReviewOutcome(report != null && report.verdict() == Verdict.APPROVE, report == null ? List.of() : report.issues());
         });
     }
 
@@ -101,8 +103,9 @@ public class CardActivitiesImpl implements CardActivities {
      * are in the fragments being returned, not in the question.
      */
     @Override
-    public String retrieveAndAssemble(String jobId, String productHint, List<String> documentIds) {
-        String query = productHint == null || productHint.isBlank() ? filenamesOf(documentIds) : productHint;
+    public RetrievedContext retrieveAndAssemble(String jobId, String productHint, List<String> documentIds) {
+        return JobLogContext.withJob(jobId, () -> {
+            String query = productHint == null || productHint.isBlank() ? filenamesOf(documentIds) : productHint;
         var hits = search.search(query, new ChunkSearchRepository.Filter(documentIds, null),
                 SearchService.Mode.HYBRID);
 
@@ -115,7 +118,21 @@ public class CardActivitiesImpl implements CardActivities {
                 assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
         contexts.save(retained);
 
-        return screened.render();
+        // Nothing safe to generate from is its own outcome, distinct from "few were dropped".
+        // An empty context would send the model off with no sources, and the card that comes
+        // back cites nothing it was shown — so the job waits for a person with the reason
+        // rather than failing a generation that never had anything to work from.
+        if (screened.chunks().isEmpty()) {
+            String reason = "all " + assembled.chunks().size()
+                    + " retrieved fragments were excluded as suspicious, so there is nothing "
+                    + "safe to generate from";
+            log.warn("llm_context_empty job={} excluded={}", jobId, screened.excluded());
+            return new RetrievedContext("", screened.excluded(), screened.masked(), true, reason);
+        }
+
+        return new RetrievedContext(screened.render(), screened.excluded(), screened.masked(),
+                screened.escalated(), screened.reason());
+        });
     }
 
     private String filenamesOf(List<String> documentIds) {
@@ -129,9 +146,26 @@ public class CardActivitiesImpl implements CardActivities {
         return names.toString().strip();
     }
 
+    /**
+     * Generates from the screened context, then filters what came back.
+     *
+     * <p>The model can invent a phone number that appears in no fragment, so screening the input
+     * is not enough. Personal data is masked in the returned draft and every finding is logged
+     * by kind and count, never by value. The mask replaces inside string values, so the masked
+     * draft is still the JSON the workflow stores.
+     */
     @Override
-    public String generateFromContext(String jobId, String contextText, List<String> issues) {
-        return JobLogContext.withJob(jobId, () -> toJson(llmClient.draftCardFromContext(contextText, issues)));
+    public String generateFromContext(String jobId, String contextText, List<ReviewIssue> issues) {
+        return JobLogContext.withJob(jobId, () -> {
+            String draftJson = toJson(llmClient.draftCardFromContext(contextText, issues));
+            Finding.Report report = trust.filterOutput(draftJson);
+            if (report.isClean()) {
+                return draftJson;
+            }
+            log.warn("llm_output_filtered job={} findings={}", jobId, report.summary());
+            boolean personal = report.findings().stream().anyMatch(Finding::isPersonal);
+            return personal ? report.maskedText() : draftJson;
+        });
     }
 
     /**
@@ -147,7 +181,8 @@ public class CardActivitiesImpl implements CardActivities {
         return JobLogContext.withJob(jobId, () -> {
             CritiqueReport report = llmClient.reviewCardAgainstContext(
                     contextText, fromJson(draftJson, ProductCard.class));
-            return new ReviewOutcome(report.verdict() == Verdict.APPROVE, report.issues());
+            return new ReviewOutcome(report != null && report.verdict() == Verdict.APPROVE,
+                    report == null ? List.of() : report.issues());
         });
     }
 
@@ -174,6 +209,11 @@ public class CardActivitiesImpl implements CardActivities {
     @Override
     public void countAttempt(String jobId) {
         jobs.recordAttempt(jobId);
+    }
+
+    @Override
+    public void recordOutcome(String jobId, String status, String draftJson) {
+        jobs.complete(jobId, status, draftJson);
     }
 
     @Override

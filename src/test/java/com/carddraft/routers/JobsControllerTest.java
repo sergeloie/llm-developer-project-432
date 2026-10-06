@@ -166,10 +166,75 @@ class JobsControllerTest {
         assertThat(second.getBody().get("id")).isEqualTo(first.getBody().get("id"));
     }
 
-    @Test
+@Test
     void anUnknownJobIsNotFound() {
         ResponseEntity<Map> response = rest.getForEntity("/jobs/no-such-job", Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void aDecisionFinishesTheJobAndTheCardBecomesReadable() {
+        String jobId = submitAndAwaitAHuman("decision-approves");
+
+        rest.postForEntity("/jobs/" + jobId + "/decision", Map.of("decision", "approve"), Map.class);
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            Map<String, Object> finished = rest.getForObject("/jobs/" + jobId, Map.class);
+            assertThat(finished).containsEntry("status", "approved");
+            assertThat(String.valueOf(finished.get("result")))
+                    .as("an approved job has to be able to hand back the card, or deciding bought "
+                            + "nothing a caller can read")
+                    .contains("Blender MixerPro 800");
+        });
+    }
+
+    @Test
+    void aRejectionIsAnOutcomeWithItsOwnStateRatherThanAFailure() {
+        String jobId = submitAndAwaitAHuman("decision-rejects");
+
+        rest.postForEntity("/jobs/" + jobId + "/decision", Map.of("decision", "reject"), Map.class);
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                        .containsEntry("status", "rejected"));
+    }
+
+    @Test
+    void aDecisionThatIsNeitherApproveNorRejectIsRefused() {
+        String jobId = submitAndAwaitAHuman("decision-nonsense");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "maybe"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().get("error").toString())
+                .as("the caller has to be told what it may say, not merely that it was wrong")
+                .contains("approve")
+                .contains("reject");
+    }
+
+    @Test
+    void aDecisionForAnUnknownJobIsNotFound() {
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/no-such-job/decision",
+                Map.of("decision", "approve"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private String submitAndAwaitAHuman(String idempotencyKey) {
+        givenAnApprovingReviewer();
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Idempotency-Key", idempotencyKey + "-" + System.nanoTime());
+
+        ResponseEntity<Map> submitted = rest.exchange("/jobs", HttpMethod.POST,
+                new HttpEntity<>(Map.of("supplierText", "Blender MixerPro 800. Power 800 W."), headers),
+                Map.class);
+        String jobId = (String) submitted.getBody().get("id");
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                        .containsEntry("status", "awaiting_human"));
+        return jobId;
     }
 }

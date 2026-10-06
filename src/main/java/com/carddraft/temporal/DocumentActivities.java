@@ -1,45 +1,40 @@
 package com.carddraft.temporal;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
-import org.springframework.stereotype.Component;
-
-import com.carddraft.documents.DocumentService;
+import io.temporal.activity.ActivityInterface;
+import io.temporal.activity.ActivityMethod;
 
 /**
- * Runs document parsing as a durable step.
+ * The steps that turn a recorded document into a searchable one.
  *
- * <p>Parsing blocks — it reads a file off disk and writes rows — so it belongs in an activity where
- * blocking is allowed, never in workflow code. The workflow holds only the identifier and the
- * outcome.
+ * <p>An activity rather than a call from the upload endpoint, for two reasons that point the same
+ * way. Both steps block and can take minutes for a large file, which is not something an HTTP
+ * request thread should be holding; and they are the steps most likely to fail for reasons outside
+ * the service's control — an unreadable file, a model server that is not up yet — which is exactly
+ * what an engine with its own retry policy is for.
  *
- * <p>The bytes travel through the activity rather than through history: a document can be tens of
- * megabytes and history is bounded at roughly fifty megabytes per process, so passing content as
- * an argument would spend the entire budget on one job. The activity re-reads the file from the
- * path it is given, which is why that path is part of the request.
+ * <p>Two steps rather than one because they can fail differently and mean different things. A parse
+ * that cannot read the file is the document's own fault and ends in a refusal with a reason. An
+ * embedding that cannot reach the model server is nobody's fault, is worth retrying, and must not
+ * cost the caller their document — so it leaves the document where it is and the engine decides.
+ *
+ * <p>The identifier is the only argument. The bytes live in the database, which is the reason the
+ * workflow can be replayed at all: an argument carrying the file would put it into the history,
+ * where it would occupy the same budget every step's input and output shares.
  */
-@Component
-public class DocumentActivities {
+@ActivityInterface
+public interface DocumentActivities {
 
-    private final DocumentService documentService;
+    @ActivityMethod
+    DocumentResult parse(String documentId);
 
-    public DocumentActivities(DocumentService documentService) {
-        this.documentService = documentService;
-    }
+    @ActivityMethod
+    DocumentResult index(String documentId);
 
-    public record DocumentResult(String documentId, String state, int chunkCount, String reason) {
-    }
-
-    public DocumentResult process(String documentId, String filename, String path) {
-        try {
-            byte[] content = Files.readAllBytes(Path.of(path));
-            var document = documentService.process(documentId, filename, content);
-            return new DocumentResult(document.id(), document.state(), document.chunkCount(),
-                    document.rejectionReason());
-        } catch (IOException e) {
-            throw new IllegalStateException("could not read " + path, e);
-        }
+    /**
+     * What the parse achieved, as something a caller can answer on without opening the database.
+     *
+     * @param chunkCount zero when the document was refused, and the reason says why
+     */
+    record DocumentResult(String documentId, String state, int chunkCount, String reason) {
     }
 }

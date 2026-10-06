@@ -22,6 +22,12 @@ import java.util.Map;
  * @param characteristicTotal  how many characteristics were judged, so a share is readable next to
  *                            its denominator. A precision of 1.0 over three claims is not the same
  *                            as 1.0 over thirty, and a bare ratio hides that.
+ * @param supportUnavailableReason why the support judge could not be asked, or null when it was.
+ *                            Kept apart from {@code sourceSupport} because the two are the same
+ *                            number and different facts: a card whose claims were all found
+ *                            unsupported scores zero, and a card nobody judged scores zero, and a
+ *                            report that prints both as 0.000 is claiming a measurement it never
+ *                            made.
  */
 public record DocumentMetrics(String document,
                               double characteristicMatch,
@@ -29,16 +35,36 @@ public record DocumentMetrics(String document,
                               double sourceSupport,
                               int characteristicTotal,
                               List<String> missedCharacteristics,
-                              List<String> unsupportedClaims) {
+                              List<String> unsupportedClaims,
+                              String supportUnavailableReason) {
 
     public DocumentMetrics {
         missedCharacteristics = missedCharacteristics == null ? List.of() : List.copyOf(missedCharacteristics);
         unsupportedClaims = unsupportedClaims == null ? List.of() : List.copyOf(unsupportedClaims);
     }
 
-    /** No card was produced, so nothing was measured. Not the same as a card scoring zero. */
+    public DocumentMetrics(String document, double characteristicMatch, double citationPrecision,
+                           double sourceSupport, int characteristicTotal,
+                           List<String> missedCharacteristics, List<String> unsupportedClaims) {
+        this(document, characteristicMatch, citationPrecision, sourceSupport, characteristicTotal,
+                missedCharacteristics, unsupportedClaims, null);
+    }
+
+    /** Whether the support number is a measurement rather than the absence of one. */
+    public boolean supportMeasured() {
+        return supportUnavailableReason == null;
+    }
+
+    /**
+     * No card was produced, so nothing was measured. Not the same as a card scoring zero.
+     *
+     * <p>The reason is recorded as the unavailable support reason rather than as a missed
+     * characteristic, so the report cannot list the same document twice under two different
+     * headings: a document that never generated has no unmatched characteristics, because there was
+     * no card for a characteristic to be missing from.
+     */
     public static DocumentMetrics failed(String document, String reason) {
-        return new DocumentMetrics(document, 0, 0, 0, 0, List.of(reason), List.of());
+        return new DocumentMetrics(document, 0, 0, 0, 0, List.of(), List.of(), reason);
     }
 
     /**

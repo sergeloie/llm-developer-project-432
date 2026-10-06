@@ -77,6 +77,32 @@ public class JobsRepository {
                 .optional();
     }
 
+    /**
+     * A row with a caller-chosen identifier.
+     *
+     * <p>The metrics harness names its jobs after the document it measures
+     * ({@code metrics-kettle_spec.xlsx}), because the call records and the retained
+     * context point at the job by foreign key — a random identifier would leave those
+     * rows unattributable. The unique key does the racing: a repeated run finds the row
+     * rather than inserting a second one.
+     */
+    public Job createWithId(String id, String status, String payload) {
+        try {
+            jdbc.sql("""
+                            INSERT INTO jobs (id, status, payload)
+                            VALUES (:id, :status, CAST(:payload AS jsonb))
+                            """)
+                    .param("id", id)
+                    .param("status", status)
+                    .param("payload", payload)
+                    .update();
+        } catch (org.springframework.dao.DuplicateKeyException raced) {
+            return findById(id).orElseThrow(() -> new IllegalStateException(
+                    "job " + id + " collided on re-entry", raced));
+        }
+        return findById(id).orElseThrow(() -> new IllegalStateException("job " + id + " vanished after insert"));
+    }
+
     public Optional<Job> findByIdempotencyKey(String key) {
         return jdbc.sql("SELECT * FROM jobs WHERE idempotency_key = :key")
                 .param("key", key)

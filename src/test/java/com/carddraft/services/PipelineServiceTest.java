@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
@@ -40,7 +41,7 @@ class PipelineServiceTest {
     LlmClient llmClient;
 
     @Captor
-    ArgumentCaptor<List<String>> issuesCaptor;
+    ArgumentCaptor<List<ReviewIssue>> issuesCaptor;
 
     PipelineService pipeline;
 
@@ -68,7 +69,8 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of("title is longer than 60 characters")),
+                .willReturn(new CritiqueReport(Verdict.REGENERATE,
+                                List.of(new ReviewIssue("title", "title is longer than 60 characters"))),
                         new CritiqueReport(Verdict.APPROVE, List.of()));
 
         PipelineOutcome outcome = pipeline.run("supplier text");
@@ -80,7 +82,11 @@ class PipelineServiceTest {
         verify(llmClient, times(2)).draftCard(eq(FACTS), issuesCaptor.capture());
         assertThat(issuesCaptor.getAllValues().get(0)).isEmpty();
         assertThat(issuesCaptor.getAllValues().get(1))
-                .containsExactly("title is longer than 60 characters");
+                .as("the field is repeated into the line the generator reads, so it can find the "
+                        + "line it concerns in its own draft")
+                .singleElement()
+                .satisfies(issue -> assertThat(issue.asFeedback())
+                        .isEqualTo("title: title is longer than 60 characters"));
     }
 
     @Test
@@ -88,9 +94,9 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"), draft("Third"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of("issue one")),
-                        new CritiqueReport(Verdict.REGENERATE, List.of("issue two")),
-                        new CritiqueReport(Verdict.REGENERATE, List.of("issue three")));
+                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue one"))),
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue two"))),
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue three"))));
 
         PipelineOutcome outcome = pipeline.run("supplier text");
 
@@ -107,9 +113,9 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"), draft("Third"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of("a")),
-                        new CritiqueReport(Verdict.REGENERATE, List.of("b")),
-                        new CritiqueReport(Verdict.REGENERATE, List.of("c")));
+                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("a"))),
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("b"))),
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("c"))));
 
         pipeline.run("supplier text");
 

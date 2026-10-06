@@ -10,6 +10,8 @@ import io.temporal.serviceclient.WorkflowServiceStubs;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
+import io.temporal.worker.WorkerFactoryOptions;
+import io.temporal.worker.WorkerOptions;
 
 /**
  * The client and the worker, registered explicitly.
@@ -17,7 +19,7 @@ import io.temporal.worker.WorkerFactory;
  * <p>Not discovered. This SDK version has no workflow or activity implementation annotation for a
  * discovery pass to bind to — implementations are handed to
  * {@code registerWorkflowImplementationTypes} and {@code registerActivitiesImplementations} by
- * name — so an auto-discovery layer would have nothing to match, and would be one more thing whose
+ * name — so an auto-discovery layer would have nothing to match, and it would be one more thing whose
  * behaviour has to be guessed at.
  */
 @Configuration(proxyBeanMethods = false)
@@ -28,23 +30,20 @@ public class TemporalConfiguration {
      * Whether the process engine client and worker live in this application.
      *
      * <p>On by default, which is right for development and for a single deployment. Turned off
-     * where the worker runs as its own process — and in tests, which supply an isolated in-memory
-     * engine instead. That isolation matters: an embedded development server is a JVM-wide
-     * resource, so several test contexts would share one, and whichever context closed first would
-     * shut down the server the others were still polling — a failure with no error anywhere,
-     * because a worker polling a dead server simply never hears about a workflow.
+     * where the worker runs as its own process — and where the client is not needed at all, such as
+     * a test that exercises parsing or retrieval and has no business talking to an engine.
+     *
+     * <p>The address always has to resolve to something: there is no mode in which this application
+     * provides its own engine. A developer starts one with {@code docker compose up}, or with
+     * {@code temporal server start-dev} on the same port.
      */
 
     @Bean(destroyMethod = "")
     WorkflowServiceStubs workflowServiceStubs(TemporalSettings settings) {
-        if (settings.isLocal()) {
-            return WorkflowServiceStubs.newLocalServiceStubs();
-        }
         return WorkflowServiceStubs.newServiceStubs(WorkflowServiceStubsOptions.newBuilder()
                 .setTarget(settings.target())
                 .build());
     }
-
 
     /**
      * No destroy method: the client holds no resources of its own — the connection belongs to the
@@ -68,12 +67,19 @@ public class TemporalConfiguration {
      * operational reason for a second process is gone. Splitting it later is a deployment change,
      * not a code change: nothing here knows it is in the same JVM.
      */
-    @Bean(destroyMethod = "shutdown")
-    WorkerFactory workerFactory(WorkflowClient client, TemporalSettings settings, CardActivities activities) {
-        WorkerFactory factory = WorkerFactory.newInstance(client);
-        Worker worker = factory.newWorker(settings.taskQueue());
-        worker.registerWorkflowImplementationTypes(CardWorkflowImpl.class);
-        worker.registerActivitiesImplementations(activities);
+@Bean(destroyMethod = "shutdown")
+    WorkerFactory workerFactory(WorkflowClient client, TemporalSettings settings, CardActivities activities,
+                               DocumentActivities documentActivities) {
+        WorkerFactory factory = WorkerFactory.newInstance(client,
+                WorkerFactoryOptions.newBuilder()
+                        .setMaxWorkflowThreadCount(settings.maxWorkflowThreads())
+                        .build());
+        Worker worker = factory.newWorker(settings.taskQueue(),
+                WorkerOptions.newBuilder()
+                        .setMaxConcurrentActivityExecutionSize(settings.maxActivityThreads())
+                        .build());
+        worker.registerWorkflowImplementationTypes(CardWorkflowImpl.class, DocumentWorkflowImpl.class);
+        worker.registerActivitiesImplementations(activities, documentActivities);
         factory.start();
         return factory;
     }

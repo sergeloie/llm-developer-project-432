@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.llm.LlmClient;
 
@@ -29,7 +30,7 @@ public class PipelineService {
     public PipelineOutcome run(String supplierText) {
         SupplierFacts facts = llmClient.extractFacts(supplierText);
 
-        List<String> issues = List.of();
+        List<ReviewIssue> issues = List.of();
         ProductCard draft = null;
         int attempts = 0;
 
@@ -37,7 +38,7 @@ public class PipelineService {
             attempts++;
             draft = llmClient.draftCard(facts, issues);
             var report = llmClient.reviewDraft(facts, draft);
-            if (report.verdict() == com.carddraft.agents.Verdict.APPROVE) {
+            if (report != null && report.verdict() == com.carddraft.agents.Verdict.APPROVE) {
                 return new PipelineOutcome(draft, attempts, PipelineVerdict.APPROVED, draft.awaitsHuman(settings.confidenceThreshold()));
             }
             issues = report.issues();

@@ -12,6 +12,11 @@ import org.springframework.validation.annotation.Validated;
 
 /**
  * Model settings, bound and validated at startup.
+ *
+ * <p>No timeout here on purpose. The request ceiling belongs to the transport, so it lives
+ * with {@code spring.ai.openai.chat.timeout} and reads the same {@code CARD_LLM_TIMEOUT}
+ * variable. A second timeout on this record was dead configuration: nothing read it, and
+ * two ceilings that can disagree are worse than one.
  */
 @Validated
 @ConfigurationProperties("card.llm")
@@ -22,8 +27,6 @@ public record LlmSettings(
 
         /** Reviews, classifies, screens for injection and judges. */
         @DefaultValue("qwen/qwen3-4b-2507") @NotBlank String utilityModel,
-
-        @DefaultValue("120s") @NotNull Duration timeout,
 
         /**
          * Attempts for one call, including the first. Three is deliberate: past that, a provider

@@ -18,6 +18,7 @@ import io.temporal.client.WorkflowOptions;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextChunk;
@@ -102,7 +103,7 @@ class CardRetrievalWorkflowTest {
         await().atMost(Duration.ofSeconds(10))
                 .until(() -> activities.generateFromContextCalls.get() >= 2);
 
-        List<String> lastRound = activities.contextIssuesSeen.get(
+        List<ReviewIssue> lastRound = activities.contextIssuesSeen.get(
                 activities.contextIssuesSeen.size() - 1);
         assertThat(activities.contextIssuesSeen)
                 .as("the first round has nothing to fix; the second is told which claim cited what")
@@ -110,7 +111,7 @@ class CardRetrievalWorkflowTest {
         assertThat(lastRound)
                 .as("and the last round is the one that carries the failure back")
                 .isNotEmpty()
-                .allSatisfy(issue -> assertThat(issue).contains("C9"));
+                .allSatisfy(issue -> assertThat(issue.asFeedback()).contains("C9"));
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
         resultOf(workflowId);
@@ -159,10 +160,37 @@ class CardRetrievalWorkflowTest {
                 .as("the reviewer's words reach the model, not just a rejection flag")
                 .isNotEmpty()
                 .anySatisfy(round -> assertThat(round)
-                        .anyMatch(issue -> issue.contains("quiet operation")));
+                        .anyMatch(issue -> issue.asFeedback().contains("quiet operation")));
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
         resultOf(workflowId);
+    }
+
+    /**
+     * A document that is mostly attack waits for a person without spending a generation.
+     *
+     * <p>Escalation happens before the loop rather than inside it: generating from the
+     * survivors would produce a card whose omissions nobody chose, and a card with unchosen
+     * omissions reads as complete.
+     */
+    @Test
+    void anEscalatedDocumentWaitsForAHumanWithoutGenerating() {
+        activities.escalateRetrieval("3 fragments carried injected instructions, above the budget of 2");
+        String workflowId = start("job-escalated", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision after trust escalation"
+                        .equals(statusOf(workflowId)));
+
+        assertThat(activities.generateFromContextCalls.get())
+                .as("no generation runs on an escalated document")
+                .isZero();
+        assertThat(activities.statuses)
+                .containsSubsequence("retrieving", "awaiting_human");
+
+        client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
+        WorkflowResult result = resultOf(workflowId);
+        assertThat(result.humanDecision()).isEqualTo("approve");
     }
 
     /** The hints and documents reach retrieval rather than being dropped on the floor. */
@@ -227,7 +255,7 @@ class CardRetrievalWorkflowTest {
         private final CitationVerifier verifier = new CitationVerifier();
 
         final List<String> statuses = new ArrayList<>();
-        final List<List<String>> contextIssuesSeen = new ArrayList<>();
+        final List<List<ReviewIssue>> contextIssuesSeen = new ArrayList<>();
         final List<String> hintsSeen = new ArrayList<>();
         final List<List<String>> documentIdsSeen = new ArrayList<>();
         final AtomicInteger generateFromContextCalls = new AtomicInteger();
@@ -235,9 +263,14 @@ class CardRetrievalWorkflowTest {
 
         private volatile String citation = "C1";
         private volatile String reviewerIssue;
+        private volatile String escalationReason;
 
         void cite(String characteristic, String reference) {
             this.citation = reference;
+        }
+
+        void escalateRetrieval(String reason) {
+            this.escalationReason = reason;
         }
 
         void rejectReviewWith(String issue) {
@@ -250,7 +283,7 @@ class CardRetrievalWorkflowTest {
         }
 
         @Override
-        public synchronized String generateDraft(String jobId, String factsJson, List<String> issues) {
+        public synchronized String generateDraft(String jobId, String factsJson, List<ReviewIssue> issues) {
             return "{\"title\":\"facts branch\"}";
         }
 
@@ -260,17 +293,21 @@ class CardRetrievalWorkflowTest {
         }
 
         @Override
-        public synchronized String retrieveAndAssemble(String jobId, String productHint,
-                                                       List<String> documentIds) {
+        public synchronized RetrievedContext retrieveAndAssemble(String jobId, String productHint,
+                                                                 List<String> documentIds) {
             retrieveCalls.incrementAndGet();
             hintsSeen.add(productHint);
             documentIdsSeen.add(List.copyOf(documentIds));
-            return "[C1] Characteristics — Capacity 1.7 l";
+            if (escalationReason != null) {
+                return new RetrievedContext("", List.of("C1", "C2", "C3"), List.of(),
+                        true, escalationReason);
+            }
+            return RetrievedContext.clean("[C1] Characteristics — Capacity 1.7 l");
         }
 
         @Override
         public synchronized String generateFromContext(String jobId, String contextText,
-                                                       List<String> issues) {
+                                                       List<ReviewIssue> issues) {
             generateFromContextCalls.incrementAndGet();
             contextIssuesSeen.add(List.copyOf(issues));
             return "{\"title\":\"kettle\",\"sources\":{\"Power\":\"" + citation + "\"}}";
@@ -280,7 +317,7 @@ class CardRetrievalWorkflowTest {
         public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText,
                                                                    String draftJson) {
             return new ReviewOutcome(reviewerIssue == null, reviewerIssue == null
-                    ? List.of() : List.of(reviewerIssue));
+                    ? List.of() : List.of(new ReviewIssue("Power", reviewerIssue)));
         }
 
         /**
@@ -304,6 +341,10 @@ class CardRetrievalWorkflowTest {
 
         @Override
         public void countAttempt(String jobId) {
+        }
+
+        @Override
+        public void recordOutcome(String jobId, String status, String draftJson) {
         }
 
         @Override

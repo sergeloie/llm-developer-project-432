@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.ContextChunk;
 import com.carddraft.llm.JobLogContext;
@@ -37,6 +38,8 @@ import com.carddraft.llm.JobLogContext;
 @Component
 @ConditionalOnProperty(name = "card.metrics.enabled", havingValue = "true")
 public class MetricsRunner implements ApplicationRunner {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MetricsRunner.class);
 
     private static final Path GOLDEN = Path.of("data", "golden_cards.json");
     private static final Path OUTPUT = Path.of("build", "reports", "metrics");
@@ -88,18 +91,35 @@ public class MetricsRunner implements ApplicationRunner {
      *
      * <p>Measured against the reference rather than against what the card happened to say. A metric
      * scored on the card's own terms is satisfied by a short card: fewer claims, no misses.
+     *
+     * <p>A document whose model calls could not be satisfied is recorded as failed rather than
+     * allowed to end the run. This method is an {@code ApplicationRunner}'s whole work, and one
+     * unusable answer escaping it fails the application context — so a single document that
+     * generates badly costs the measurements for every document that would have succeeded, which
+     * is the exact inversion a metrics harness exists to avoid. The failure is still visible: it
+     * appears in the report as a failed document carrying the reason.
      */
     private DocumentMetrics measure(String document, Map<String, String> expected) {
         if (expected.isEmpty()) {
             return DocumentMetrics.failed(document, "the reference set records no characteristics");
         }
 
-        AssembledContext context = cards.generate(document);
-        if (context == null || context.isEmpty()) {
+        AssembledContext context;
+        ProductCard card;
+        try {
+            CardGenerator.Generated generated = cards.generate(document);
+            context = generated.context();
+            card = generated.card();
+        } catch (RuntimeException e) {
+            log.warn("metrics_document_failed document={} stage=generate error={}", document, e.toString());
+            return DocumentMetrics.failed(document,
+                    "no usable card could be generated: " + e.getMessage());
+        }
+
+        if (context == null || context.isEmpty() || card == null) {
             return DocumentMetrics.failed(document, "no card could be generated from this document");
         }
 
-        ProductCard card = cards.lastCard();
         List<String> missed = new ArrayList<>();
         int matched = 0;
         for (Map.Entry<String, String> characteristic : expected.entrySet()) {
@@ -118,7 +138,7 @@ public class MetricsRunner implements ApplicationRunner {
 
         List<ContextChunk> cited = new ArrayList<>();
         for (String reference : card.sources().values()) {
-            context.find(reference).ifPresent(cited::add);
+            context.find(canonicalReference(reference)).ifPresent(cited::add);
         }
 
         SupportJudgement judgement = judge.judge(card, cited);
@@ -127,7 +147,8 @@ public class MetricsRunner implements ApplicationRunner {
                 : (double) countRealCitations(cited, card.sources().size()) / card.sources().size();
 
         return new DocumentMetrics(document, match, precision, judgement.score(card.characteristics().size()), expected.size(),
-                missed, judgement.unsupportedAmong(List.copyOf(card.characteristics().keySet())));
+                missed, judgement.unsupportedAmong(List.copyOf(card.characteristics().keySet())),
+                judgement.measured() ? null : judgement.unavailableReason());
     }
 
     /**
@@ -139,6 +160,10 @@ public class MetricsRunner implements ApplicationRunner {
      *
      * <p>Distinct labels are counted, so a card that cites C1 for four characteristics is one
      * good citation rather than four.
+     *
+     * <p>Known limit: this counts existence in the retained context, not whether the fragment
+     * text really contains the cited value. A card that cites the right label for the wrong
+     * value still scores here; that case is caught by the support judge instead.
      */
     private int countRealCitations(List<ContextChunk> cited, int declared) {
         if (declared == 0) {
@@ -148,19 +173,62 @@ public class MetricsRunner implements ApplicationRunner {
         return (int) Math.min(distinct, declared);
     }
 
+    /**
+     * The mean of one metric, as a package-private seam so a test can pin which documents it counted.
+     *
+     * <p>Visible rather than private because the exclusion above is a claim about what the report
+     * asserts, and a claim that cannot be read from a test is one that quietly stops being true.
+     */
+    double averageForTest(List<DocumentMetrics> results, int index) {
+        return average(results, index);
+    }
+
+    /**
+     * One document's metrics, as a package-private seam so a test can pin what a failed document
+     * records.
+     *
+     * <p>Visible for the same reason as {@link #averageForTest}: the behaviour being claimed — that
+     * a bad document is recorded rather than thrown — is invisible from outside the runner.
+     */
+    DocumentMetrics measureForTest(String document, Map<String, String> expected) {
+        return measure(document, expected);
+    }
+
+    /**
+     * The mean of one metric across the documents it was measured on.
+     *
+     * <p>Support averages over the documents whose judge answered and no others. Including a
+     * document the judge never reached would drag the average down by a number that records the
+     * harness's own failure rather than the card's quality — and a metric that falls because the
+     * measurement broke is one nobody can act on.
+     */
     private double average(List<DocumentMetrics> results, int index) {
-        if (results.isEmpty()) {
+        List<DocumentMetrics> measured = index == 2
+                ? results.stream().filter(DocumentMetrics::supportMeasured).toList()
+                : results;
+        if (measured.isEmpty()) {
             return 0;
         }
         double total = 0;
-        for (DocumentMetrics metrics : results) {
+        for (DocumentMetrics metrics : measured) {
             total += switch (index) {
                 case 0 -> metrics.characteristicMatch();
                 case 1 -> metrics.citationPrecision();
                 default -> metrics.sourceSupport();
             };
         }
-        return total / results.size();
+        return total / measured.size();
+    }
+
+    private static String canonicalReference(String written) {
+        if (written == null || written.length() < 3) {
+            return written;
+        }
+        if (written.startsWith("[") && written.endsWith("]")) {
+            String inner = written.substring(1, written.length() - 1);
+            return inner.isBlank() ? written : inner;
+        }
+        return written;
     }
 
     /** Whether to measure the whole reference set or its declared default. */

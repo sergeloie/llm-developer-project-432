@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.ContextChunk;
 import com.carddraft.llm.LlmClient;
 
@@ -30,6 +31,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class SupportJudge {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SupportJudge.class);
+
     private final LlmClient llm;
     private final ObjectMapper mapper;
 
@@ -38,9 +41,26 @@ public class SupportJudge {
         this.mapper = mapper;
     }
 
+    /**
+     * Asks the model, and reports honestly when it could not be asked.
+     *
+     * <p>Records the failure rather than propagating it, because this judge measures a card and is
+     * not allowed to end the run: a harness that stops at the first unreadable answer produces no
+     * measurement, which is the opposite of what it exists for. The distinction from a low score is
+     * carried in the returned judgement rather than lost — an unavailable judge scores zero, the
+     * same non-flattering reading an empty answer gets, and the report says the number was never
+     * measured instead of printing a zero that reads like a verdict.
+     */
     public SupportJudgement judge(ProductCard card, List<ContextChunk> citedFragments) {
-        String answer = llm.judgeSupport(prompt(card, citedFragments));
-        return parseAnswer(answer);
+        try {
+            return llm.judgeSupport(prompt(card, citedFragments));
+        } catch (RuntimeException e) {
+            // Warn, not error, and not retried here: the call already used the client's own retry
+            // and repair policy, and a third attempt would mean a measurement costing three
+            // generations to obtain none.
+            log.warn("support_judge_unavailable document={} error={}", card.title(), e.toString());
+            return SupportJudgement.unavailable(e.getMessage());
+        }
     }
 
     String prompt(ProductCard card, List<ContextChunk> citedFragments) {
@@ -80,25 +100,5 @@ public class SupportJudge {
         } catch (tools.jackson.core.JacksonException e) {
             throw new IllegalArgumentException("could not render the card for the judge", e);
         }
-    }
-
-    /**
-     * Reads the verdict, defaulting to "unsupported" for anything the judge omitted.
-     *
-     * <p>Defaulting to supported would be the flattering choice and the wrong one: a judge that
-     * silently skipped a claim has not checked it, and counting that as a pass would make a broken
-     * judge look like a good card.
-     */
-    SupportJudgement parseAnswer(String answer) {
-        var root = mapper.readTree(answer);
-        var supported = root.path("supported");
-        var reasoning = root.path("reasoning");
-
-        java.util.Map<String, Boolean> verdicts = new java.util.LinkedHashMap<>();
-        java.util.Map<String, String> reasons = new java.util.LinkedHashMap<>();
-        supported.properties().forEach(entry -> verdicts.put(entry.getKey(), entry.getValue().asBoolean(false)));
-        reasoning.properties().forEach(entry -> reasons.put(entry.getKey(), entry.getValue().asString("")));
-
-        return new SupportJudgement(verdicts, reasons);
     }
 }

@@ -1,10 +1,9 @@
 package com.carddraft.core;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,17 +13,18 @@ import org.springframework.stereotype.Component;
  * <p>The extension check earns its place. {@code CREATE EXTENSION vector} activates something
  * already compiled in, so a wrong database image produces a schema that migrates cleanly and
  * then fails at the first search. Reporting it here turns that into a startup-time fact.
+ *
+ * <p>Reads through {@code JdbcClient} like every other query in the service. The probe used
+ * to borrow raw connections from a hand-rolled pool wrapper; that wrapper existed for one
+ * caller, and one caller is not a reason to keep a second way of reaching the database.
  */
 @Component
 public class ReadinessProbe {
 
-    private static final String VECTOR_VERSION_SQL =
-            "SELECT extversion FROM pg_extension WHERE extname = 'vector'";
+    private final JdbcClient jdbc;
 
-    private final Database database;
-
-    public ReadinessProbe(Database database) {
-        this.database = database;
+    public ReadinessProbe(JdbcClient jdbc) {
+        this.jdbc = jdbc;
     }
 
     public Map<String, Object> check() {
@@ -41,25 +41,26 @@ public class ReadinessProbe {
     }
 
     private Map<String, Object> databaseCheck() {
-        try (var connection = database.connection();
-             var statement = connection.createStatement()) {
-            return statement.execute("SELECT 1") ? up() : down("query returned no result set");
-        } catch (SQLException e) {
+        try {
+            Integer answer = jdbc.sql("SELECT 1").query(Integer.class).single();
+            return Integer.valueOf(1).equals(answer) ? up() : down("query returned no result set");
+        } catch (RuntimeException e) {
             return down(e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
     private Map<String, Object> vectorExtensionCheck() {
-        try (var connection = database.connection();
-             var statement = connection.prepareStatement(VECTOR_VERSION_SQL);
-             ResultSet result = statement.executeQuery()) {
-            if (!result.next()) {
-                return down("extension not installed in this database");
-            }
-            Map<String, Object> check = up();
-            check.put("version", result.getString(1));
-            return check;
-        } catch (SQLException e) {
+        try {
+            return jdbc.sql("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                    .query(String.class)
+                    .optional()
+                    .map(version -> {
+                        Map<String, Object> check = up();
+                        check.put("version", version);
+                        return check;
+                    })
+                    .orElseGet(() -> down("extension not installed in this database"));
+        } catch (RuntimeException e) {
             return down(e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }

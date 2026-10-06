@@ -3,6 +3,7 @@ package com.carddraft.routers;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,10 +15,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import tools.jackson.databind.ObjectMapper;
 
-import com.carddraft.context.JobContextRepository;
+import com.carddraft.repositories.JobContextRepository;
+import com.carddraft.documents.DocumentService;
+import com.carddraft.repositories.DocumentsRepository;
 import com.carddraft.repositories.JobsRepository;
 import com.carddraft.services.GenerationSettings;
 import com.carddraft.temporal.CardWorkflowService;
+import com.carddraft.temporal.JobState;
 import com.carddraft.temporal.WorkflowRequest;
 
 /**
@@ -32,17 +36,23 @@ import com.carddraft.temporal.WorkflowRequest;
 @RequestMapping("/jobs")
 public class JobsController {
 
+    /** The only two answers, and they travel to the workflow exactly as they are written here. */
+    private static final String DECISION_APPROVE = "approve";
+    private static final String DECISION_REJECT = "reject";
+
     private final JobsRepository jobs;
     private final CardWorkflowService workflows;
+    private final DocumentService documents;
     private final GenerationSettings generationSettings;
     private final JobContextRepository contexts;
     private final ObjectMapper mapper;
 
-    public JobsController(JobsRepository jobs, CardWorkflowService workflows,
+    public JobsController(JobsRepository jobs, CardWorkflowService workflows, DocumentService documents,
                           GenerationSettings settings, JobContextRepository contexts,
                           ObjectMapper mapper) {
         this.jobs = jobs;
         this.workflows = workflows;
+        this.documents = documents;
         this.generationSettings = settings;
         this.contexts = contexts;
         this.mapper = mapper;
@@ -60,6 +70,13 @@ public class JobsController {
      */
     public record SubmitJobRequest(String supplierText, java.util.List<String> documentIds,
                                    String productHint) {
+    }
+
+    /**
+     * @param decision {@code approve} or {@code reject}; case and surrounding space are ignored,
+     *                 because this is a person's answer rather than a machine's enum
+     */
+    public record DecisionRequest(String decision) {
     }
 
     @PostMapping
@@ -84,6 +101,19 @@ public class JobsController {
                     "supply supplierText, documentIds, or both - a job needs something to work from");
         }
 
+        Map<String, String> notIndexed = documentsNotIndexed(documentIds);
+        if (!notIndexed.isEmpty()) {
+            // Refused rather than accepted and failed later, for the same reason. A card built from
+            // a document whose chunks do not exist yet is a card built from nothing, and it would
+            // report itself as a confident refusal of the product rather than as a job that ran
+            // before its input was ready. The state is returned per document so a caller can tell
+            // work still in progress from a document that will never be searchable.
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "these documents are not indexed; poll GET /documents/{id} until the "
+                            + "state is indexed, and submit again",
+                    "documents", notIndexed));
+        }
+
         JobsRepository.JobCreation creation = jobs.createOrFindByIdempotencyKey(
                 idempotencyKey, "pending", mapper.writeValueAsString(payload));
 
@@ -100,6 +130,83 @@ public class JobsController {
         }
 
         return ResponseEntity.accepted().body(Map.of("id", job.id(), "status", job.status()));
+    }
+
+    /**
+     * The person's answer, and the only way a job ever leaves {@code awaiting_human}.
+     *
+     * <p>202 rather than 200: the decision has been taken and the card has not been written yet, so
+     * the client polls {@code GET /jobs/{jobId}} for the outcome and the card. Answering with the
+     * card here would mean holding the connection for as long as the write takes, and the write is a
+     * database statement.
+     *
+     * <p>Idempotent on purpose. A person clicking twice, or a client retrying after a timeout, must
+     * not receive an error for doing something that has already happened — so a job that has already
+     * reached a terminal state is reported as it stands. A decision that is not one of the two is
+     * refused with both of them named, since a caller guessing at the vocabulary has to be told it.
+     */
+    @PostMapping("/{jobId}/decision")
+    public ResponseEntity<Map<String, Object>> decide(@PathVariable String jobId,
+                                                     @RequestBody DecisionRequest request) {
+        JobsRepository.Job job = jobs.findById(jobId).orElse(null);
+        if (job == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String decision = normalise(request.decision());
+        if (decision == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "decision must be approve or reject"));
+        }
+
+        if (JobState.fromWireName(job.status()).isTerminal()) {
+            return ResponseEntity.ok(describe(job));
+        }
+        if (!workflows.exists(jobId)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "no process is waiting on a decision for this job; its state is "
+                            + job.status()));
+        }
+
+        if (DECISION_APPROVE.equals(decision)) {
+            workflows.approve(jobId);
+        } else {
+            workflows.reject(jobId);
+        }
+        return ResponseEntity.accepted().body(Map.of("id", jobId, "status", job.status()));
+    }
+
+    /** The decision as the workflow spells it, or null when it is not one of the two. */
+    private String normalise(String decision) {
+        if (decision == null) {
+            return null;
+        }
+        String spoken = decision.strip().toLowerCase(java.util.Locale.ROOT);
+        return switch (spoken) {
+            case DECISION_APPROVE, DECISION_REJECT -> spoken;
+            default -> null;
+        };
+    }
+
+/**
+     * The named documents that cannot be retrieved from yet, each with the state it is in.
+     *
+     * <p>An identifier nobody has is reported alongside the rest as {@code unknown}, rather than
+     * filtered out: a caller that mistyped an identifier and one that named a document whose parse
+     * is still running both submitted a job that cannot work, and only one of them can tell which
+     * from this response.
+     */
+    private Map<String, String> documentsNotIndexed(java.util.List<String> documentIds) {
+        Map<String, String> states = new LinkedHashMap<>();
+        for (String documentId : documentIds) {
+            String state = documents.find(documentId)
+                    .map(DocumentsRepository.DocumentRow::state)
+                    .orElse("unknown");
+            if (!"indexed".equals(state)) {
+                states.put(documentId, state);
+            }
+        }
+        return states;
     }
 
     /**

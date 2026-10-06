@@ -2,6 +2,7 @@ package com.carddraft.trust;
 
 import org.springframework.stereotype.Component;
 
+import com.carddraft.agents.ModelVerdict;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.context.ContextChunk;
 
@@ -38,10 +39,8 @@ public class InjectionModel {
      */
     public boolean clears(ContextChunk fragment, InjectionDetector.RuleVerdict rules) {
         try {
-            String answer = llm.judgeInjection(detector.prompt(fragment.text()));
-            var parsed = new tools.jackson.databind.ObjectMapper().readTree(answer);
-            boolean suspicious = parsed.path("suspicious").asBoolean(true);
-            return !suspicious;
+            ModelVerdict verdict = llm.judgeInjection(detector.prompt(fragment.text()));
+            return !verdict.suspicious();
         } catch (RuntimeException e) {
             // Logged at warn, not error, and not retried here: the call already used the client's
             // own retry policy, and a third attempt would mean a security decision costing three

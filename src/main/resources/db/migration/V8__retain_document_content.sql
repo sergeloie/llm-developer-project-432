@@ -1,0 +1,18 @@
+-- The uploaded bytes, so a document can be parsed after the request that carried them has ended.
+--
+-- An upload is accepted before it is parsed, and the parse is retryable independently of the
+-- request that started it. Both require the content to outlive the request, and each alternative
+-- costs something worth stating rather than leaving to be discovered:
+--
+--   * a filesystem inside the service turns a deployment detail into application state, and the
+--     path would have to survive a container restart as well as a process restart;
+--   * passing the bytes as a workflow argument spends the history budget that CardActivities
+--     already documents as about fifty megabytes, on a single document.
+--
+-- Nullable on purpose. A row without content cannot be parsed, and the service treats that as a
+-- refusal with a reason rather than as a broken document. NOT NULL here would instead turn the
+-- column's introduction into a migration failure on any database already holding documents.
+--
+-- Deliberately absent from DOCUMENT_COLUMNS in DocumentsRepository: every read of a document row
+-- would otherwise carry up to the upload limit in memory for a payload almost none of them use.
+ALTER TABLE documents ADD COLUMN content BYTEA;

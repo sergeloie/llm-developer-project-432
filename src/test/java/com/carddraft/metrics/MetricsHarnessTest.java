@@ -10,12 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.carddraft.agents.ProductCard;
+import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.ContextChunk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * The harness's own arithmetic, which is the part that decides what the numbers mean.
@@ -121,10 +123,8 @@ class MetricsHarnessTest {
      */
     @Test
     void aClaimTheJudgeOmittedCountsAsUnsupported() {
-        SupportJudgement judgement = new SupportJudge(mock(com.carddraft.llm.LlmClient.class),
-                new tools.jackson.databind.ObjectMapper()).parseAnswer("""
-                {"supported":{"Power":true},"reasoning":{"Power":"the fragment says 800 W"}}
-                """);
+        SupportJudgement judgement = new SupportJudgement(Map.of("Power", true),
+                Map.of("Power", "the fragment says 800 W"));
 
         assertThat(judgement.score(2))
                 .as("the denominator is what was asked about, not what the judge chose to answer - "
@@ -137,8 +137,7 @@ class MetricsHarnessTest {
 
     @Test
     void aJudgeThatAnsweredNothingScoresZeroRatherThanOne() {
-        SupportJudgement judgement = new SupportJudge(mock(com.carddraft.llm.LlmClient.class),
-                new tools.jackson.databind.ObjectMapper()).parseAnswer("{}");
+        SupportJudgement judgement = new SupportJudgement(Map.of(), Map.of());
 
         assertThat(judgement.score()).isZero();
         assertThat(judgement.unsupported()).isEmpty();
@@ -146,13 +145,87 @@ class MetricsHarnessTest {
 
     @Test
     void aFullySupportedCardScoresOne() {
-        SupportJudgement judgement = new SupportJudge(mock(com.carddraft.llm.LlmClient.class),
-                new tools.jackson.databind.ObjectMapper()).parseAnswer("""
-                {"supported":{"Power":true,"Volume":true}}
-                """);
+        SupportJudgement judgement = new SupportJudgement(Map.of("Power", true, "Volume", true),
+                Map.of("Power", "C1 states it", "Volume", "C2 states it"));
 
         assertThat(judgement.score()).isEqualTo(1.0);
         assertThat(judgement.unsupported()).isEmpty();
+    }
+
+    // --- a judge that could not be asked at all -------------------------------------------
+
+    /**
+     * A judge that could not be asked is not a card scoring zero.
+     *
+     * <p>Found by running {@code ./gradlew metrics -Pfull}, which ended in
+     * {@code Error starting ApplicationContext} and wrote no report: the client could not read the
+     * judge's object answer, nothing above it caught the failure, and {@code MetricsRunner} is an
+     * {@code ApplicationRunner} — so one unusable answer cost the whole run.
+     */
+    @Test
+    void aJudgeThatCannotBeAskedIsRecordedRatherThanThrown() {
+        com.carddraft.llm.LlmClient client = mock(com.carddraft.llm.LlmClient.class);
+        when(client.judgeSupport(anyString())).thenThrow(
+                new com.carddraft.llm.ModelResponseFormatException(
+                        "judgeSupport: still invalid after 2 repair attempts. Problems: cannot be read"));
+
+        SupportJudgement judgement = new SupportJudge(client, new tools.jackson.databind.ObjectMapper())
+                .judge(card(), cited());
+
+        assertThat(judgement.measured())
+                .as("a judge that never answered has not measured anything")
+                .isFalse();
+        assertThat(judgement.unavailableReason()).contains("cannot be read");
+    }
+
+    @Test
+    void theRunFinishesAndSaysSupportWasNotMeasuredRatherThanPrintingZero() {
+        com.carddraft.llm.LlmClient client = mock(com.carddraft.llm.LlmClient.class);
+        when(client.judgeSupport(anyString())).thenThrow(
+                new com.carddraft.llm.ModelResponseFormatException("unreadable"));
+
+        CardGenerator cards = mock(CardGenerator.class);
+        given(cards.generate(anyString())).willReturn(new CardGenerator.Generated(
+                new com.carddraft.context.AssembledContext(
+                        "probe", List.of(new ContextChunk("C1", 1L, "probe", 1, "Power", "Power 800 W")), 0, 0),
+                card()));
+
+        MetricsReport report = new MetricsReport("run-1", "default",
+                List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(),
+                        "the judge could not be asked")),
+                1.0, 1.0, 0.0);
+
+        String text = new MetricsReportWriter().render(report);
+
+        assertThat(text)
+                .as("0.000 here would be indistinguishable from a card whose claims were all "
+                        + "found unsupported, which is the one reading this must not convey")
+                .contains("not measured")
+                .contains("support judge unavailable")
+                .contains("the judge could not be asked");
+    }
+
+    /**
+     * A document the judge never reached must not drag the support average down.
+     *
+     * <p>The average would then record the harness's own failure as though it were the cards'
+     * quality, and a metric that falls because the measurement broke is one nobody can act on.
+     */
+    @Test
+    void theSupportAverageSkipsDocumentsTheJudgeNeverReached() {
+        List<DocumentMetrics> results = List.of(
+                new DocumentMetrics("judged.pdf", 1.0, 1.0, 1.0, 2, List.of(), List.of()),
+                new DocumentMetrics("unjudged.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(), "no judge"));
+
+        MetricsRunner runner = new MetricsRunner(mock(CardGenerator.class), mock(SupportJudge.class),
+                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false));
+
+        assertThat(runner.averageForTest(results, 2))
+                .as("0.5 would mean the cards were half unsupported, rather than that one was never judged")
+                .isEqualTo(1.0);
+        assertThat(runner.averageForTest(results, 0))
+                .as("the other two metrics were measured on every document and still average over all")
+                .isEqualTo(1.0);
     }
 
     // --- the report ----------------------------------------------------------------------
@@ -243,10 +316,70 @@ class MetricsHarnessTest {
 
         assertThat(failed.characteristicMatch()).isZero();
         assertThat(failed.characteristicTotal()).isZero();
-        assertThat(failed.missedCharacteristics()).containsExactly("no text layer");
+        assertThat(failed.supportUnavailableReason()).isEqualTo("no text layer");
+        assertThat(failed.missedCharacteristics())
+                .as("no card means no characteristic is missing from one, so the reason belongs to "
+                        + "the document rather than to the match")
+                .isEmpty();
         assertThat(failed.weakestMetric())
                 .as("three zeros tie, and the first is reported rather than an arbitrary one")
                 .isEqualTo("characteristic match");
+    }
+
+    /**
+     * One document that could not be measured still belongs in the report.
+     *
+     * <p>Recorded as failed rather than allowed to escape, because {@code MetricsRunner} is an
+     * {@code ApplicationRunner}: an exception here fails the application context, so a single
+     * document whose model calls could not be satisfied would cost the measurements for every
+     * document that would have succeeded.
+     *
+     * <p>Found by running {@code ./gradlew metrics -Pfull} after the support judge's shape was
+     * fixed — the same escape, reached through {@code draftCardFromContext} instead.
+     */
+    @Test
+    void aDocumentThatCannotBeGeneratedIsRecordedRatherThanEndingTheRun() {
+        CardGenerator cards = mock(CardGenerator.class);
+        when(cards.generate(anyString())).thenThrow(new com.carddraft.llm.ModelResponseFormatException(
+                "still invalid after 2 repair attempts. Problems: sources names "
+                        + "'Корпус не обжигает' but there is no such characteristic"));
+
+        MetricsRunner runner = new MetricsRunner(cards, judge(),
+                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false));
+
+        assertThat(runner.measureForTest("kettle_manual.pdf", Map.of("Power", "2200 W")))
+                .as("one document with an unusable model answer must not cost the run its report")
+                .satisfies(metrics -> {
+                    assertThat(metrics.supportMeasured())
+                            .as("nothing was judged, so no support number is a measurement")
+                            .isFalse();
+                    assertThat(metrics.supportUnavailableReason())
+                            .as("why the document produced nothing has to be readable, not just zero")
+                            .contains("no usable card")
+                            .contains("no such characteristic");
+                    assertThat(metrics.missedCharacteristics())
+                            .as("a document that never generated has no card for a characteristic "
+                                    + "to be missing from, and listing the failure under both headings "
+                                    + "makes the report contradict itself")
+                            .isEmpty();
+                });
+    }
+
+    @Test
+    void aDocumentThatGeneratedNothingIsListedOnceRatherThanUnderTwoHeadings(@TempDir Path directory) {
+        MetricsReport report = new MetricsReport("run-1", "full (1 document)",
+                List.of(DocumentMetrics.failed("kettle_manual.pdf", "no usable card could be generated")),
+                0, 0, 0);
+
+        String text = new MetricsReportWriter().render(report);
+
+        assertThat(text).contains("kettle_manual.pdf — support judge unavailable");
+        assertThat(text)
+                .as("the failure reason appears once, under the heading that owns it")
+                .containsOnlyOnce("no usable card could be generated");
+        assertThat(text)
+                .as("and not also as an unmatched characteristic")
+                .doesNotContain("not matched");
     }
 
     private static SupportJudge judge() {

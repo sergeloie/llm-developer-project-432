@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.carddraft.agents.ReviewIssue;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.testing.TestWorkflowEnvironment;
@@ -100,7 +101,9 @@ class CardWorkflowImplTest {
         assertThat(activities.issuesSeen.get(0)).as("the first round has no feedback").isEmpty();
         assertThat(activities.issuesSeen.get(1))
                 .as("feedback from the reviewer reaches the generator")
-                .containsExactly("title is longer than 60 characters");
+                .singleElement()
+                .satisfies(issue -> assertThat(issue.problem())
+                        .isEqualTo("title is longer than 60 characters"));
     }
 
     @Test
@@ -115,7 +118,12 @@ class CardWorkflowImplTest {
 
         WorkflowResult result = resultOf(workflowId);
         assertThat(result.humanDecision()).isEqualTo("reject");
-        assertThat(activities.statuses).containsSubsequence("awaiting_human", "rejected");
+        assertThat(activities.statuses).contains("awaiting_human");
+        assertThat(activities.outcomes)
+                .as("the terminal state is written by the step that also writes the card, so a "
+                        + "client reading the job sees both or neither")
+                .singleElement()
+                .satisfies(outcome -> assertThat(outcome).startsWith("rejected:"));
     }
 
     @Test
@@ -138,6 +146,38 @@ class CardWorkflowImplTest {
         assertThat(activities.attemptCounts)
                 .as("each round increments the database counter, so a replay cannot reset it")
                 .hasValue(3);
+    }
+
+    @Test
+    void theCardIsHandedBackWithTheOutcomeOnceAPersonHasDecided() {
+        activities.approveReview();
+        String workflowId = start("job-outcome", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
+        resultOf(workflowId);
+
+        assertThat(activities.outcomes)
+                .as("a decision that writes a state without the draft leaves a caller nothing to read")
+                .singleElement()
+                .satisfies(outcome -> assertThat(outcome)
+                        .startsWith("approved:")
+                        .contains("draft 1"));
+    }
+
+    @Test
+    void aRejectionAlsoKeepsTheDraftThePersonLookedAt() {
+        activities.approveReview();
+        String workflowId = start("job-rejected-outcome", 3);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        client.newWorkflowStub(CardWorkflow.class, workflowId).reject();
+        resultOf(workflowId);
+
+        assertThat(activities.outcomes).singleElement()
+                .satisfies(outcome -> assertThat(outcome).startsWith("rejected:"));
     }
 
     private String start(String workflowId, int maxRounds) {
@@ -183,7 +223,8 @@ class CardWorkflowImplTest {
     static class RecordingActivities implements CardActivities {
 
         final List<String> statuses = new ArrayList<>();
-        final List<List<String>> issuesSeen = new ArrayList<>();
+        final List<List<ReviewIssue>> issuesSeen = new ArrayList<>();
+        final List<String> outcomes = new ArrayList<>();
         final AtomicInteger generateCalls = new AtomicInteger();
         final AtomicInteger attemptCounts = new AtomicInteger();
 
@@ -210,7 +251,7 @@ class CardWorkflowImplTest {
         }
 
         @Override
-        public synchronized String generateDraft(String jobId, String factsJson, List<String> issues) {
+        public synchronized String generateDraft(String jobId, String factsJson, List<ReviewIssue> issues) {
             generateCalls.incrementAndGet();
             issuesSeen.add(List.copyOf(issues));
             return "{\"title\":\"draft " + generateCalls.get() + "\"}";
@@ -218,20 +259,20 @@ class CardWorkflowImplTest {
 
         @Override
         public synchronized ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson) {
-            return new ReviewOutcome(approve, approve ? List.of() : List.of(issue));
+            return new ReviewOutcome(approve, approve ? List.of() : List.of(new ReviewIssue(issue)));
         }
 
         // The retrieval branch, which this test does not exercise. Answering here rather than
         // throwing keeps the facts-branch assertions about the facts branch.
         @Override
-        public synchronized String retrieveAndAssemble(String jobId, String productHint,
-                                                       List<String> documentIds) {
-            return "[C1] context";
+        public synchronized RetrievedContext retrieveAndAssemble(String jobId, String productHint,
+                                                                 List<String> documentIds) {
+            return RetrievedContext.clean("[C1] context");
         }
 
         @Override
         public synchronized String generateFromContext(String jobId, String contextText,
-                                                       List<String> issues) {
+                                                       List<ReviewIssue> issues) {
             return "{\"title\":\"context draft\"}";
         }
 
@@ -254,6 +295,11 @@ class CardWorkflowImplTest {
         @Override
         public synchronized void countAttempt(String jobId) {
             attemptCounts.incrementAndGet();
+        }
+
+        @Override
+        public synchronized void recordOutcome(String jobId, String status, String draftJson) {
+            outcomes.add(status + ":" + draftJson);
         }
 
         @Override

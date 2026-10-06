@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Checks that every claim's citation names something the model was actually shown.
+     * Checks that every claim's citation names something the model was actually shown.
  *
  * <p>Two conditions, and the second is the one that matters.
  *
@@ -25,6 +25,12 @@ import java.util.Set;
  * <p>Pure, with no database behind it, because the second condition subsumes the first: a label in
  * the context necessarily names a chunk that exists. Existence is still checked as a defence against
  * a corrupted retention record, and reported separately so the two are distinguishable in a log.
+ *
+ * <p>References are compared exactly, and that is a security property rather than pedantry: trimming,
+ * lower-casing or otherwise forgiving would let a card write a near-miss of a real reference and pass
+ * a check it should fail. The one concession is the display form this service itself renders the
+ * fragments in — {@code [C1]} — because a model shown that notation will copy it, and a citation that
+ * is right apart from the brackets it was given is not a fabrication.
  */
 @org.springframework.stereotype.Component
 public class CitationVerifier {
@@ -81,7 +87,7 @@ public class CitationVerifier {
         Set<String> declared = sources == null ? Set.of() : new LinkedHashSet<>(sources.keySet());
 
         for (String characteristic : declared) {
-            String reference = sources.get(characteristic);
+            String reference = canonicalReference(sources.get(characteristic));
             if (reference == null || reference.isBlank()) {
                 findings.add(new Finding(characteristic, reference, Status.MISSING));
                 continue;
@@ -94,6 +100,29 @@ public class CitationVerifier {
 
         List<Finding> fabricated = findings.stream().filter(Finding::isFabricated).toList();
         return new Verdict(findings, fabricated);
+    }
+
+    /**
+     * The reference a citation names, given the text the model wrote for it.
+     *
+     * <p>Unwraps a bracketed display form and does nothing else. {@link ContextChunk#render()} shows
+     * the model {@code [C1]}, so {@code [C1]} in a card is this service's own notation rather than a
+     * different reference, and rejecting it would fail every correct citation — which is what
+     * happened: a real card's thirteen correct citations were each reported as fabricated.
+     *
+     * <p>Nothing else is forgiven. {@code c1}, {@code " C1 "} and {@code []} are each still what the
+     * model wrote, and a verifier that forgives a near-miss of a real reference cannot be the thing
+     * that catches a fabricated one. Case and surrounding space are the model's to get right.
+     */
+    private static String canonicalReference(String written) {
+        if (written == null || written.length() < 3) {
+            return written;
+        }
+        if (written.startsWith("[") && written.endsWith("]")) {
+            String inner = written.substring(1, written.length() - 1);
+            return inner.isBlank() ? written : inner;
+        }
+        return written;
     }
 
     /**

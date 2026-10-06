@@ -36,6 +36,6 @@ public record ChunkingSettings(
 
     @NotNull
     public String formats() {
-        return "pdf,docx,xlsx";
+        return "pdf,docx,xlsx,xls";
     }
 }

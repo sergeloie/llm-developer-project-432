@@ -1,5 +1,19 @@
-# Loads `.env` as a properties source when it exists, so the same file configures Docker
-# Compose and the application. `optional:` keeps the context loadable without it.
+# Configuration.
+#
+# Every setting the application binds is declared here, and every one of them reads its value
+# through a `${CARD_...:default}` placeholder. That is the whole reason this file is exhaustive,
+# and it is not a style preference.
+#
+# Spring maps an environment variable onto a `@ConfigurationProperties` name, but only for real
+# environment variables: `CARD_DB_URL` becomes `card.db.url` because `systemEnvironment` gets a
+# relaxed-binding mapper. An imported file is an ordinary properties source, and `CARD_DB_URL` is
+# not even a legal configuration-property name, so the same key sitting in `.env` is invisible to
+# the binder. A placeholder sees both, because placeholder resolution looks at every source.
+#
+# So `.env` and the process environment can use the same variable names, an export overrides the
+# file, and neither route silently fails. The alternative — relying on relaxed binding alone —
+# works for exported variables and ignores the file entirely, which is a defect that only shows up
+# on a machine whose ports differ from the defaults.
 spring:
   config:
     import: "optional:file:.env[.properties]"
@@ -8,15 +22,6 @@ spring:
   threads:
     virtual:
       enabled: true
-
-  # The application defines its own DataSource bean from these, which switches off Boot's
-  # datasource autoconfiguration. One source of truth, validated at startup.
-  db:
-    url: ${CARD_DB_URL:jdbc:postgresql://127.0.0.1:5432/card}
-    username: ${CARD_DB_USER:card}
-    password: ${CARD_DB_PASSWORD:card}
-    pool-size: ${CARD_DB_POOL_SIZE:10}
-    connection-timeout: ${CARD_DB_CONNECTION_TIMEOUT:5s}
 
   flyway:
     enabled: true
@@ -43,11 +48,29 @@ spring:
   retry:
     max-attempts: 1
 
+  jackson:
+    # Absent fields are left out of every response rather than sent as null, so a client reading
+    # a rejection reason sees the difference between "refused" and "not mentioned".
+    default-property-inclusion: non_null
+
 card:
+  db:
+    # The application defines its own DataSource bean from these, which switches off Boot's
+    # datasource autoconfiguration. One source of truth, validated at startup.
+    url: ${CARD_DB_URL:jdbc:postgresql://127.0.0.1:5432/card}
+    username: ${CARD_DB_USER:card}
+    password: ${CARD_DB_PASSWORD:card}
+    pool-size: ${CARD_DB_POOL_SIZE:10}
+    connection-timeout: ${CARD_DB_CONNECTION_TIMEOUT:5s}
+    # Negative tells the pool not to verify at startup, which is how a test comes up without a
+    # database. Positive means the service refuses to start while the database is unreachable.
+    initialization-fail-timeout-millis: ${CARD_DB_INITIALIZATION_FAIL_TIMEOUT_MILLIS:1}
+
   llm:
     main-model: ${CARD_LLM_MAIN_MODEL:qwen/qwen3.5-9b}
     utility-model: ${CARD_LLM_UTILITY_MODEL:qwen/qwen3-4b-2507}
-    timeout: ${CARD_LLM_TIMEOUT:120s}
+    # No timeout here: the ceiling is spring.ai.openai.chat.timeout above, reading the same
+    # CARD_LLM_TIMEOUT, so there is exactly one of them.
     max-attempts: ${CARD_LLM_MAX_ATTEMPTS:3}
     retry-base-delay: ${CARD_LLM_RETRY_BASE_DELAY:500ms}
     retry-max-delay: ${CARD_LLM_RETRY_MAX_DELAY:8s}
@@ -64,6 +87,7 @@ card:
 
   generation:
     max-rewrite-rounds: ${CARD_GENERATION_MAX_REWRITE_ROUNDS:3}
+    confidence-threshold: ${CARD_GENERATION_CONFIDENCE_THRESHOLD:0.7}
 
   metrics:
     # Off by default. A full run costs several minutes of local model time, and a service that
@@ -77,16 +101,62 @@ card:
     # Tolerance, not a prohibition: a false positive costs a specification, and supplier documents
     # legitimately quote a support address. The model pass on top of the rules is what makes the
     # tolerance affordable.
-    max-suspicious-chunks: ${CARD_SECURITY_MAX_SUSPICIOUS_CHUNKS:2}
+    max-suspicious-chunks: ${CARD_TRUST_MAX_SUSPICIOUS_CHUNKS:2}
+    # A fragment longer than this is treated as an opaque insertion rather than as prose.
+    max-opaque-fragment-length: ${CARD_TRUST_MAX_OPAQUE_FRAGMENT_LENGTH:120}
 
-  temporal:    # "local" runs an in-process server; otherwise host:port of the compose stack.
-    target: ${CARD_TEMPORAL_TARGET:local}
+  temporal:
+    # The process engine's address. There is no second mode: this application never provides its
+    # own engine, so the address has to resolve to something running. The compose stack publishes
+    # it here, and `temporal server start-dev` answers on the same port when the stack is not up.
+    target: ${CARD_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${CARD_TEMPORAL_NAMESPACE:default}
     task-queue: ${CARD_TEMPORAL_TASK_QUEUE:card-drafting}
     result-timeout: ${CARD_TEMPORAL_RESULT_TIMEOUT:PT0.5S}
+    max-workflow-threads: ${CARD_TEMPORAL_MAX_WORKFLOW_THREADS:100}
+    max-activity-threads: ${CARD_TEMPORAL_MAX_ACTIVITY_THREADS:200}
+    # Turned off where the worker runs as its own process, and in tests, which bring their own
+    # in-memory engine instead.
+    worker:
+      enabled: ${CARD_TEMPORAL_WORKER_ENABLED:true}
 
-  jackson:
-    default-property-inclusion: non_null
+  chunking:
+    chunk-size: ${CARD_CHUNK_SIZE:1200}
+    chunk-overlap: ${CARD_CHUNK_OVERLAP:200}
+    max-upload-bytes: ${CARD_CHUNK_MAX_UPLOAD_BYTES:26214400}
+
+  search:
+    # PROVISIONAL, and calibrated by EmbeddingThresholdCalibrationTest rather than chosen. Raise
+    # it only with a measurement behind it.
+    max-vector-distance: ${CARD_SEARCH_MAXVECTORDISTANCE:0.8}
+    # Both default to 8, and per-list-limit must be >= limit or the fusion returns a short page.
+    per-list-limit: ${CARD_SEARCH_PERLISTLIMIT:8}
+    limit: ${CARD_SEARCH_LIMIT:8}
+    # Rank-fusion constant from the original paper. Not tuned, so do not adjust it to chase scores.
+    rrf-k: ${CARD_SEARCH_RRFK:60}
+
+  context:
+    max-chunks: ${CARD_CONTEXT_MAX_CHUNKS:12}
+    max-characters: ${CARD_CONTEXT_MAX_CHARACTERS:12000}
+
+  embedding:
+    base-url: ${CARD_EMBEDDING_BASEURL:http://127.0.0.1:1234}
+    model: ${CARD_EMBEDDING_MODEL:text-embedding-embeddinggemma-300m}
+    # Must match the vector column's width, or every search fails on a dimension mismatch.
+    dimension: ${CARD_EMBEDDING_DIMENSION:768}
+    batch-size: ${CARD_EMBEDDING_BATCHSIZE:16}
+    timeout: ${CARD_EMBEDDING_TIMEOUT:120s}
+    # Task prefixes are deliberately not exposed here. They contain spaces and a trailing space,
+    # neither of which survives an environment variable reliably, and they come from the model
+    # card. See ADR-0002 for why they are applied by this service rather than by the model.
+    query-prefix: "task: search result | query: "
+    document-prefix: "title: "
+    # Embed chunks that predate the search columns. Off by default: a restart should not silently
+    # depend on a model server being up.
+    backfill-on-start: ${CARD_EMBEDDING_BACKFILLONSTART:false}
+    indexing:
+      batch-size: ${CARD_EMBEDDING_INDEXING_BATCHSIZE:16}
+      max-batches: ${CARD_EMBEDDING_INDEXING_MAX_BATCHES:1000}
 
 server:
   port: 8080

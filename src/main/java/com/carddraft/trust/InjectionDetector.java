@@ -29,6 +29,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class InjectionDetector {
 
+    private final Pattern longOpaque;
+
+    public InjectionDetector() {
+        this(new TrustSettings(2, 120));
+    }
+
+    public InjectionDetector(TrustSettings settings) {
+        this.longOpaque = Pattern.compile("\\S{" + Math.max(1, settings.maxOpaqueFragmentLength()) + ",}");
+    }
     /** A direct instruction to the model, in either language the supplied documents use. */
     private static final Pattern DIRECT_COMMAND = Pattern.compile(
             "(?iuU)\\b(ignore|disregard|forget)\\b[^.]{0,40}\\b(previous|prior|above|earlier|all)\\b[^.]{0,20}\\b"
@@ -59,15 +68,12 @@ public class InjectionDetector {
             "\\b[A-Za-z0-9+/]{40,}={0,2}\\b");
 
     /**
-     * A very long unbroken run of non-space characters.
+     * The default opaque-run length, kept for documentation.
      *
-     * <p>How an attack hides behind tokenisation rather than behind a keyword.
+     * <p>The live rule is the instance field built from {@link TrustSettings}, so the two cannot
+     * drift apart. This constant records the value the tests assume.
      */
-    private static final Pattern LONG_OPAQUE = Pattern.compile("\\S{120,}");
-
-    /** The utility model's verdict on one fragment. */
-    public record ModelVerdict(boolean suspicious, String reason) {
-    }
+    private static final int DEFAULT_OPAQUE_LENGTH = 120;
 
     /**
      * What the rules found, before any model is consulted.
@@ -99,7 +105,7 @@ public class InjectionDetector {
         check(text, ROLE_MARKER, "role marker", matched, excerpts);
         check(text, PROMPT_EXTRACTION, "prompt extraction", matched, excerpts);
         check(text, LONG_ENCODED, "long encoded insertion", matched, excerpts);
-        check(text, LONG_OPAQUE, "long opaque insertion", matched, excerpts);
+        check(text, longOpaque, "long opaque insertion", matched, excerpts);
 
         return new RuleVerdict(!matched.isEmpty(), matched, excerpts);
     }

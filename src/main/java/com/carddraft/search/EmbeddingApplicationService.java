@@ -39,15 +39,22 @@ public class EmbeddingApplicationService {
         this.settings = settings;
     }
 
-    /**
+/**
      * Embeds up to {@code batchSize} chunks, writes their vectors, and reports how many remain.
      *
      * <p>Returning the remainder rather than looping is what lets the backfill command report
      * progress and lets a caller decide whether to continue.
      */
     public int embedNextBatch() {
-        List<ChunkSearchRepository.ChunkToEmbed> pending =
-                chunks.chunksWithoutVectors(settings.batchSize());
+        return embedNextBatch(chunks.chunksWithoutVectors(settings.batchSize()));
+    }
+
+    /** The same, restricted to one document, so an upload embeds what it just parsed. */
+    public int embedNextBatch(String documentId) {
+        return embedNextBatch(chunks.chunksWithoutVectors(documentId, settings.batchSize()));
+    }
+
+    private int embedNextBatch(List<ChunkSearchRepository.ChunkToEmbed> pending) {
         if (pending.isEmpty()) {
             return 0;
         }
@@ -70,19 +77,47 @@ public class EmbeddingApplicationService {
     }
 
     /**
+     * Embeds one document's chunks and reports how many vectors it wrote.
+     *
+     * <p>Bounded rather than open-ended, for the reason {@link #embedAll} gives: a document whose
+     * parse kept writing chunks would otherwise sit here until the process died. What is left
+     * unembedded is the caller's to notice — it is why this returns a count rather than a boolean.
+     */
+    public int embedDocument(String documentId, int maxBatches) {
+        int embedded = 0;
+        for (int batch = 0; batch < maxBatches; batch++) {
+            List<ChunkSearchRepository.ChunkToEmbed> pending =
+                    chunks.chunksWithoutVectors(documentId, settings.batchSize());
+            if (pending.isEmpty()) {
+                return embedded;
+            }
+            embedded += pending.size();
+            embedNextBatch(pending);
+        }
+        log.warn("document {} still has chunks without vectors after {} batches",
+                documentId, maxBatches);
+        return embedded;
+    }
+
+    /**
      * Runs until nothing is left, and returns the number of chunks embedded.
      *
-     * <p>Bounded rather than open-ended: a chunk whose document never reaches 'indexed' stays
-     * unembedded forever, and an unbounded loop would sit there instead of reporting the stall.
+     * <p>Counting chunks rather than batches, and counting the batch that finished the job. The
+     * count is what a person reads to decide whether the sweep did anything, so a version that
+     * reported batches would claim to have embedded sixteen chunks when it had embedded nine, and
+     * zero when it had embedded everything — which is the number this once reported, having
+     * returned before adding the last batch.
      */
     public int embedAll(int maxBatches) {
         int embedded = 0;
         for (int batch = 0; batch < maxBatches; batch++) {
-            int remaining = embedNextBatch();
-            if (remaining == 0) {
+            List<ChunkSearchRepository.ChunkToEmbed> pending =
+                    chunks.chunksWithoutVectors(settings.batchSize());
+            if (pending.isEmpty()) {
                 return embedded;
             }
-            embedded += settings.batchSize();
+            embedded += pending.size();
+            embedNextBatch(pending);
         }
         log.warn("stopped after {} batches with chunks still unembedded", maxBatches);
         return embedded;

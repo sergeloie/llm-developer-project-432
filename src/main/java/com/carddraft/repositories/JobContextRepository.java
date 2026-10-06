@@ -1,9 +1,12 @@
-package com.carddraft.context;
+package com.carddraft.repositories;
 
 import java.util.List;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+
+import com.carddraft.context.AssembledContext;
+import com.carddraft.context.ContextChunk;
 
 /**
  * Retains and reads back the context a job's model was shown.

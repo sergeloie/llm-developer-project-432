@@ -45,7 +45,12 @@ public class MetricsReportWriter {
         out.append("|---|---|\n");
         out.append(row("characteristic match", report.averageCharacteristicMatch()));
         out.append(row("citation precision", report.averageCitationPrecision()));
-        out.append(row("source support (estimate)", report.averageSourceSupport()));
+        long supportCovered = report.perDocument().stream().filter(DocumentMetrics::supportMeasured).count();
+        out.append(report.perDocument().stream().anyMatch(m -> !m.supportMeasured())
+                ? "| source support (estimate) | not measured for "
+                        + (report.perDocument().size() - supportCovered) + " of "
+                        + report.perDocument().size() + " documents |\n"
+                : row("source support (estimate)", report.averageSourceSupport()));
         out.append('\n');
 
         out.append("## Per document\n\n");
@@ -55,7 +60,8 @@ public class MetricsReportWriter {
             out.append("| ").append(metrics.document())
                     .append(" | ").append(percent(metrics.characteristicMatch()))
                     .append(" | ").append(percent(metrics.citationPrecision()))
-                    .append(" | ").append(percent(metrics.sourceSupport()))
+                    .append(" | ").append(metrics.supportMeasured()
+                            ? percent(metrics.sourceSupport()) : "not measured")
                     .append(" | ").append(metrics.characteristicTotal())
                     .append(" | ").append(metrics.weakestMetric())
                     .append(" |\n");
@@ -66,6 +72,10 @@ public class MetricsReportWriter {
         out.append(report.weakestSummary()).append("\n\n");
 
         for (DocumentMetrics metrics : report.perDocument()) {
+            if (!metrics.supportMeasured()) {
+                out.append("### ").append(metrics.document()).append(" — support judge unavailable\n\n");
+                out.append(metrics.supportUnavailableReason()).append("\n\n");
+            }
             if (!metrics.missedCharacteristics().isEmpty()) {
                 out.append("### ").append(metrics.document()).append(" — not matched\n\n");
                 for (String missed : metrics.missedCharacteristics()) {

@@ -20,8 +20,18 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("card.temporal")
 public record TemporalSettings(
 
-        /** {@code local} runs an in-process server; otherwise a host:port. */
-        @DefaultValue("local") @NotBlank String target,
+        /**
+         * The process engine's address.
+         *
+         * <p>An address, and only ever an address. This used to accept the word {@code local} as a
+         * second mode, on the understanding that it would run the engine inside this process. It does
+         * not: the SDK's "local" stubs connect to 127.0.0.1:7233 and expect something to be listening
+         * there. So the setting had two spellings and one behaviour, which is worse than either — an
+         * operator who set it to {@code local} had removed no dependency at all while believing they
+         * had. The default is where the compose stack publishes the engine, which is the address a
+         * developer running {@code docker compose up} already has.
+         */
+        @DefaultValue("127.0.0.1:7233") @NotBlank String target,
 
         @DefaultValue("default") @NotBlank String namespace,
 
@@ -32,8 +42,4 @@ public record TemporalSettings(
 
         @DefaultValue("100") @Min(1) int maxWorkflowThreads,
         @DefaultValue("200") @Min(1) int maxActivityThreads) {
-
-    public boolean isLocal() {
-        return "local".equalsIgnoreCase(target);
-    }
 }

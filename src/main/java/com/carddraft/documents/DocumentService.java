@@ -12,11 +12,16 @@ import com.carddraft.agents.StructuralUnit;
 import com.carddraft.repositories.DocumentsRepository;
 
 /**
- * Parse, normalise, cut, store — and say plainly when it could not.
+ * Parse, chunk and store — and say plainly when it could not.
  *
  * <p>Document state moves as the work happens rather than only at the end, because parsing a
  * hundred-document set takes long enough that a client watching a single "new" would have no way
  * to tell progress from a hang.
+ *
+ * <p>A parsed document is left at {@code parsing}, not {@code indexed}, and the difference is the
+ * point of the vocabulary: {@code indexed} is what tells a caller the document can be *searched*, and
+ * a stored chunk with no vector is invisible to the vector index however much text it holds. The
+ * vectors are written by the indexing step that follows, and the state moves when they are.
  *
  * <p>A refusal is a first-class outcome carrying a reason. The alternative — returning an empty
  * result — produces a card with nothing in it and no explanation, which a content manager cannot
@@ -39,10 +44,16 @@ public class DocumentService {
     }
 
     /**
-     * Registers a document, or returns the existing one when this exact content has been seen.
+     * Records a document and the bytes it arrived as, or returns the existing one when this exact
+     * content has been seen.
      *
      * <p>Idempotent on content, so a client that retries an upload after a timeout does not get a
      * second document and a second set of chunks.
+     *
+     * <p>The content is stored rather than handed on, which is what makes this the whole of what an
+     * upload does. Parsing happens later and somewhere else — a retryable step, after the request
+     * that carried the bytes has been answered — so the file has to be somewhere it can be read
+     * from again.
      */
     public DocumentsRepository.DocumentRow register(String filename, byte[] content) {
         String hash = sha256(content);
@@ -52,7 +63,7 @@ public class DocumentService {
         }
         String id = "doc-" + hash.substring(0, 12);
         try {
-            return documents.create(id, filename, hash, content.length);
+            return documents.create(id, filename, hash, content.length, content);
         } catch (org.springframework.dao.DuplicateKeyException raced) {
             return documents.findByContentHash(hash)
                     .orElseThrow(() -> new IllegalStateException("document " + id + " vanished after insert", raced));
@@ -60,25 +71,62 @@ public class DocumentService {
     }
 
     /**
-     * Parses, cuts and stores. Never throws for a document it cannot read: the refusal is recorded
-     * on the document and returned, because a batch upload must not be undone by one bad file.
+     * Parses, cuts and stores, reading the file back rather than being handed it.
+     *
+     * <p>Never throws for a document it cannot read: the refusal is recorded on the document and
+     * returned, because a batch upload must not be undone by one bad file.
+     *
+     * <p>Content that is not there is one of those refusals rather than an error. A row can predate
+     * the column, and a document that cannot be parsed because its content is gone is a document
+     * with a stated reason — not a document that quietly produces no chunks and reports success.
      */
-    public DocumentsRepository.DocumentRow process(String documentId, String filename, byte[] content) {
-        documents.markParsing(documentId);
-        try {
-            DocumentParser parser = parserFor(filename);
-            List<StructuralUnit> units = parser.parse(content);
-            List<Chunk> chunks = chunker.chunk(documentId, units);
+    public DocumentsRepository.DocumentRow process(String documentId) {
+        DocumentsRepository.DocumentRow document = documents.findById(documentId)
+                .orElseThrow(() -> new IllegalArgumentException("no document " + documentId));
 
+        Optional<byte[]> stored = documents.contentOf(documentId);
+        if (stored.isEmpty()) {
+            return documents.markRejected(documentId, "the stored content is no longer available");
+        }
+        byte[] content = stored.get();
+
+        documents.markParsing(documentId);
+        List<StructuralUnit> units;
+        List<Chunk> chunks;
+        try {
+            DocumentParser parser = parserFor(document.filename());
+            units = parser.parse(content);
+            chunks = chunker.chunk(documentId, units);
+        } catch (DocumentParser.DocumentRejectedException rejected) {
+            return documents.markRejected(documentId, rejected.reason());
+        } catch (RuntimeException corrupt) {
+            return documents.markRejected(documentId,
+                    "the file could not be parsed: " + corrupt.getMessage());
+        }
+        if (chunks.isEmpty()) {
+            return documents.markRejected(documentId,
+                    "the file was parsed but yielded no searchable fragments");
+        }
+        try {
             documents.deleteChunks(documentId);
             documents.insertChunks(documentId, chunks.stream()
                     .map(c -> new DocumentsRepository.ChunkRow(0, c.documentId(), c.ordinal(),
                             c.page(), c.section(), c.text(), c.table()))
                     .toList());
-            return documents.markIndexed(documentId, chunks.size());
+            return documents.findById(documentId).orElseThrow();
         } catch (DocumentParser.DocumentRejectedException rejected) {
             return documents.markRejected(documentId, rejected.reason());
         }
+    }
+
+    /**
+     * Moves the document to {@code indexed} once its chunks can all be found.
+     *
+     * <p>The condition and the write are one statement inside the repository, so this cannot be
+     * talked into claiming a document is searchable while a vector is still missing.
+     */
+    public DocumentsRepository.DocumentRow settle(String documentId) {
+        return documents.markIndexedIfComplete(documentId);
     }
 
     public Optional<DocumentsRepository.DocumentRow> find(String documentId) {
