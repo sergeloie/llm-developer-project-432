@@ -152,6 +152,39 @@ class JobsControllerTest {
     }
 
     @Test
+    void aLowConfidenceCardIsFlaggedAsWaitingForAPersonRatherThanDone() {
+        given(llmClient.extractFacts(anyString()))
+                .willReturn(new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of()));
+        given(llmClient.draftCard(any(), any()))
+                .willReturn(new ProductCard("Blender", "A blender.",
+                Map.of("Power", "800 W"), List.of("Quiet"), List.of(), 0.4, Map.of()));
+        given(llmClient.reviewDraft(any(), any()))
+                .willReturn(new CritiqueReport(Verdict.APPROVE, List.of()));
+
+        ResponseEntity<Map> submitted = rest.postForEntity("/jobs",
+                Map.of("supplierText", "Blender. Power 800 W."), Map.class);
+        String jobId = (String) submitted.getBody().get("id");
+
+        // The card is only handed back once the person has decided: awaiting_human carries the
+        // wait, the finished job carries the card — so the flag is asserted where the card is.
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                        .containsEntry("status", "awaiting_human"));
+
+        rest.postForEntity("/jobs/" + jobId + "/decision", Map.of("decision", "approve"), Map.class);
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            Map<String, Object> finished = rest.getForObject("/jobs/" + jobId, Map.class);
+            assertThat(finished).containsEntry("status", "approved");
+            assertThat(finished)
+                    .as("below the configured threshold the card waited for a person rather "
+                            + "than reading as done, and the finished job says so")
+                    .containsEntry("awaitingHuman", true);
+            assertThat(((Number) finished.get("confidence")).doubleValue()).isEqualTo(0.4);
+        });
+    }
+
+    @Test
     void theSameIdempotencyKeyReturnsTheSameJobRatherThanPayingTwice() {
         givenAnApprovingReviewer();
         HttpHeaders headers = new HttpHeaders();

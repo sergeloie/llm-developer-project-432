@@ -172,9 +172,11 @@ public class CardActivitiesImpl implements CardActivities {
      * Verifies against the retained context, and reports which kind of failure it was.
      *
      * <p>The corpus-wide existence check distinguishes a citation to a real fragment the model was
-     * never shown from a label that means nothing at all. They are separated because they lead to
-     * different conversations: one says the context was wrong, the other says the model invented
-     * something, and sending both down the same rework path teaches nothing.
+     * never shown from a label that means nothing at all. "Corpus" here is every retained context:
+     * labels are positional, so a label another job was shown names a real allocation. They are
+     * separated because they lead to different conversations: one says the context was wrong, the
+     * other says the model invented something, and sending both down the same rework path teaches
+     * nothing.
      */
     @Override
     public ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson) {
@@ -192,10 +194,7 @@ public class CardActivitiesImpl implements CardActivities {
         AssembledContext context = contexts.load(jobId);
 
         CitationVerifier.Verdict verdict = verifier.verifyAgainst(context, card.sources(),
-                reference -> {
-                    var chunkId = contexts.chunkIdForReference(jobId, reference);
-                    return chunkId.isPresent();
-                });
+                contexts::existsReferenceInAnyContext);
 
         return new CitationCheck(verdict.isClean(), verdict.messages(),
                 verdict.fabricated().size(), 0);

@@ -154,7 +154,10 @@ class SpringAiLlmClientRepairTest {
                 .isInstanceOf(ModelResponseFormatException.class)
                 .hasMessageContaining("at most 60");
 
-        verify(requestSpec, times(3)).user(anyString());
+        // One generation plus the repair's own bounded budget: the pointwise title repair is a
+        // generation like any other, so it carries the same repair allowance rather than one
+        // unguarded call.
+        verify(requestSpec, times(4)).user(anyString());
     }
 
     @Test
@@ -163,20 +166,20 @@ class SpringAiLlmClientRepairTest {
                 {"title":"%s","description":"An original description that must survive untouched.",
                  "characteristics":{"Power":"800 W"},"benefits":["Quiet","Compact"],
                  "missingFields":["Colour"],"confidence":0.42,
-                 "sources":{"Power":"chunk-7"}}
+                 "sources":{"Power":"C7"}}
                 """.formatted("T".repeat(75));
         String repaired = """
                 {"title":"Blender 800","description":"An original description that must survive untouched.",
                  "characteristics":{"Power":"800 W"},"benefits":["Quiet","Compact"],
                  "missingFields":["Colour"],"confidence":0.42,
-                 "sources":{"Power":"chunk-7"}}
+                 "sources":{"Power":"C7"}}
                 """;
         given(callResponseSpec.chatResponse()).willReturn(chatResponse(original), chatResponse(repaired));
 
         ProductCard broken = new ProductCard("T".repeat(75),
                 "An original description that must survive untouched.",
                 Map.of("Power", "800 W"), List.of("Quiet", "Compact"),
-                List.of("Colour"), 0.42, Map.of("Power", "chunk-7"));
+                List.of("Colour"), 0.42, Map.of("Power", "C7"));
 
         ProductCard fixed = client.repairCardField(broken, "title",
                 ResultContract.problemsWith(broken).get(0));

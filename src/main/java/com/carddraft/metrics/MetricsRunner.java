@@ -1,6 +1,7 @@
 package com.carddraft.metrics;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.ContextChunk;
 import com.carddraft.llm.JobLogContext;
+import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * The command: generate cards for the reference set, measure them, write a report.
@@ -42,19 +44,28 @@ public class MetricsRunner implements ApplicationRunner {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MetricsRunner.class);
 
     private static final Path GOLDEN = Path.of("data", "golden_cards.json");
-    private static final Path OUTPUT = Path.of("build", "reports", "metrics");
+
+    /**
+     * Inside the repository rather than under {@code build/}, because the acceptance step
+     * requires the report to be an artefact of the run that stays: a file under a git-ignored
+     * directory is a report nobody can review after the fact.
+     */
+    private static final Path OUTPUT = Path.of("docs", "metrics");
 
     private final CardGenerator cards;
     private final SupportJudge judge;
     private final MetricsReportWriter writer;
     private final MetricsProperties properties;
+    private final ModelCallRepository calls;
 
     public MetricsRunner(CardGenerator cards, SupportJudge judge,
-                         MetricsReportWriter writer, MetricsProperties properties) {
+                         MetricsReportWriter writer, MetricsProperties properties,
+                         ModelCallRepository calls) {
         this.cards = cards;
         this.judge = judge;
         this.writer = writer;
         this.properties = properties;
+        this.calls = calls;
     }
 
     @Override
@@ -113,11 +124,12 @@ public class MetricsRunner implements ApplicationRunner {
         } catch (RuntimeException e) {
             log.warn("metrics_document_failed document={} stage=generate error={}", document, e.toString());
             return DocumentMetrics.failed(document,
-                    "no usable card could be generated: " + e.getMessage());
+                    "no usable card could be generated: " + e.getMessage(), costOf(document));
         }
 
         if (context == null || context.isEmpty() || card == null) {
-            return DocumentMetrics.failed(document, "no card could be generated from this document");
+            return DocumentMetrics.failed(document, "no card could be generated from this document",
+                    costOf(document));
         }
 
         List<String> missed = new ArrayList<>();
@@ -144,33 +156,57 @@ public class MetricsRunner implements ApplicationRunner {
         SupportJudgement judgement = judge.judge(card, cited);
         double precision = card.sources().isEmpty()
                 ? 0
-                : (double) countRealCitations(cited, card.sources().size()) / card.sources().size();
+                : (double) countPreciseCitations(card, context) / card.sources().size();
 
         return new DocumentMetrics(document, match, precision, judgement.score(card.characteristics().size()), expected.size(),
                 missed, judgement.unsupportedAmong(List.copyOf(card.characteristics().keySet())),
-                judgement.measured() ? null : judgement.unavailableReason());
+                judgement.measured() ? null : judgement.unavailableReason(), costOf(document));
     }
 
     /**
-     * How many of a card's citations name a fragment that exists.
+     * What one document's generation cost, read from the call records by job.
+     *
+     * <p>The harness generates under a job per document precisely so this question has an answer:
+     * the same rows the service's own accounting is built from, summed for this run's job. The
+     * query coalesces to zero in production; a stubbed repository in tests answers null, which
+     * is normalised here rather than in the record — an unknown cost is a property of the test
+     * double, not a value the report may print.
+     */
+    private BigDecimal costOf(String document) {
+        BigDecimal cost = calls.costOfJob(CardGenerator.jobIdFor(document));
+        return cost == null ? BigDecimal.ZERO : cost;
+    }
+
+    /**
+     * How many of a card's citations name a fragment that really contains the cited value.
      *
      * <p>Citation precision, as the ticket defines it: a citation that names nothing is not a
-     * source. It is measured mechanically rather than asked of a model, because the question is
-     * about bookkeeping and a model that guesses here produces a number nobody can act on.
+     * source, and neither is a citation to a fragment that does not say what it is cited for.
+     * It is measured mechanically rather than asked of a model, because the question is about
+     * bookkeeping and a model that guesses here produces a number nobody can act on.
      *
-     * <p>Distinct labels are counted, so a card that cites C1 for four characteristics is one
-     * good citation rather than four.
-     *
-     * <p>Known limit: this counts existence in the retained context, not whether the fragment
-     * text really contains the cited value. A card that cites the right label for the wrong
-     * value still scores here; that case is caught by the support judge instead.
+     * <p>Counted per characteristic rather than per distinct label: twelve claims citing one
+     * fragment that states all twelve are twelve precise citations. The comparison is normalised
+     * but conservative — containment, not equality — because a fragment holds prose around the
+     * value while the value itself must appear in it. A paraphrase does not count, which is the
+     * direction a quality metric must err in.
      */
-    private int countRealCitations(List<ContextChunk> cited, int declared) {
-        if (declared == 0) {
-            return 0;
+    private int countPreciseCitations(ProductCard card, AssembledContext context) {
+        int precise = 0;
+        for (Map.Entry<String, String> source : card.sources().entrySet()) {
+            String value = card.characteristics().get(source.getKey());
+            String expected = ValueNormaliser.normalise(value);
+            if (expected.isEmpty()) {
+                continue;
+            }
+            boolean contains = context.find(canonicalReference(source.getValue()))
+                    .map(chunk -> ValueNormaliser.normalise(chunk.text()).contains(expected))
+                    .orElse(false);
+            if (contains) {
+                precise++;
+            }
         }
-        long distinct = cited.stream().map(ContextChunk::reference).distinct().count();
-        return (int) Math.min(distinct, declared);
+        return precise;
     }
 
     /**

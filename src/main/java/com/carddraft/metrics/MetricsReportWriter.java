@@ -53,8 +53,21 @@ public class MetricsReportWriter {
                 : row("source support (estimate)", report.averageSourceSupport()));
         out.append('\n');
 
-        out.append("## Per document\n\n");
-        out.append("| document | match | precision | support | judged | weakest |\n");
+        out.append("## Cost\n\n");
+        out.append("| document | cost |\n");
+        out.append("|---|---|\n");
+        for (DocumentMetrics metrics : report.perDocument()) {
+            out.append("| ").append(metrics.document())
+                    .append(" | ").append(metrics.generationCost().toPlainString())
+                    .append(" |\n");
+        }
+        out.append("| total | ").append(report.totalCost().toPlainString()).append(" |\n\n");
+        out.append("Costs are read from model_calls, one card's rows by job: the question \"what did "
+                + "this cost\" is answered by the same rows every other figure comes from. Local "
+                + "models price at zero, so this reads zero until the prices are set — the arithmetic "
+                + "at non-zero rates is proven by CostCalculatorTest, not by this table.\n\n");
+
+        out.append("## Per document\n\n");        out.append("| document | match | precision | support | judged | weakest |\n");
         out.append("|---|---|---|---|---|---|\n");
         for (DocumentMetrics metrics : report.perDocument()) {
             out.append("| ").append(metrics.document())

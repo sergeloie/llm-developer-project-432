@@ -63,6 +63,17 @@ public class CardGenerator {
     public record Generated(AssembledContext context, ProductCard card) {
     }
 
+    /**
+     * The job a document's generation is recorded under.
+     *
+     * <p>One place rather than a format string in two files: the metrics report reads this job's
+     * cost rows, and a second spelling of the name here would make the report read another job's
+     * rows while the generation billed this one.
+     */
+    public static String jobIdFor(String filename) {
+        return "metrics-" + filename;
+    }
+
     public CardGenerator(DocumentService documents, EmbeddingApplicationService embedding,
                          SearchService search, ContextAssembler assembler, LlmClient llm,
                          TrustService trust, TrustSettings trustSettings,
@@ -89,7 +100,7 @@ public class CardGenerator {
      * @throws EscalatedException when the document as a whole needs a person
      */
     public Generated generate(String filename) {
-        String jobId = "metrics-" + filename;
+        String jobId = jobIdFor(filename);
         jobs.createWithId(jobId, "pending", "{\"file\":" + quoted(filename) + "}");
         return com.carddraft.llm.JobLogContext.withJob(jobId, () -> {
             try {

@@ -158,6 +158,32 @@ class JobContextRepositoryTest {
                 .isEmpty();
     }
 
+    /**
+     * A label another job was shown names a real allocation.
+     *
+     * <p>Labels are positional — every job's first fragment is C1 — so a citation to a label no
+     * context ever allocated is a hallucination, while a citation to one some other job saw is a
+     * provenance failure: the fragment is real, the model was just never shown it. Citation
+     * verification needs both answers, and this lookup is what provides the second.
+     */
+    @Test
+    void aLabelAnotherJobWasShownReadsAsExistingElsewhere() {
+        seed();
+        contexts.save(assembled());
+        contexts.save(new AssembledContext("job-2",
+                List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
+
+        assertThat(contexts.existsReferenceInAnyContext("C2"))
+                .as("allocated to job-1")
+                .isTrue();
+        assertThat(contexts.existsReferenceInAnyContext("C1"))
+                .as("allocated to both jobs")
+                .isTrue();
+        assertThat(contexts.existsReferenceInAnyContext("C9"))
+                .as("allocated nowhere, so a citation to it names nothing at all")
+                .isFalse();
+    }
+
     private int countRows(String jobId) {
         return jdbc.sql("SELECT count(*) FROM job_context_chunks WHERE job_id = :jobId")
                 .param("jobId", jobId)

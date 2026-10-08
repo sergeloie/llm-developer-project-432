@@ -14,6 +14,7 @@ import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.ContextChunk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -95,6 +96,46 @@ class MetricsHarnessTest {
     @Test
     void unitsAreNotConverted() {
         assertThat(ValueNormaliser.matches("0.8 kW", "800 W")).isFalse();
+    }
+
+    // --- citation precision ------------------------------------------------------------
+
+    /**
+     * A citation to an existing fragment that does not state the cited value is not precise.
+     *
+     * <p>Existence alone would score a card that cites C2 for every claim while C2 says nothing
+     * about any of them. The ticket defines precision as "the source fragment really does contain
+     * the cited value", and the comparison is normalised but conservative: containment after
+     * normalisation, so prose around the value is fine but a paraphrase is not a hit.
+     */
+    @Test
+    void citationPrecisionRequiresTheFragmentToContainTheCitedValue() {
+        CardGenerator cards = mock(CardGenerator.class);
+        given(cards.generate(anyString())).willReturn(new CardGenerator.Generated(
+                new com.carddraft.context.AssembledContext("probe", List.of(
+                        new ContextChunk("C1", 1L, "doc", 1, "Power", "Power 800 W"),
+                        new ContextChunk("C2", 2L, "doc", 1, "Weight", "Weight 5.9 kg")), 0, 0),
+                new ProductCard("Kettle", "A 1.7 litre kettle.",
+                        Map.of("Power", "800 W", "Volume", "1.5 l"),
+                        List.of("fast"), List.of(), 0.9,
+                        Map.of("Power", "C1", "Volume", "C2"))));
+
+        SupportJudge judge = mock(SupportJudge.class);
+        given(judge.judge(any(), any())).willReturn(new SupportJudgement(
+                Map.of("Power", true, "Volume", true),
+                Map.of("Power", "C1 states it", "Volume", "C2 states it")));
+
+        MetricsRunner runner = new MetricsRunner(cards, judge,
+                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+                mock(com.carddraft.repositories.ModelCallRepository.class));
+
+        DocumentMetrics metrics = runner.measureForTest("probe.pdf",
+                Map.of("Power", "800 W", "Volume", "1.5 l"));
+
+        assertThat(metrics.characteristicMatch()).isEqualTo(1.0);
+        assertThat(metrics.citationPrecision())
+                .as("C2 exists but says nothing about 1.5 l, so one of two citations is precise")
+                .isEqualTo(0.5);
     }
 
     // --- the judge prompt ----------------------------------------------------------------
@@ -192,7 +233,7 @@ class MetricsHarnessTest {
 
         MetricsReport report = new MetricsReport("run-1", "default",
                 List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(),
-                        "the judge could not be asked")),
+                        "the judge could not be asked", java.math.BigDecimal.ZERO)),
                 1.0, 1.0, 0.0);
 
         String text = new MetricsReportWriter().render(report);
@@ -218,7 +259,8 @@ class MetricsHarnessTest {
                 new DocumentMetrics("unjudged.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(), "no judge"));
 
         MetricsRunner runner = new MetricsRunner(mock(CardGenerator.class), mock(SupportJudge.class),
-                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false));
+                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+                mock(com.carddraft.repositories.ModelCallRepository.class));
 
         assertThat(runner.averageForTest(results, 2))
                 .as("0.5 would mean the cards were half unsupported, rather than that one was never judged")
@@ -285,6 +327,22 @@ class MetricsHarnessTest {
                 .contains("- volume");
     }
 
+    @Test
+    void theReportShowsWhatEachDocumentCost() {
+        MetricsReport report = new MetricsReport("run-1", "default",
+                List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0.9, 3, List.of(), List.of(),
+                        null, new java.math.BigDecimal("0.0045"))),
+                1.0, 1.0, 0.9);
+
+        String text = new MetricsReportWriter().render(report);
+
+        assertThat(text)
+                .as("the report promises quality and cost, so both have to be in the file")
+                .contains("## Cost")
+                .contains("a.pdf")
+                .contains("0.0045");
+    }
+
     // --- the reference set ---------------------------------------------------------------
 
     @Test
@@ -345,7 +403,8 @@ class MetricsHarnessTest {
                         + "'Корпус не обжигает' but there is no such characteristic"));
 
         MetricsRunner runner = new MetricsRunner(cards, judge(),
-                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false));
+                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+                mock(com.carddraft.repositories.ModelCallRepository.class));
 
         assertThat(runner.measureForTest("kettle_manual.pdf", Map.of("Power", "2200 W")))
                 .as("one document with an unusable model answer must not cost the run its report")

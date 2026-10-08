@@ -72,12 +72,6 @@ public class JobContextRepository {
      * <p>Scoped to the job on purpose, and that scoping is what makes fabrication simple to detect:
      * labels are allocated per job, so a label outside this job's retained set names nothing this
      * submission can be held to.
-     *
-     * <p>It also means the {@code NOT_IN_CONTEXT} case — a citation to a real fragment that was
-     * never shown — is not reachable through this lookup, because a label belonging to another
-     * job's context cannot be resolved here at all. A shared label namespace would make it
-     * reachable, and {@code CitationVerifier} already handles it; this repository does not
-     * pretend to.
      */
     public java.util.Optional<Long> chunkIdForReference(String jobId, String reference) {
         return jdbc.sql("SELECT chunk_id FROM job_context_chunks WHERE job_id = :jobId AND reference = :ref")
@@ -85,5 +79,22 @@ public class JobContextRepository {
                 .param("ref", reference)
                 .query(Long.class)
                 .optional();
+    }
+
+    /**
+     * Whether any retained context ever allocated this label.
+     *
+     * <p>Labels are positional — every job's first fragment is C1 — so a label some other job was
+     * shown names a real allocation rather than nothing at all. Citation verification reads this
+     * to tell the two failures apart: a citation to a label allocated elsewhere is a provenance
+     * failure (the fragment is real, this model was never shown it), while a citation to a label
+     * allocated nowhere is a hallucination.
+     */
+    public boolean existsReferenceInAnyContext(String reference) {
+        Integer count = jdbc.sql("SELECT count(*) FROM job_context_chunks WHERE reference = :ref")
+                .param("ref", reference)
+                .query(Integer.class)
+                .single();
+        return count != null && count > 0;
     }
 }

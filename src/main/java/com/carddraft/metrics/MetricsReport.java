@@ -13,11 +13,23 @@ import java.util.List;
  *              it compared like with like — a subset run against a full run is not a regression.
  */
 public record MetricsReport(String runId, String scope, List<DocumentMetrics> perDocument,
-                           double averageCharacteristicMatch, double averageCitationPrecision,
-                           double averageSourceSupport) {
+                            double averageCharacteristicMatch, double averageCitationPrecision,
+                            double averageSourceSupport) {
 
     public MetricsReport {
         perDocument = perDocument == null ? List.of() : List.copyOf(perDocument);
+    }
+
+    /**
+     * What the run's generations cost, as the sum of the per-document rows.
+     *
+     * <p>Derived rather than stored, for the same reason every other aggregate in this codebase
+     * is derived: the rows are the source of truth and a stored total would be a second answer
+     * to the same question.
+     */
+    public java.math.BigDecimal totalCost() {
+        return perDocument.stream().map(DocumentMetrics::generationCost)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 
     /**

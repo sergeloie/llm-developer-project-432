@@ -20,18 +20,21 @@ import java.util.regex.Pattern;
  * a value that looks like a taxpayer number but whose checksum is wrong, which in a supplier document
  * is far more likely to be an article number than a mistyped taxpayer number.
  *
- * <p>Masking replaces rather than removes. The token keeps the shape of the thing it replaced, so
- * a reader can still tell that a phone number was there and a model's attention is not drawn to a
- * gap. A removal would read as an omission in the source, which looks like a parsing failure.
+ * <p>Masking replaces rather than removes, with a typed label per kind. The label keeps the
+ * shape of the thing it replaced, so a reader can still tell that a phone number was there —
+ * and which kind of value it was — and a model's attention is not drawn to a gap. A removal
+ * would read as an omission in the source, which looks like a parsing failure.
  */
 @org.springframework.stereotype.Component
 public class PiiDetector {
 
     /**
-     * A taxpayer number, with separators allowed inside.
+     * A taxpayer number, as bare digits with guarded edges.
      *
-     * <p>Word boundaries rather than a plain digit run: without them this would match a substring of
-     * a longer number and the checksum would be computed over the wrong digits.
+     * <p>No separators inside: the alternatives are exactly ten or twelve digits. Word boundaries
+     * rather than a plain digit run: without them this would match a substring of a longer number
+     * and the checksum would be computed over the wrong digits. The lookarounds also refuse an
+     * adjacent dash, so a fragment of a longer dashed code is not read as a taxpayer number.
      */
     private static final Pattern TAXPAYER = Pattern.compile("(?<![\\d-])(\\d{10}|\\d{12})(?![\\d-])");
 
@@ -56,7 +59,22 @@ public class PiiDetector {
     private static final Pattern CARD = Pattern.compile(
             "(?<![\\d])(?:\\d[ -]?){12,18}\\d(?![\\d])");
 
-    private static final String MASK = "[masked]";
+    /**
+     * The label a kind is replaced with.
+     *
+     * <p>Typed rather than one shared token, so the masked text still says what was there. A
+     * reader distinguishes a masked phone number from a masked email, and the kind is already
+     * what {@link Finding#summary} reports — the text and the report agree.
+     */
+    static String labelFor(Finding.Kind kind) {
+        return switch (kind) {
+            case PHONE -> "[PHONE]";
+            case EMAIL -> "[EMAIL]";
+            case TAXPAYER_NUMBER -> "[TAXPAYER_NUMBER]";
+            case CARD_NUMBER -> "[CARD_NUMBER]";
+            case INJECTION -> "[INJECTION]";
+        };
+    }
 
     public Finding.Report scan(String text) {
         if (text == null || text.isBlank()) {
@@ -91,8 +109,8 @@ public class PiiDetector {
                 matcher.appendReplacement(out, Matcher.quoteReplacement(value));
                 continue;
             }
-            findings.add(new Finding(kind, MASK, value, matcher.start()));
-            matcher.appendReplacement(out, Matcher.quoteReplacement(MASK));
+            findings.add(new Finding(kind, labelFor(kind), value, matcher.start()));
+            matcher.appendReplacement(out, Matcher.quoteReplacement(labelFor(kind)));
         }
         matcher.appendTail(out);
         return out.toString();
@@ -102,9 +120,9 @@ public class PiiDetector {
      * A taxpayer number's checksum, for both forms.
      *
      * <p>Ten digits: weights 2 4 10 3 5 9 4 6 8, taken mod 11 then mod 10, must equal the tenth
-     * digit. Twelve digits: the first eleven use weights 7 2 4 10 3 5 9 4 6 8 and the remainder
-     * gives the eleventh; the twelfth is a second check over the first eleven using the same
-     * weights.
+     * digit. Twelve digits: two checks. The eleventh uses weights 7 2 4 10 3 5 9 4 6 8 over the
+     * first ten; the twelfth uses weights 3 7 2 4 10 3 5 9 4 6 8 over the first eleven, taken
+     * mod 11 then mod 10.
      *
      * <p>Both are checked because both are issued. Validating only the ten-digit form would let every
      * twelve-digit taxpayer number through unmasked, and validating only the twelve would mangle
@@ -130,23 +148,24 @@ public class PiiDetector {
     }
 
     private static boolean taxpayer12(String digits) {
-        int[] weights = {7, 2, 4, 10, 3, 5, 9, 4, 6, 8};
+        int[] firstCheck = {7, 2, 4, 10, 3, 5, 9, 4, 6, 8};
         int sum = 0;
         for (int i = 0; i < 10; i++) {
-            sum += (digits.charAt(i) - '0') * weights[i];
+            sum += (digits.charAt(i) - '0') * firstCheck[i];
         }
-        int eleventh = (sum % 11) % 10;
-        if (eleventh != (digits.charAt(10) - '0')) {
+        if ((sum % 11) % 10 != (digits.charAt(10) - '0')) {
             return false;
         }
-        // The twelfth digit is not a second pass over the first eleven. It is the eleventh digit
-        // doubled, plus the tenth, mod 11 - a different rule from the ten-digit form, and getting
-        // it wrong accepts every twelve-digit number with a plausible eleventh.
-        int twelfth = ((eleventh * 2) + (digits.charAt(9) - '0')) % 11;
-        if (twelfth == 10) {
-            twelfth = 0;
+        // The twelfth digit is a second check over the first eleven, with its own weights — not a
+        // function of the eleventh alone. Anything else accepts twelve-digit numbers with a
+        // plausible eleventh and a wrong twelfth, which is exactly the shape an article number
+        // takes when it happens to be twelve digits long.
+        int[] secondCheck = {3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8};
+        sum = 0;
+        for (int i = 0; i < 11; i++) {
+            sum += (digits.charAt(i) - '0') * secondCheck[i];
         }
-        return twelfth == (digits.charAt(11) - '0');
+        return (sum % 11) % 10 == (digits.charAt(11) - '0');
     }
 
     /**

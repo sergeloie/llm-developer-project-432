@@ -255,10 +255,32 @@ public class JobsController {
         }
         if (job.result() != null) {
             body.put("result", job.result());
+            confidenceOf(job.result()).ifPresent(confidence -> {
+                body.put("confidence", confidence);
+                body.put("awaitingHuman",
+                        confidence < generationSettings.confidenceThreshold());
+            });
         }
         if (job.error() != null) {
             body.put("error", job.error());
         }
         return body;
+    }
+
+    /**
+     * The finished card's confidence, when the result is one.
+     *
+     * <p>Empty when the result is not a card at all, which is not an error: a failed job carries
+     * an error instead of a result, and a result written by an older version may not parse.
+     * Either way there is no confidence to report, so none is.
+     */
+    private java.util.Optional<Double> confidenceOf(String resultJson) {
+        try {
+            return java.util.Optional.ofNullable(
+                    mapper.readValue(resultJson, com.carddraft.agents.ProductCard.class)
+                            .confidence());
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
     }
 }

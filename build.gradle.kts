@@ -75,7 +75,8 @@ tasks.withType<Test> {
 //
 // A Gradle task rather than `bootRun` with a property, because the harness is a command someone
 // runs deliberately and compares with the last run - not a mode the service happens to have. The
-// report lands in build/reports/metrics/ where the next run can be diffed against it.
+// report lands in docs/metrics/ where the next run can be diffed against it, and stays in the
+// repository: a report under build/ would be git-ignored and unreviewable after the fact.
 //
 //   ./gradlew metrics            - the reference set's declared default subset
 //   ./gradlew metrics -Pfull     - every document in the reference set

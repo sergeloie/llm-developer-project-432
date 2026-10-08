@@ -45,9 +45,11 @@ class LocalEmbeddingModelTest {
     }
 
     private static Harness harness() {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://127.0.0.1:1234");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        return new Harness(new LocalEmbeddingModel(builder, MAPPER, settings()), server);
+        // The assembled client, not the builder: the production constructor stamps its timeout
+        // factory onto the builder, which would replace the mock's interception.
+        return new Harness(new LocalEmbeddingModel(builder.build(), MAPPER, settings()), server);
     }
 
     private static String response(String... indicesAndVectors) {

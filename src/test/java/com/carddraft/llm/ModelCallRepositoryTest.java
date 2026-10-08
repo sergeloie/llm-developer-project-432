@@ -235,6 +235,9 @@ class ModelCallRepositoryTest {
      * <p>Counted rather than asserted against a mock's expectation, and run through the client so
      * the property being tested is the one the architecture relies on: the recorder is inside the
      * thing that made the call.
+     *
+     * <p>One record here rather than two: the stubbed card already cites correctly, so no
+     * pointwise repair fires. A second generation is billed only when the first draft needs one.
      */
     @Test
     void theClientWritesOneRecordPerCallWithoutBeingAsked() {
@@ -262,6 +265,7 @@ class ModelCallRepositoryTest {
         JobLogContext.withJob("job-42", () ->
                 client.draftCardFromContext("[C1] Power 800 W", List.of()));
 
+        // The stubbed card is already valid, so generation is a single call and a single record.
         assertThat(recorder.recorded).singleElement().satisfies(record -> {
             assertThat(record.jobId()).as("taken from the execution context, not passed in").isEqualTo("job-42");
             assertThat(record.tier()).isEqualTo("main");
@@ -270,6 +274,7 @@ class ModelCallRepositoryTest {
             assertThat(record.cost())
                     .as("900 in at 3.00/M plus 120 out at 15.00/M")
                     .isEqualByComparingTo("0.0045");
+            assertThat(record.operation()).startsWith("draftCardFromContext:phase1");
         });
     }
 
@@ -298,10 +303,11 @@ class ModelCallRepositoryTest {
 
         client.draftCardFromContext("[C1] text", List.of());
 
-        assertThat(recorder.recorded).singleElement()
-                .extracting(ModelCallRecord::jobId)
-                .as("the synchronous endpoint has no job, and must still be counted")
-                .isNull();
+        // The stubbed card is already valid: one call, one record, with a null job.
+        assertThat(recorder.recorded).singleElement().satisfies(record ->
+                assertThat(record.jobId())
+                        .as("the synchronous endpoint has no job, and must still be counted")
+                        .isNull());
     }
 
     /**

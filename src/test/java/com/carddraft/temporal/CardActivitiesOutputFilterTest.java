@@ -60,7 +60,7 @@ class CardActivitiesOutputFilterTest {
 
         assertThat(json)
                 .doesNotContain("926 555-14-08")
-                .contains("[masked]");
+                .contains("[PHONE]");
         assertThat(json).as("the masked draft still parses").contains("\"title\":\"Kettle\"");
     }
 
@@ -69,7 +69,7 @@ class CardActivitiesOutputFilterTest {
         String json = activities(card("A fast kettle."))
                 .generateFromContext("job-2", "[C1] Power 2200 W", List.of());
 
-        assertThat(json).doesNotContain("[masked]");
+        assertThat(json).doesNotContain("[PHONE]");
     }
 
     @Test

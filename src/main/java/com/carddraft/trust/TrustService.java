@@ -11,9 +11,10 @@ import com.carddraft.context.ContextChunk;
  * Screens fragments before they reach a model, and filters the card before a person sees it.
  *
  * <p>Ordering is the whole design and it is not negotiable. Fragments are screened for injected
- * instructions and masked for personal data <em>before</em> they are assembled, which means before
- * the prompt is built, before it is sent, and before any of it can be logged. Screening afterwards
- * would leave a window in which a masked value had already been written to a log line, and an
+ * instructions and masked for personal data after assembly but before anything is retained,
+ * prompted or logged: the screened set is what gets written down as the job's context, what the
+ * prompt is built from, and the only thing a log line may quote. Screening afterwards would
+ * leave a window in which a masked value had already been written to a log line, and an
  * attacker who can get a value into the logs has it regardless of what the card says.
  *
  * <p>The stored original is left alone. Masking happens on the way into a context and on the way
@@ -132,7 +133,8 @@ public class TrustService {
         if (!leaked.isClean()) {
             List<Finding> findings = new ArrayList<>(personal.findings());
             leaked.rules().forEach(rule -> findings.add(
-                    new Finding(Finding.Kind.INJECTION, "[masked]", rule, 0)));
+                    new Finding(Finding.Kind.INJECTION, PiiDetector.labelFor(Finding.Kind.INJECTION),
+                            rule, 0)));
             return new Finding.Report(findings, personal.maskedText());
         }
         return personal;

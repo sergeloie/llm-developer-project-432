@@ -1,5 +1,6 @@
 package com.carddraft.metrics;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -28,15 +29,19 @@ import java.util.Map;
  *                            unsupported scores zero, and a card nobody judged scores zero, and a
  *                            report that prints both as 0.000 is claiming a measurement it never
  *                            made.
+ * @param generationCost       what the generation calls for this document cost, read from the call
+ *                            records by job. Zero for a local model at zero prices — and that zero
+ *                            is measured, not assumed: the rows exist whether the prices do or not.
  */
 public record DocumentMetrics(String document,
-                              double characteristicMatch,
-                              double citationPrecision,
-                              double sourceSupport,
-                              int characteristicTotal,
-                              List<String> missedCharacteristics,
-                              List<String> unsupportedClaims,
-                              String supportUnavailableReason) {
+                               double characteristicMatch,
+                               double citationPrecision,
+                               double sourceSupport,
+                               int characteristicTotal,
+                               List<String> missedCharacteristics,
+                               List<String> unsupportedClaims,
+                               String supportUnavailableReason,
+                               BigDecimal generationCost) {
 
     public DocumentMetrics {
         missedCharacteristics = missedCharacteristics == null ? List.of() : List.copyOf(missedCharacteristics);
@@ -44,10 +49,18 @@ public record DocumentMetrics(String document,
     }
 
     public DocumentMetrics(String document, double characteristicMatch, double citationPrecision,
-                           double sourceSupport, int characteristicTotal,
-                           List<String> missedCharacteristics, List<String> unsupportedClaims) {
+                            double sourceSupport, int characteristicTotal,
+                            List<String> missedCharacteristics, List<String> unsupportedClaims) {
         this(document, characteristicMatch, citationPrecision, sourceSupport, characteristicTotal,
-                missedCharacteristics, unsupportedClaims, null);
+                missedCharacteristics, unsupportedClaims, null, BigDecimal.ZERO);
+    }
+
+    public DocumentMetrics(String document, double characteristicMatch, double citationPrecision,
+                            double sourceSupport, int characteristicTotal,
+                            List<String> missedCharacteristics, List<String> unsupportedClaims,
+                            String supportUnavailableReason) {
+        this(document, characteristicMatch, citationPrecision, sourceSupport, characteristicTotal,
+                missedCharacteristics, unsupportedClaims, supportUnavailableReason, BigDecimal.ZERO);
     }
 
     /** Whether the support number is a measurement rather than the absence of one. */
@@ -64,7 +77,18 @@ public record DocumentMetrics(String document,
      * no card for a characteristic to be missing from.
      */
     public static DocumentMetrics failed(String document, String reason) {
-        return new DocumentMetrics(document, 0, 0, 0, 0, List.of(), List.of(), reason);
+        return failed(document, reason, BigDecimal.ZERO);
+    }
+
+    /**
+     * A failure that still billed model calls.
+     *
+     * <p>A document that never generated can still have cost rows: the attempts happened under
+     * this document's job before the failure. Zero here would claim nothing was spent, and the
+     * report would disagree with the call records it is meant to summarise.
+     */
+    public static DocumentMetrics failed(String document, String reason, BigDecimal cost) {
+        return new DocumentMetrics(document, 0, 0, 0, 0, List.of(), List.of(), reason, cost);
     }
 
     /**

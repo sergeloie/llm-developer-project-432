@@ -99,13 +99,25 @@ public final class ResultContract {
      *         usable; a non-empty one means send it back with these sentences attached.
      */
     public static List<String> problemsWith(ProductCard card) {
+        List<String> problems = new java.util.ArrayList<>(problemsForGeneration(card));
+        titleLengthProblem(card).ifPresent(problems::add);
+        problems.addAll(sourcesProblems(card));
+        return List.copyOf(problems);
+    }
+
+    /**
+     * The contract a first generation must satisfy.
+     *
+     * <p>Everything except a long title and a bad sources mapping. Those two are repaired
+     * pointwise afterwards — one field re-asked with the draft attached — so they are not reasons
+     * to regenerate the whole card here. Everything else still is: an empty title cannot be
+     * shortened into existence, and a missing description cannot be repaired without writing one.
+     */
+    public static List<String> problemsForGeneration(ProductCard card) {
         List<String> problems = new java.util.ArrayList<>();
 
         if (card.title() == null || card.title().isBlank()) {
             problems.add("the title is empty");
-        } else if (card.title().length() > 60) {
-            problems.add("the title is " + card.title().length()
-                    + " characters long; it must be at most 60. Shorten it.");
         }
 
         if (card.description() == null || card.description().isBlank()) {
@@ -116,7 +128,7 @@ public final class ResultContract {
             if (value == null || value.isBlank()) {
                 problems.add("the characteristic '" + name + "' has an empty value; "
                         + "either give it a value or move it to missingFields");
-            } else if (isBareReference(value)) {
+            } else if (isReference(value)) {
                 problems.add("the characteristic '" + name + "' has the reference '" + value.strip()
                         + "' as its value; put the fact from the fragment as the value "
                         + "and keep the reference in sources");
@@ -129,15 +141,6 @@ public final class ResultContract {
                         + "a field cannot be present and absent at once");
             }
         }
-
-        card.sources().forEach((name, chunkId) -> {
-            if (!card.characteristics().containsKey(name)) {
-                problems.add("sources names '" + name + "' but there is no such characteristic");
-            }
-            if (chunkId == null || chunkId.isBlank()) {
-                problems.add("the source for '" + name + "' has no chunk identifier");
-            }
-        });
 
         if (card.confidence() == null) {
             problems.add("confidence is missing; give a number between 0 and 1");
@@ -153,15 +156,56 @@ public final class ResultContract {
     }
 
     /**
-     * Whether a value is a citation label rather than a fact.
+     * A long title, as a sentence the model can act on, or nothing when the title fits.
      *
-     * <p>Observed live: a model that is told to cite every claim sometimes writes the label
-     * where the fact goes ({@code "Power": "C1"}), producing a card that is valid JSON,
-     * passes every other check, and scores zero on attribute match. Anchored to the whole
-     * value, so a real value merely containing such text is untouched.
+     * <p>Separate because a long title is repaired pointwise — re-asked alone with the draft
+     * attached — rather than by regenerating the card. An empty title stays in the generation
+     * contract: there is nothing to shorten.
      */
-    private static boolean isBareReference(String value) {
-        return value.strip().matches("(?i)\\[?C\\d+]?");
+    public static java.util.Optional<String> titleLengthProblem(ProductCard card) {
+        if (card.title() != null && !card.title().isBlank() && card.title().length() > 60) {
+            return java.util.Optional.of("the title is " + card.title().length()
+                    + " characters long; it must be at most 60. Shorten it.");
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * The sources mapping, checked on its own.
+     *
+     * <p>Separate for the same reason as the title: a bad mapping is repaired pointwise. A value
+     * must be a fragment reference in the shape the prompts define — the label exactly as shown
+     * in brackets. A sentence explaining where the value came from is not a reference, even when
+     * every word of it is true: the verifier resolves labels, not prose.
+     */
+    public static List<String> sourcesProblems(ProductCard card) {
+        List<String> problems = new java.util.ArrayList<>();
+        card.sources().forEach((name, chunkId) -> {
+            if (!card.characteristics().containsKey(name)) {
+                problems.add("sources names '" + name + "' but there is no such characteristic");
+            }
+            if (chunkId == null || chunkId.isBlank()) {
+                problems.add("the source for '" + name + "' has no chunk identifier");
+            } else if (!isReference(chunkId)) {
+                problems.add("the source for '" + name + "' is '" + chunkId.strip() + "', which is "
+                        + "not a fragment reference; use the label exactly as shown in brackets, "
+                        + "such as C3");
+            }
+        });
+        return List.copyOf(problems);
+    }
+
+    /**
+     * Whether a value is a fragment reference rather than prose.
+     *
+     * <p>Anchored to the whole value, so a real value merely containing such text is untouched.
+     * Observed live in both directions: a model that is told to cite every claim sometimes writes
+     * the label where the fact goes ({@code "Power": "C1"}), and sometimes writes a sentence where
+     * the label goes — a card that is valid JSON, passes every other check, and scores zero on
+     * attribute match.
+     */
+    static boolean isReference(String value) {
+        return value.strip().matches("(?i)\\[?C\\d+\\]?");
     }
 
     /**

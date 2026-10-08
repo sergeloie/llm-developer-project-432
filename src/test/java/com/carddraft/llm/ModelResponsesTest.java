@@ -145,9 +145,22 @@ class ModelResponsesTest {
                 List.of("Six speeds"),
                 List.of("Colour"),
                 0.85,
-                Map.of("Power", "chunk-1"));
+                Map.of("Power", "C1"));
 
         assertThat(ResultContract.problemsWith(card)).isEmpty();
+    }
+
+    @Test
+    void aSourceThatIsNotAReferenceIsSentBack() {
+        var card = new com.carddraft.agents.ProductCard(
+                "Blender", "A blender.",
+                Map.of("Power", "800 W"),
+                List.of("Fast"), List.of(), 0.9,
+                Map.of("Power", "This blender has a power of 800 W"));
+
+        assertThat(ResultContract.sourcesProblems(card))
+                .anyMatch(p -> p.contains("'Power'") && p.contains("not a fragment reference"));
+        assertThat(ResultContract.problemsWith(card)).isNotEmpty();
     }
 
     @Test
@@ -159,7 +172,7 @@ class ModelResponsesTest {
                 List.of(),
                 List.of("Power"),
                 1.4,
-                Map.of("Colour", "chunk-9"));
+                Map.of("Colour", "C9"));
 
         assertThat(ResultContract.problemsWith(card))
                 .anyMatch(p -> p.contains("at most 60"))

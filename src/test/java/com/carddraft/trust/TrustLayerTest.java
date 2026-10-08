@@ -37,7 +37,7 @@ class TrustLayerTest {
         assertThat(report.maskedText())
                 .as("masked, not deleted: a reader can see a number was there and a model is not "
                         + "drawn to a gap that looks like a parsing failure")
-                .isEqualTo("По вопросам: [masked]");
+                .isEqualTo("По вопросам: [PHONE]");
     }
 
     @Test
@@ -63,7 +63,7 @@ class TrustLayerTest {
 
         assertThat(report.findings()).extracting(Finding::kind)
                 .containsExactly(Finding.Kind.TAXPAYER_NUMBER);
-        assertThat(report.maskedText()).isEqualTo("ИНН [masked]");
+        assertThat(report.maskedText()).isEqualTo("ИНН [TAXPAYER_NUMBER]");
     }
 
     /**
@@ -91,16 +91,17 @@ class TrustLayerTest {
      * unmasked. Validating only the twelve would mangle the shorter and far more common one, and
      * would do it to article numbers besides.
      *
-     * <p>The twelve-digit value is computed by hand rather than quoted: the first ten digits give a
-     * sum of 148, and 148 mod 11 mod 10 is 5, so the eleventh digit must be 5. The twelfth is
-     * (5 * 2 + 2) mod 11, which is 1.
+     * <p>The twelve-digit value is computed by hand from the FNS weights rather than quoted: the
+     * first ten digits give a sum of 148, and 148 mod 11 mod 10 is 5, so the eleventh digit must
+     * be 5. The twelfth is a second check over the first eleven with weights 3 7 2 4 10 3 5 9 4
+     * 6 8: the sum is 141, and 141 mod 11 mod 10 is 9.
      */
     @Test
     void bothTaxpayerNumberFormsAreVerified() {
-        assertThat(PiiDetector.hasValidTaxpayerChecksum("500100732251"))
+        assertThat(PiiDetector.hasValidTaxpayerChecksum("500100732259"))
                 .as("a valid twelve-digit taxpayer number")
                 .isTrue();
-        assertThat(PiiDetector.hasValidTaxpayerChecksum("500100732252"))
+        assertThat(PiiDetector.hasValidTaxpayerChecksum("500100732250"))
                 .as("and a wrong twelfth digit is refused")
                 .isFalse();
         assertThat(PiiDetector.hasValidTaxpayerChecksum("500100732151"))

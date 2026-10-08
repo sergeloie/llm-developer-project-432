@@ -65,8 +65,12 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public ProductCard draftCard(SupplierFacts facts, List<ReviewIssue> issues) {
-        return invoke("draftCard", ModelTier.MAIN, Prompts.generator(toJson(facts), issues),
-                ProductCard.class, ResultContract::problemsWith);
+        ProductCard draft = invoke("draftCard", ModelTier.MAIN, Prompts.generator(toJson(facts), issues),
+                ProductCard.class, ResultContract::problemsForGeneration);
+        draft = repairTitleIfNeeded(draft);
+        return repairSourcesIfNeeded(draft,
+                "The facts carry no fragment identifiers, so sources must stay empty rather than "
+                        + "naming invented references");
     }
 
     @Override
@@ -77,8 +81,16 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public ProductCard draftCardFromContext(String contextText, List<ReviewIssue> issues) {
-        return invoke("draftCardFromContext", ModelTier.MAIN, Prompts.generatorFromContext(contextText, issues),
-                ProductCard.class, ResultContract::problemsWith);
+        // First phase: the full card. A long title and a bad sources mapping pass through here on
+        // purpose: both are repaired pointwise below, and regenerating the whole card for either
+        // would bill a second generation for one field.
+        ProductCard firstDraft = invoke("draftCardFromContext:phase1", ModelTier.MAIN,
+                Prompts.generatorFromContext(contextText, issues),
+                ProductCard.class, ResultContract::problemsForGeneration);
+
+        ProductCard draft = repairTitleIfNeeded(firstDraft);
+        return repairSourcesIfNeeded(draft,
+                "Regenerate only the sources mapping using characteristic names as keys");
     }
 
 @Override
@@ -110,6 +122,65 @@ public class SpringAiLlmClient implements LlmClient {
         return repaired;
     }
 
+    /**
+     * One pointwise repair, only when it is needed.
+     *
+     * <p>A second generation is only worth billing when the first draft failed the field. A card
+     * that already satisfies the contract returns unchanged and costs nothing more.
+     */
+    private ProductCard repairTitleIfNeeded(ProductCard draft) {
+        return ResultContract.titleLengthProblem(draft)
+                .map(problem -> keepingFirstDraft(draft,
+                        repairCardField(draft, "title", problem), "title"))
+                .orElse(draft);
+    }
+
+    private ProductCard repairSourcesIfNeeded(ProductCard draft, String instruction) {
+        List<String> problems = ResultContract.sourcesProblems(draft);
+        if (problems.isEmpty()) {
+            return draft;
+        }
+        try {
+            ProductCard repaired = repairCardField(draft, "sources",
+                    instruction + ": " + String.join("; ", problems));
+            return keepingFirstDraft(draft, repaired, "sources");
+        } catch (ModelResponseFormatException e) {
+            // The mapping stayed imperfect within budget, and the first draft goes on anyway.
+            // Sources validity is the workflow's jurisdiction — it holds the retained context,
+            // a rework budget and a human to escalate to — while parseability and the card's
+            // substance are this client's. Throwing here would short-circuit that graceful path
+            // and end a job whose facts are fine. Transport failures are not caught: an
+            // unreachable provider is loud, an imperfect mapping is a verification matter.
+            log.warn("llm_sources_repair_exhausted problem={}", e.getMessage());
+            return draft;
+        }
+    }
+
+    /**
+     * The merge the generation promises: everything from the first draft, one field replaced.
+     *
+     * <p>The repair prompt asks for exactly this, but an instruction is not an enforcement — a
+     * model that rewrote the description while fixing the sources would otherwise smuggle an
+     * unreviewed change into the card. The merge keeps the billed second call to the field it
+     * was billed for.
+     *
+     * <p>If the merged card fails the contract — the repaired sources name a characteristic the
+     * first draft does not have — the repaired answer stands instead. It passed the contract
+     * whole, and a merged card that fails it is worse than a second draft that does not.
+     */
+    private ProductCard keepingFirstDraft(ProductCard first, ProductCard repaired, String field) {
+        ProductCard merged = switch (field) {
+            case "sources" -> new ProductCard(first.title(), first.description(),
+                    first.characteristics(), first.benefits(), first.missingFields(),
+                    first.confidence(), repaired.sources());
+            case "title" -> new ProductCard(repaired.title(), first.description(),
+                    first.characteristics(), first.benefits(), first.missingFields(),
+                    first.confidence(), first.sources());
+            default -> repaired;
+        };
+        return ResultContract.problemsWith(merged).isEmpty() ? merged : repaired;
+    }
+
     private <T> T invoke(String operation, ModelTier tier, String prompt, Class<T> type,
                          Function<T, List<String>> contract) {
         for (int attempt = 1; attempt <= settings.maxAttempts(); attempt++) {
@@ -121,7 +192,7 @@ public class SpringAiLlmClient implements LlmClient {
                     log.error("llm_call_failed operation={} tier={} attempt={} error={}", operation, tier, attempt, e.toString());
                     throw e;
                 }
-                Duration delay = settings.delayBefore(attempt + 1);
+                Duration delay = settings.delayBefore(attempt);
                 log.warn("llm_call_retry operation={} tier={} attempt={} delay_ms={} error={}",
                         operation, tier, attempt, delay.toMillis(), e.toString());
                 sleep(delay);

@@ -91,7 +91,7 @@ public static String critic(String factsJson, String draftJson) {
                 """.formatted(ResultContract.schemaFor(CritiqueReport.class), factsJson, draftJson);
     }
 
-/**
+    /**
      * The generator, working from retrieved fragments rather than extracted facts.
      *
      * <p>The difference from {@link #generator} is not stylistic. Here the model is shown numbered

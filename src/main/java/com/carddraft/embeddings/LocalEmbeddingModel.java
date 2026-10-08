@@ -29,10 +29,38 @@ public class LocalEmbeddingModel implements EmbeddingModel {
     private final ObjectMapper mapper;
     private final EmbeddingSettings settings;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public LocalEmbeddingModel(RestClient.Builder builder, ObjectMapper mapper, EmbeddingSettings settings) {
+        this(builder.baseUrl(settings.baseUrl()).requestFactory(timeouts(settings)).build(),
+                mapper, settings);
+    }
+
+    /**
+     * Assembled client rather than a builder.
+     *
+     * <p>Package-visible for the tests: the mock server binds to a builder, and a builder the
+     * production constructor already stamped a timeout factory onto no longer carries the mock.
+     * Passing the assembled client keeps the interception working without the production path
+     * giving up its ceiling.
+     */
+    LocalEmbeddingModel(RestClient restClient, ObjectMapper mapper, EmbeddingSettings settings) {
         this.mapper = mapper;
         this.settings = settings;
-        this.restClient = builder.baseUrl(settings.baseUrl()).build();
+        this.restClient = restClient;
+    }
+
+    /**
+     * The configured ceiling, applied rather than carried. A batch embed of a parsed document
+     * is the call most likely to meet a cold server, and without a bound it holds an indexing
+     * slot for as long as the server stays silent.
+     */
+    private static org.springframework.http.client.ClientHttpRequestFactory timeouts(
+            EmbeddingSettings settings) {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(settings.timeout());
+        factory.setReadTimeout(settings.timeout());
+        return factory;
     }
 
     @Override
