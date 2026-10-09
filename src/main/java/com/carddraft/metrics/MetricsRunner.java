@@ -71,7 +71,7 @@ public class MetricsRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) throws IOException {
         Path report = run(properties.fullSet() ? "full" : "default");
-        System.out.println("metrics report written to " + report.toAbsolutePath());
+        log.info("metrics_report_written path={}", report.toAbsolutePath());
     }
 
     /** Measures and writes, returning where the report went. */
@@ -88,9 +88,9 @@ public class MetricsRunner implements ApplicationRunner {
                 "run-" + System.currentTimeMillis(),
                 scope + " (" + documents.size() + " documents)",
                 results,
-                average(results, 0),
-                average(results, 1),
-                average(results, 2));
+                average(results, Metric.CHARACTERISTIC_MATCH),
+                average(results, Metric.CITATION_PRECISION),
+                average(results, Metric.SOURCE_SUPPORT));
 
         Path destination = OUTPUT.resolve(report.runId() + ".md");
         Files.createDirectories(OUTPUT);
@@ -109,8 +109,11 @@ public class MetricsRunner implements ApplicationRunner {
      * generates badly costs the measurements for every document that would have succeeded, which
      * is the exact inversion a metrics harness exists to avoid. The failure is still visible: it
      * appears in the report as a failed document carrying the reason.
+     *
+     * <p>Visible rather than private because that behaviour is invisible from outside the runner,
+     * and a claim that cannot be read from a test is one that quietly stops being true.
      */
-    private DocumentMetrics measure(String document, Map<String, String> expected) {
+    DocumentMetrics measure(String document, Map<String, String> expected) {
         if (expected.isEmpty()) {
             return DocumentMetrics.failed(document, "the reference set records no characteristics");
         }
@@ -210,36 +213,18 @@ public class MetricsRunner implements ApplicationRunner {
     }
 
     /**
-     * The mean of one metric, as a package-private seam so a test can pin which documents it counted.
-     *
-     * <p>Visible rather than private because the exclusion above is a claim about what the report
-     * asserts, and a claim that cannot be read from a test is one that quietly stops being true.
-     */
-    double averageForTest(List<DocumentMetrics> results, int index) {
-        return average(results, index);
-    }
-
-    /**
-     * One document's metrics, as a package-private seam so a test can pin what a failed document
-     * records.
-     *
-     * <p>Visible for the same reason as {@link #averageForTest}: the behaviour being claimed — that
-     * a bad document is recorded rather than thrown — is invisible from outside the runner.
-     */
-    DocumentMetrics measureForTest(String document, Map<String, String> expected) {
-        return measure(document, expected);
-    }
-
-    /**
      * The mean of one metric across the documents it was measured on.
      *
      * <p>Support averages over the documents whose judge answered and no others. Including a
      * document the judge never reached would drag the average down by a number that records the
      * harness's own failure rather than the card's quality — and a metric that falls because the
      * measurement broke is one nobody can act on.
+     *
+     * <p>Visible rather than private because that exclusion is a claim about what the report
+     * asserts, and a claim that cannot be read from a test is one that quietly stops being true.
      */
-    private double average(List<DocumentMetrics> results, int index) {
-        List<DocumentMetrics> measured = index == 2
+    double average(List<DocumentMetrics> results, Metric metric) {
+        List<DocumentMetrics> measured = metric == Metric.SOURCE_SUPPORT
                 ? results.stream().filter(DocumentMetrics::supportMeasured).toList()
                 : results;
         if (measured.isEmpty()) {
@@ -247,11 +232,7 @@ public class MetricsRunner implements ApplicationRunner {
         }
         double total = 0;
         for (DocumentMetrics metrics : measured) {
-            total += switch (index) {
-                case 0 -> metrics.characteristicMatch();
-                case 1 -> metrics.citationPrecision();
-                default -> metrics.sourceSupport();
-            };
+            total += metric.valueOf(metrics);
         }
         return total / measured.size();
     }

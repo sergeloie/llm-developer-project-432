@@ -99,11 +99,13 @@ public record DocumentMetrics(String document,
      * labels it as an estimate rather than pretending the comparison is exact.
      */
     public String weakestMetric() {
-        double worst = Math.min(characteristicMatch, Math.min(citationPrecision, sourceSupport));
-        if (worst == characteristicMatch) {
-            return "characteristic match";
+        Metric weakest = Metric.values()[0];
+        for (Metric metric : Metric.values()) {
+            if (metric.valueOf(this) < weakest.valueOf(this)) {
+                weakest = metric;
+            }
         }
-        return worst == citationPrecision ? "citation precision" : "source support";
+        return weakest.label();
     }
 
     public double weakestValue() {
@@ -111,9 +113,10 @@ public record DocumentMetrics(String document,
     }
 
     public Map<String, Double> asMap() {
-        return Map.of(
-                "characteristicMatch", characteristicMatch,
-                "citationPrecision", citationPrecision,
-                "sourceSupport", sourceSupport);
+        Map<String, Double> values = new java.util.LinkedHashMap<>();
+        for (Metric metric : Metric.values()) {
+            values.put(metric.key(), metric.valueOf(this));
+        }
+        return values;
     }
 }

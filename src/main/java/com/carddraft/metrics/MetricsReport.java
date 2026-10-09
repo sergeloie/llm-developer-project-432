@@ -42,35 +42,22 @@ public record MetricsReport(String runId, String scope, List<DocumentMetrics> pe
         if (perDocument.isEmpty()) {
             return "nothing was measured";
         }
-        double averages[] = {
-                averageCharacteristicMatch, averageCitationPrecision, averageSourceSupport
-        };
-        String[] names = {"characteristic match", "citation precision", "source support"};
-
-        int weakestIndex = 0;
-        for (int i = 1; i < averages.length; i++) {
-            if (averages[i] < averages[weakestIndex]) {
-                weakestIndex = i;
+        Metric weakest = Metric.values()[0];
+        for (Metric metric : Metric.values()) {
+            if (metric.averageOf(this) < weakest.averageOf(this)) {
+                weakest = metric;
             }
         }
-        final int weakest = weakestIndex;
 
+        Metric target = weakest;
         DocumentMetrics worstDocument = perDocument.stream()
-                .min(java.util.Comparator.comparingDouble(metrics -> valueOf(metrics, weakest)))
+                .min(java.util.Comparator.comparingDouble(target::valueOf))
                 .orElseThrow();
 
-        return "weakest metric: " + names[weakestIndex]
-                + " at " + format(averages[weakestIndex])
+        return "weakest metric: " + target.label()
+                + " at " + format(target.averageOf(this))
                 + " (average), worst document " + worstDocument.document()
-                + " at " + format(valueOf(worstDocument, weakestIndex));
-    }
-
-    private static double valueOf(DocumentMetrics metrics, int index) {
-        return switch (index) {
-            case 0 -> metrics.characteristicMatch();
-            case 1 -> metrics.citationPrecision();
-            default -> metrics.sourceSupport();
-        };
+                + " at " + format(target.valueOf(worstDocument));
     }
 
     private static String format(double value) {
