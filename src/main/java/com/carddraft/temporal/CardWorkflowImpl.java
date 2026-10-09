@@ -39,12 +39,6 @@ public class CardWorkflowImpl implements CardWorkflow {
     private static final int MAX_CITATION_REWORKS = 1;
 
     /**
-     * Module constants, not configuration. A generation step waits on the model for tens of
-     * seconds and can legitimately take minutes; five minutes is a ceiling, not a target.
-     */
-    private static final Duration STEP_TIMEOUT = Duration.ofMinutes(5);
-
-    /**
      * A status write is a local database update: it either lands or the database is down. Two
      * attempts, because the default is unlimited — and an unlimited default means a step that
      * fails deterministically is retried forever, with the timeout on the whole step as the only
@@ -52,22 +46,13 @@ public class CardWorkflowImpl implements CardWorkflow {
      */
     private static final Duration STATUS_TIMEOUT = Duration.ofSeconds(20);
 
-    private static final RetryOptions STEP_RETRY = RetryOptions.newBuilder()
-            .setMaximumAttempts(3)
-            .setInitialInterval(Duration.ofSeconds(1))
-            .build();
-
     private static final RetryOptions STATUS_RETRY = RetryOptions.newBuilder()
             .setMaximumAttempts(2)
             .setInitialInterval(Duration.ofSeconds(1))
             .build();
 
     private final CardActivities steps = Workflow.newActivityStub(
-            CardActivities.class,
-            ActivityOptions.newBuilder()
-                    .setStartToCloseTimeout(STEP_TIMEOUT)
-                    .setRetryOptions(STEP_RETRY)
-                    .build());
+            CardActivities.class, StepActivityOptions.options());
 
     private final CardActivities statusWrites = Workflow.newActivityStub(
             CardActivities.class,
@@ -118,7 +103,7 @@ public class CardWorkflowImpl implements CardWorkflow {
                 while (attempts < request.maxRounds()) {
                     attempts++;
                     publish(jobId, JobState.GENERATING, "attempt " + attempts);
-                    steps.countAttempt(jobId);
+                    statusWrites.countAttempt(jobId, attempts);
                     draftJson = steps.generateDraft(jobId, factsJson, issues);
 
                     publish(jobId, JobState.REVIEWING, "attempt " + attempts);
@@ -135,14 +120,22 @@ public class CardWorkflowImpl implements CardWorkflow {
                 Workflow.await(() -> decision != null);
             }
         } catch (RuntimeException e) {
-            publish(jobId, JobState.FAILED, e.getMessage());
+            status = JobState.FAILED.wireName();
+            statusWrites.recordFailure(jobId, failureMessage(e));
             throw ApplicationFailure.newNonRetryableFailureWithCause(
                     "job " + jobId + " failed", "CardJobFailed", e);
         }
 
+        if (DECISION_APPROVE.equals(decision) && !hasDraft(draftJson)) {
+            String reason = "approval refused: no draft card was generated, so there is nothing to approve";
+            status = JobState.FAILED.wireName();
+            statusWrites.recordFailure(jobId, reason);
+            return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision);
+        }
+
         JobState finalState = DECISION_APPROVE.equals(decision) ? JobState.APPROVED : JobState.REJECTED;
         status = finalState.wireName();
-        steps.recordOutcome(jobId, finalState.wireName(), draftJson);
+        statusWrites.recordOutcome(jobId, finalState.wireName(), draftJson);
 
         return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision);
     }
@@ -181,7 +174,7 @@ public class CardWorkflowImpl implements CardWorkflow {
         while (attempts < maxRounds && citationFailures <= MAX_CITATION_REWORKS) {
             attempts++;
             publish(jobId, JobState.GENERATING, "attempt " + attempts);
-            steps.countAttempt(jobId);
+            statusWrites.countAttempt(jobId, attempts);
             draftJson = steps.generateFromContext(jobId, contextText, issues);
 
             publish(jobId, JobState.REVIEWING, "attempt " + attempts);
@@ -253,5 +246,33 @@ public class CardWorkflowImpl implements CardWorkflow {
 
     private void publish(String jobId, JobState state, String detail) {
         statusWrites.writeStatus(jobId, state.wireName(), detail);
+    }
+
+    /**
+     * The reason a step failed, not the engine's wrapper around it.
+     *
+     * <p>An activity failure arrives as a chain whose outermost message names the activity and the
+     * retry state; the cause the operator needs — "provider unreachable" — is at the bottom. The
+     * deepest non-blank message is what a caller reading {@code GET /jobs/{id}} has to see.
+     */
+    private String failureMessage(RuntimeException e) {
+        String message = null;
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause.getMessage() != null && !cause.getMessage().isBlank()) {
+                message = cause.getMessage();
+            }
+        }
+        return message == null ? e.getClass().getSimpleName() : message;
+    }
+
+    /**
+     * Whether generation produced a card rather than the empty object the workflow starts from.
+     *
+     * <p>An approval that reached the workflow another way than the guarded endpoint must not be
+     * recorded as a success with nothing to show. The same shape the endpoint refuses, kept here
+     * as well so the branch that waits for a person cannot approve an empty draft.
+     */
+    private boolean hasDraft(String draftJson) {
+        return draftJson != null && !draftJson.isBlank() && !"{}".equals(draftJson.strip());
     }
 }

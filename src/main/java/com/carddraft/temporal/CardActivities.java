@@ -76,7 +76,7 @@ public interface CardActivities {
     void writeStatus(String jobId, String state, String detail);
 
     @ActivityMethod
-    void countAttempt(String jobId);
+    void countAttempt(String jobId, int attempt);
 
     /**
      * Writes the finished state and the draft in one statement.

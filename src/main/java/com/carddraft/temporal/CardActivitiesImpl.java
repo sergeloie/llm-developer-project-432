@@ -207,8 +207,8 @@ public class CardActivitiesImpl implements CardActivities {
     }
 
     @Override
-    public void countAttempt(String jobId) {
-        jobs.recordAttempt(jobId);
+    public void countAttempt(String jobId, int attempt) {
+        jobs.setAttempts(jobId, attempt);
     }
 
     @Override

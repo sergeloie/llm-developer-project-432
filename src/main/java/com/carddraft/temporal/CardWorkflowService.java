@@ -9,6 +9,7 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.stereotype.Service;
 
 import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowExecutionAlreadyStarted;
 import io.temporal.client.WorkflowNotFoundException;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
@@ -36,6 +37,11 @@ public class CardWorkflowService {
      * <p>The job row is written before this is called. The order matters: a worker that picked up
      * the process before the row existed would find nothing to update, and the job would be
      * running with no state a client could read.
+     *
+     * <p>A process already started for this identifier is not an error. Two concurrent submits
+     * with the same idempotency key can both pass the caller's exists-check before either process
+     * is visible, and the loser must read the same answer as the winner rather than a 500. The
+     * work this call asks for is already accounted for.
      */
     public void start(String workflowId, WorkflowRequest request) {
         WorkflowOptions options = WorkflowOptions.newBuilder()
@@ -43,7 +49,11 @@ public class CardWorkflowService {
                 .setTaskQueue(settings.taskQueue())
                 .build();
         CardWorkflow workflow = client.newWorkflowStub(CardWorkflow.class, options);
-        WorkflowStub.fromTyped(workflow).start(request);
+        try {
+            WorkflowStub.fromTyped(workflow).start(request);
+        } catch (WorkflowExecutionAlreadyStarted alreadyUnderWay) {
+            // Already accounted for; see the method contract above.
+        }
     }
 
     public String currentStatus(String workflowId) {

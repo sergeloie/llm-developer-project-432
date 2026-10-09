@@ -348,6 +348,26 @@ class JobsControllerTest {
                 .containsEntry("status", "awaiting_human");
     }
 
+    @Test
+    void aFailedCardJobReportsItsFailureReasonThroughTheStatusEndpoint() {
+        given(llmClient.extractFacts(anyString()))
+                .willThrow(new IllegalStateException("provider unreachable"));
+
+        ResponseEntity<Map> submitted = rest.postForEntity("/jobs",
+                Map.of("supplierText", "Blender MixerPro 800. Power 800 W."), Map.class);
+        String jobId = (String) submitted.getBody().get("id");
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            Map<String, Object> status = rest.getForObject("/jobs/" + jobId, Map.class);
+            assertThat(status)
+                    .as("a card job that fails asynchronously reports failed like a document job")
+                    .containsEntry("status", "failed");
+            assertThat(status.get("error").toString())
+                    .as("and carries the reason, so metrics and alerting can read it")
+                    .contains("provider unreachable");
+        });
+    }
+
     private String submitAndAwaitAHuman(String idempotencyKey) {
         givenAnApprovingReviewer();
         HttpHeaders headers = new HttpHeaders();
