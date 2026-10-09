@@ -139,7 +139,7 @@ public class CitationVerifier {
      * model wrote, and a verifier that forgives a near-miss of a real reference cannot be the thing
      * that catches a fabricated one. Case and surrounding space are the model's to get right.
      */
-    private static String canonicalReference(String written) {
+    public static String canonicalReference(String written) {
         if (written == null || written.length() < 3) {
             return written;
         }

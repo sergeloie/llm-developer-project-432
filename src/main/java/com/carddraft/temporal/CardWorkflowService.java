@@ -1,11 +1,5 @@
 package com.carddraft.temporal;
 
-import java.time.Duration;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import org.springframework.stereotype.Service;
 
 import io.temporal.client.WorkflowClient;
@@ -75,34 +69,5 @@ public class CardWorkflowService {
         } catch (WorkflowNotFoundException e) {
             return false;
         }
-    }
-
-    /**
-     * The result, only if the process has already finished.
-     *
-     * <p>Never blocks. An unfinished process is not an error — there is simply no result yet — and
-     * a client polling should be told so rather than held open waiting for minutes. Asking for the
-     * result with a zero timeout answers "is it done" without the wait.
-     */
-    public Optional<WorkflowResult> completedResult(String workflowId) {
-        CompletableFuture<WorkflowResult> pending =
-                stubFor(workflowId).getResultAsync(0, TimeUnit.MILLISECONDS, WorkflowResult.class);
-        if (!pending.isDone()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(pending.join());
-    }
-
-    /** Blocks until the process finishes. For callers that genuinely wait, such as tests. */
-    public WorkflowResult awaitResult(String workflowId, Duration timeout) {
-        try {
-            return stubFor(workflowId).getResult(timeout.toMillis(), TimeUnit.MILLISECONDS, WorkflowResult.class);
-        } catch (TimeoutException e) {
-            throw new IllegalStateException("workflow " + workflowId + " did not finish within " + timeout, e);
-        }
-    }
-
-    private WorkflowStub stubFor(String workflowId) {
-        return WorkflowStub.fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId));
     }
 }

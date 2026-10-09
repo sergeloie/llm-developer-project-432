@@ -154,7 +154,7 @@ public class JobSubmissionService {
         // would make the workflow record a success with nothing to show. A job that attempted
         // generation carries its draft in the workflow and only writes it at the outcome, so a
         // null result alone is not the signal - zero attempts is.
-        if (decision == JobDecision.APPROVE && job.attempts() == 0 && !hasDraft(job)) {
+        if (decision == JobDecision.APPROVE && job.attempts() == 0 && !ProductCard.isDraftJson(job.result())) {
             return new DecisionOutcome.NoDraft(job);
         }
         if (!workflows.exists(jobId)) {
@@ -211,16 +211,6 @@ public class JobSubmissionService {
             }
         }
         return states;
-    }
-
-    /** Whether the job already carries a draft to approve. */
-    private boolean hasDraft(JobsRepository.Job job) {
-        String result = job.result();
-        if (result == null) {
-            return false;
-        }
-        String trimmed = result.strip();
-        return !trimmed.isEmpty() && !"{}".equals(trimmed);
     }
 
     /**

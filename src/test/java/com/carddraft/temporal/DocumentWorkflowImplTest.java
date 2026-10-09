@@ -3,7 +3,6 @@ package com.carddraft.temporal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -109,7 +108,9 @@ class DocumentWorkflowImplTest {
                         + "the chunks it already indexed in order to write the same ones again")
                 .isFalse();
 
-        assertThat(parses.awaitResult("doc-abc123", Duration.ofSeconds(20)).chunkCount()).isEqualTo(7);
+        assertThat(resultOf("parse-doc-abc123").chunkCount())
+                .as("the second upload waits on the same parse rather than starting another")
+                .isEqualTo(7);
         assertThat(activities.calls)
                 .as("the second upload must not repeat the work either")
                 .hasValue(2);

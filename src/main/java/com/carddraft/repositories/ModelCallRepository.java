@@ -50,9 +50,9 @@ public class ModelCallRepository {
             jdbc.sql("""
                             INSERT INTO model_calls
                                 (job_id, tier, model, operation, input_tokens, output_tokens,
-                                 cost, duration_ms, load_ms, called_at)
+                                 cost, duration_ms, called_at)
                             VALUES (:jobId, :tier, :model, :operation, :inputTokens, :outputTokens,
-                                    :cost, :durationMs, :loadMs, :calledAt)
+                                    :cost, :durationMs, :calledAt)
                             """)
                     .param("jobId", call.jobId())
                     .param("tier", call.tier())
@@ -62,8 +62,6 @@ public class ModelCallRepository {
                     .param("outputTokens", call.outputTokens())
                     .param("cost", call.cost())
                     .param("durationMs", Math.toIntExact(call.duration().toMillis()))
-                    .param("loadMs", call.loadDuration() == null
-                            ? null : Math.toIntExact(call.loadDuration().toMillis()))
                     .param("calledAt", calledAt)
                     .update();
         } catch (RuntimeException e) {
@@ -90,7 +88,7 @@ public class ModelCallRepository {
     public List<ModelCallRecord> forJob(String jobId) {
         return jdbc.sql("""
                         SELECT job_id, tier, model, operation, input_tokens, output_tokens,
-                               cost, duration_ms, load_ms, called_at
+                               cost, duration_ms, called_at
                           FROM model_calls
                          WHERE job_id = :jobId
                          ORDER BY called_at, id
@@ -153,13 +151,12 @@ public class ModelCallRepository {
      */
     record CallRow(String jobId, String tier, String model, String operation,
                    int inputTokens, int outputTokens, BigDecimal cost,
-                   int durationMs, Integer loadMs, Instant calledAt) {
+                   int durationMs, Instant calledAt) {
 
         ModelCallRecord toRecord() {
             return new ModelCallRecord(jobId, tier, model, operation, inputTokens, outputTokens,
                     cost == null ? BigDecimal.ZERO.setScale(CostCalculator.SCALE) : cost,
                     Duration.ofMillis(durationMs),
-                    loadMs == null ? null : Duration.ofMillis(loadMs),
                     calledAt);
         }
     }

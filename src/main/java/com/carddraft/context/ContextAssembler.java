@@ -78,8 +78,4 @@ public class ContextAssembler {
         }
         return text.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").strip();
     }
-
-    public ContextSettings settings() {
-        return settings;
-    }
 }

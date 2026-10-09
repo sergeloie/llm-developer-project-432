@@ -188,7 +188,8 @@ class CitationVerifierTest {
                     .isTrue();
         }
 
-        for (String rejected : List.of("[C3", "C3]", "c3", "[c3]", "[ C3 ]", "[]")) {
+        for (String rejected : List.of("[C3", "C3]", "c3", "[c3]", "[ C3 ]", "[]",
+                " C3 ", " C3", "C3 ")) {
             var card = cardWithSource(rejected);
             assertThat(ResultContract.sourcesProblems(card))
                     .as("the contract rejects " + rejected)

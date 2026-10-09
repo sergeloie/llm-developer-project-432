@@ -18,14 +18,10 @@ import java.time.Instant;
  * @param cost    exact decimal, never a double. Prices per million tokens and token counts are both
  *                decimal and both exact; a float is wrong in the last places, which is invisible
  *                per call and visible in a total.
- * @param loadMs  the provider's own load time when it reports one. Null means it did not, and
- *                null is meaningful: a local server that had to pull weights into memory is slow
- *                for a reason that has nothing to do with generation, and without this the two are
- *                indistinguishable in a duration column.
  */
 public record ModelCallRecord(String jobId, String tier, String model, String operation,
                               int inputTokens, int outputTokens, BigDecimal cost,
-                              Duration duration, Duration loadDuration, Instant calledAt) {
+                              Duration duration, Instant calledAt) {
 
     public ModelCallRecord {
         if (inputTokens < 0 || outputTokens < 0) {

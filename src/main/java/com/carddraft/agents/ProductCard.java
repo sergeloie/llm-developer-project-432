@@ -62,4 +62,16 @@ public record ProductCard(
     public boolean awaitsHuman(double threshold) {
         return confidence == null || confidence < threshold;
     }
+
+    /**
+     * Whether a serialised card is a real draft rather than the empty object a job starts from.
+     *
+     * <p>One rule, because two callers need it and disagreeing copies of it would mean an approval
+     * one path refuses and another records as a success with nothing to show. An empty object is
+     * not a weak card, it is no card: it must not be approved by a person's signal or by the
+     * workflow that receives it.
+     */
+    public static boolean isDraftJson(String json) {
+        return json != null && !json.isBlank() && !"{}".equals(json.strip());
+    }
 }
