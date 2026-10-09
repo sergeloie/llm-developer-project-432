@@ -23,6 +23,9 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.io.support.ResourcePatternResolver;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 /**
  * {@code application.yml} has to declare every setting the application binds.
  *
@@ -34,13 +37,16 @@ import org.springframework.core.io.support.ResourcePatternResolver;
  * from {@code @DefaultValue}, {@code .env} was ignored, and every {@code @SpringBootTest} passed
  * because they set the properties themselves.
  *
- * <p>Three rules, and the third is what keeps the first two honest:
+ * <p>Four rules, and the third is what keeps the first two honest:
  *
  * <ol>
  *   <li>every bindable property is declared — the missing case;
  *   <li>every variable documented in {@code .env.example} is read — the documented-but-dead case;
  *   <li>every {@code card.*} key declared is bindable — the dead-key case, which is what a
- *       misfiled key looks like.
+ *       misfiled key looks like;
+ *   <li>every framework key declared is one Spring or its dependencies actually expose — the
+ *       misspelled-prefix case, where {@code spring.retry.max-attempts} reads as a setting and
+ *       binds nothing because the real key is {@code spring.ai.retry.max-attempts}.
  * </ol>
  *
  * <p>The properties are read through {@code YamlPropertiesFactoryBean} rather than through the
@@ -73,8 +79,13 @@ class DeclaredConfigurationTest {
             "card.embedding.backfill-on-start",
             "card.temporal.worker.enabled");
 
+    /** Prefixes owned by Spring or its dependencies rather than by this application. */
+    private static final Set<String> FRAMEWORK_PREFIXES =
+            Set.of("spring.", "server.", "management.", "logging.");
+
     private final Set<String> declared = declaredKeys();
     private final Set<String> bindable = bindableKeys();
+    private final Set<String> frameworkProperties = frameworkPropertyNames();
 
     @Test
     void everyBindableSettingIsDeclared() {
@@ -111,6 +122,24 @@ class DeclaredConfigurationTest {
 
         assertThat(dead)
                 .as("keys under card.* that nothing binds — a misfiled key reads as a setting and is not one")
+                .isEmpty();
+    }
+
+    @Test
+    void everyFrameworkSettingIsExposedBySpring() {
+        Set<String> unknown = new TreeSet<>();
+        for (String key : declared) {
+            if (FRAMEWORK_PREFIXES.stream().noneMatch(key::startsWith)) {
+                continue;
+            }
+            if (!isExposedByMetadata(key)) {
+                unknown.add(key);
+            }
+        }
+
+        assertThat(unknown)
+                .as("keys under a framework prefix that neither Spring nor its dependencies expose "
+                        + "— a misspelled prefix reads as a setting and binds nothing")
                 .isEmpty();
     }
 
@@ -206,6 +235,59 @@ class DeclaredConfigurationTest {
         } catch (IOException e) {
             throw new IllegalStateException("could not read application.yml", e);
         }
+    }
+
+    /**
+     * Whether the metadata names the key itself or an ancestor, because a map property such as
+     * {@code logging.level} exposes {@code logging.level.root} without listing every key.
+     */
+    private boolean isExposedByMetadata(String key) {
+        String candidate = key;
+        while (true) {
+            if (frameworkProperties.contains(candidate)) {
+                return true;
+            }
+            int dot = candidate.lastIndexOf('.');
+            if (dot < 0) {
+                return false;
+            }
+            candidate = candidate.substring(0, dot);
+        }
+    }
+
+    /**
+     * Every property named by Spring's configuration metadata on the classpath.
+     *
+     * <p>Read from the metadata rather than from a list here: a list would drift from the
+     * dependencies it describes, and the whole point is to catch a key a dependency does not have.
+     * Only entries under {@code properties} count — a {@code groups} name is a prefix, not a key
+     * anything binds.
+     */
+    private Set<String> frameworkPropertyNames() {
+        Set<String> names = new TreeSet<>();
+        ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        try {
+            for (Resource resource : resolver.getResources(
+                    "classpath*:META-INF/*spring-configuration-metadata.json")) {
+                JsonNode metadata;
+                try (InputStream in = resource.getInputStream()) {
+                    metadata = new ObjectMapper().readTree(in);
+                }
+                for (JsonNode property : metadata.path("properties")) {
+                    String name = property.path("name").asString("");
+                    if (!name.isEmpty()) {
+                        names.add(name);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("could not read Spring's configuration metadata", e);
+        }
+
+        assertThat(names)
+                .as("Spring's configuration metadata was found on the classpath")
+                .isNotEmpty();
+        return names;
     }
 
     private static String kebab(String camelCase) {
