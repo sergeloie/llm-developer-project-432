@@ -14,9 +14,13 @@ import org.slf4j.MDC;
  * site would then have a decision to make about it. The cost of that is not compile errors — it is
  * a new code path quietly recording nothing.
  *
- * <p>Deliberately inheritable, because a model call can hand work to another thread and the record
- * should still name the job. What it is not allowed to do is leak: {@link #clear()} runs in a
- * finally block, so a pooled thread does not carry one job's identifier into the next.
+ * <p>Bound to the calling thread only, and deliberately not inheritable. A model call that hands
+ * work to another thread leaves the job identifier behind: that thread carries no binding until it
+ * establishes one, and a record written there names no job rather than a guessed one. Inheritance
+ * was rejected because a thread is not owned by a job — a pooled thread created during one job
+ * serves the next one too, and naming the job it was created for would attribute a cost to the
+ * wrong card. It does not leak either: {@link #withJob} restores the previous binding in a finally
+ * block, so a pooled thread does not carry one job's identifier into the next.
  */
 public final class JobLogContext {
 

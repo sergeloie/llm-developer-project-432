@@ -53,4 +53,33 @@ class PromptsTest {
         assertThat(Prompts.generatorFromContext("[C1] nothing", List.of()))
                 .contains("at most " + limit + " characters");
     }
+
+    @Test
+    void everyPromptStatesTheReplyContractFromTheSharedConstant() {
+        assertThat(Prompts.extractor("text")).contains(Prompts.JSON_REPLY);
+        assertThat(Prompts.generator("{}", List.of())).contains(Prompts.JSON_REPLY);
+        assertThat(Prompts.generatorFromContext("[C1] text", List.of())).contains(Prompts.JSON_REPLY);
+        assertThat(Prompts.critic("{}", "{}")).contains(Prompts.JSON_REPLY_WITH_KEYS);
+        assertThat(Prompts.criticAgainstContext("[C1] text", "{}")).contains(Prompts.JSON_REPLY_WITH_KEYS);
+        assertThat(Prompts.repairField("{}", "title", "problem")).contains(Prompts.CORRECTED_JSON_REPLY);
+    }
+
+    @Test
+    void bothReviewersForbidMarkdownWithTheSameWording() {
+        assertThat(Prompts.critic("{}", "{}")).contains(Prompts.NO_MARKDOWN);
+        assertThat(Prompts.criticAgainstContext("[C1] text", "{}")).contains(Prompts.NO_MARKDOWN);
+    }
+
+    @Test
+    void issuesAppearAfterARejectionAndOnlyRenderWhenPresent() {
+        List<ReviewIssue> issues = List.of(new ReviewIssue("Power", "the value is missing"));
+
+        assertThat(Prompts.generator("{}", List.of()))
+                .as("an accepted first draft carries no rejection section")
+                .doesNotContain("rejected");
+        assertThat(Prompts.generator("{}", issues))
+                .contains("Power: the value is missing");
+        assertThat(Prompts.generatorFromContext("[C1] text", issues))
+                .contains("Power: the value is missing");
+    }
 }

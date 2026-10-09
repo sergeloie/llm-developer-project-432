@@ -24,6 +24,8 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.SupportJudgement;
@@ -79,7 +81,8 @@ class SpringAiLlmClientSupportVerdictTest {
                     @Override
                     public void record(ModelCallRecord call) {
                     }
-                });
+                },
+                new SimpleMeterRegistry());
     }
 
     @Test

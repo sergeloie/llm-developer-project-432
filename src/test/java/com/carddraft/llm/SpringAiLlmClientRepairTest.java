@@ -27,6 +27,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.Generation;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.ProductCard;
@@ -85,7 +87,8 @@ class SpringAiLlmClientRepairTest {
         // A recording repository rather than a mock, so "the client wrote a row per call" can be
         // asserted by counting rows instead of by restating the expectation.
         calls = new RecordingCallRepository();
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls);
+        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls,
+                new SimpleMeterRegistry());
     }
 
     /** Collects what the client recorded, with no expectations of its own. */
