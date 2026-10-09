@@ -2,65 +2,39 @@ package com.carddraft.embeddings;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.springframework.http.MediaType;
+import org.springframework.ai.embedding.Embedding;
+import org.springframework.ai.embedding.EmbeddingOptions;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-
-import tools.jackson.databind.ObjectMapper;
 
 /**
- * Embeddings from the local OpenAI-compatible server.
+ * The project's embedding adapter, over Spring AI's OpenAI-compatible client.
  *
- * <p>The model lives in the server's process, not ours. That is why the task template is applied
- * here rather than by the model: a server-side embedding endpoint embeds exactly the string it is
- * given, so a template this code did not apply would simply be absent — and the retrieval would
- * degrade without a single error.
+ * <p>This class is not a pass-through, and it must not be reduced to one. The local server embeds
+ * exactly the string it is handed, so the task template is applied here: a query is asked for and a
+ * document is offered, with different prefixes. A prefix this code failed to apply would not error
+ * — the vectors stay valid and retrieval quietly degrades — which is why the query and document
+ * entry points stay separate and stay ours (ADR-0002).
  *
- * <p>Applying it here also makes the choice visible and configurable, which is what gives the
- * calibration test something to bite on: the same code can be asked to encode without the
- * templates, and the difference in scores observed rather than assumed.
+ * <p>The same argument applies to the checks below. A response of the wrong width or one that
+ * omits an input is refused here rather than stored, because a silently unembedded chunk is only
+ * discovered by a search that returns the wrong thing.
+ *
+ * <p>The wire call itself is Spring AI's typed client. Request assembly and response validation
+ * are ours; the HTTP body and JSON tree are not.
  */
 @Component
 public class LocalEmbeddingModel implements EmbeddingModel {
 
-    private final RestClient restClient;
-    private final ObjectMapper mapper;
+    private final org.springframework.ai.embedding.EmbeddingModel wire;
     private final EmbeddingSettings settings;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    public LocalEmbeddingModel(RestClient.Builder builder, ObjectMapper mapper, EmbeddingSettings settings) {
-        this(builder.baseUrl(settings.baseUrl()).requestFactory(timeouts(settings)).build(),
-                mapper, settings);
-    }
-
-    /**
-     * Assembled client rather than a builder.
-     *
-     * <p>Package-visible for the tests: the mock server binds to a builder, and a builder the
-     * production constructor already stamped a timeout factory onto no longer carries the mock.
-     * Passing the assembled client keeps the interception working without the production path
-     * giving up its ceiling.
-     */
-    LocalEmbeddingModel(RestClient restClient, ObjectMapper mapper, EmbeddingSettings settings) {
-        this.mapper = mapper;
+    public LocalEmbeddingModel(org.springframework.ai.embedding.EmbeddingModel wire, EmbeddingSettings settings) {
+        this.wire = wire;
         this.settings = settings;
-        this.restClient = restClient;
-    }
-
-    /**
-     * The configured ceiling, applied rather than carried. A batch embed of a parsed document
-     * is the call most likely to meet a cold server, and without a bound it holds an indexing
-     * slot for as long as the server stays silent.
-     */
-    private static org.springframework.http.client.ClientHttpRequestFactory timeouts(
-            EmbeddingSettings settings) {
-        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
-                new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(settings.timeout());
-        factory.setReadTimeout(settings.timeout());
-        return factory;
     }
 
     @Override
@@ -105,47 +79,54 @@ public class LocalEmbeddingModel implements EmbeddingModel {
         if (inputs.isEmpty()) {
             return List.of();
         }
-        String body = mapper.writeValueAsString(Map.of("model", settings.model(), "input", inputs));
+        EmbeddingOptions options = OpenAiEmbeddingOptions.builder()
+                .model(settings.model())
+                .timeout(settings.timeout())
+                .build();
+        EmbeddingResponse response = wire.call(new EmbeddingRequest(inputs, options));
 
-        String response = restClient.post()
-                .uri("/v1/embeddings")
-                // Stated explicitly because the body is a pre-serialised String: RestClient will
-                // not infer a content type from a String, and an OpenAI-compatible endpoint that
-                // receives text/plain is within its rights to refuse it.
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(String.class);
-
-        var data = mapper.readTree(response).path("data");
         List<List<Double>> vectors = new ArrayList<>(inputs.size());
         for (int i = 0; i < inputs.size(); i++) {
-            vectors.add(new ArrayList<>());
+            vectors.add(null);
         }
-        for (var element : data) {
-            int index = element.path("index").asInt(-1);
-            if (index < 0 || index >= vectors.size()) {
-                throw new IllegalStateException(
-                        "the embedding response carried index " + index + " for a request of "
-                                + inputs.size() + " inputs");
+        for (Embedding embedding : response.getResults()) {
+            Integer index = embedding.getIndex();
+            if (index == null || index < 0 || index >= vectors.size()) {
+                throw new IllegalStateException("the embedding response carried index " + index
+                        + " for a request of " + inputs.size() + " inputs");
             }
-            List<Double> vector = new ArrayList<>();
-            for (var value : element.path("embedding")) {
-                vector.add(value.asDouble());
-            }
-            vectors.set(index, vector);
+            float[] output = embedding.getOutput();
+            vectors.set(index, output == null ? List.of() : toVector(output));
         }
 
         for (int i = 0; i < vectors.size(); i++) {
-            if (vectors.get(i).isEmpty()) {
+            List<Double> vector = vectors.get(i);
+            if (vector == null) {
                 throw new IllegalStateException("the embedding response omitted index " + i);
             }
-            int actual = vectors.get(i).size();
+            if (vector.isEmpty()) {
+                throw new IllegalStateException("the embedding response carried an empty vector at index " + i);
+            }
+            int actual = vector.size();
             if (actual != settings.dimension()) {
                 throw new EmbeddingDimensionMismatchException(settings.model(), settings.dimension(), actual);
             }
         }
         return vectors;
+    }
+
+    /**
+     * The wire is float32; this interface speaks {@code Double}. Carrying the shortest decimal that
+     * round-trips to the same float keeps the vector free of the binary widening noise a plain
+     * cast would leave, so a value that arrived as {@code 0.1f} does not become
+     * {@code 0.10000000149011612}.
+     */
+    private static List<Double> toVector(float[] output) {
+        List<Double> vector = new ArrayList<>(output.length);
+        for (float value : output) {
+            vector.add(Double.parseDouble(Float.toString(value)));
+        }
+        return vector;
     }
 
     /** Raised when the server returns a width the database column cannot hold. */

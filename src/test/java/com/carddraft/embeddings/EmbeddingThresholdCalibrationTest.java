@@ -9,6 +9,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 
 import com.carddraft.search.SearchSettings;
 
@@ -54,18 +56,13 @@ class EmbeddingThresholdCalibrationTest {
 
     static boolean modelIsReachable() {
         try {
-            var settings = new EmbeddingSettings(
-                    System.getProperty("card.embedding.baseUrl", "http://127.0.0.1:1234"),
-                    System.getProperty("card.embedding.model", "text-embedding-embeddinggemma-300m"),
-                    Integer.parseInt(System.getProperty("card.embedding.dimension", "768")),
+            client(new EmbeddingSettings(
+                    baseUrl(),
+                    modelName(),
+                    dimension(),
                     System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
                     System.getProperty("card.embedding.documentPrefix", "title: "),
-                    java.time.Duration.ofSeconds(120));
-            var model = new LocalEmbeddingModel(
-                    org.springframework.web.client.RestClient.builder(),
-                    new ObjectMapper(),
-                    settings);
-            model.embedQuery("probe");
+                    java.time.Duration.ofSeconds(120))).embedQuery("probe");
             return true;
         } catch (Exception e) {
             return false;
@@ -191,20 +188,38 @@ class EmbeddingThresholdCalibrationTest {
     }
 
     private static EmbeddingModel bareModel() {
-        return new LocalEmbeddingModel(
-                org.springframework.web.client.RestClient.builder(), new ObjectMapper(),
-                new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "",
-                        java.time.Duration.ofSeconds(120)));
+        return client(new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "",
+                java.time.Duration.ofSeconds(120)));
     }
 
     private static EmbeddingModel liveModel() {
-        return new LocalEmbeddingModel(
-                org.springframework.web.client.RestClient.builder(), new ObjectMapper(),
-                new EmbeddingSettings(
-                        baseUrl(), modelName(), dimension(),
-                        System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
-                        System.getProperty("card.embedding.documentPrefix", "title: "),
-                        java.time.Duration.ofSeconds(120)));
+        return client(new EmbeddingSettings(
+                baseUrl(), modelName(), dimension(),
+                System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
+                System.getProperty("card.embedding.documentPrefix", "title: "),
+                java.time.Duration.ofSeconds(120)));
+    }
+
+    /**
+     * The Spring AI client the adapter works over, configured the same way production is.
+     *
+     * <p>The production client is auto-configured; this builds the equivalent by hand so the live
+     * calibration can run without starting the application context. The /v1 suffix is required by
+     * the SDK, which is why {@code card.embedding.base-url} itself does not carry it.
+     */
+    private static LocalEmbeddingModel client(EmbeddingSettings settings) {
+        OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
+                .baseUrl(settings.baseUrl() + "/v1")
+                .apiKey(apiKey())
+                .model(settings.model())
+                .timeout(settings.timeout())
+                .build();
+        return new LocalEmbeddingModel(OpenAiEmbeddingModel.builder().options(options).build(), settings);
+    }
+
+    private static String apiKey() {
+        String fromEnvironment = System.getenv("CARD_LLM_API_KEY");
+        return fromEnvironment == null || fromEnvironment.isBlank() ? "lm-studio" : fromEnvironment;
     }
 
     private static String baseUrl() {
