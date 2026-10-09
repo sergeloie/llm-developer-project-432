@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
@@ -329,7 +330,8 @@ class CardRetrievalWorkflowTest {
          */
         @Override
         public synchronized CitationCheck checkCitations(String jobId, String draftJson) {
-            CitationVerifier.Verdict verdict = verifier.verify(SHOWN, Map.of("Power", citation));
+            CitationVerifier.Verdict verdict = verifier.verify(SHOWN, Set.of("Power"),
+                    Map.of("Power", citation));
             return new CitationCheck(verdict.isClean(), verdict.messages(),
                     verdict.fabricated().size(), 0);
         }

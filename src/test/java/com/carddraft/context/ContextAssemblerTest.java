@@ -2,6 +2,7 @@ package com.carddraft.context;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -212,7 +213,7 @@ class ContextAssemblerTest {
         AssembledContext context = assembler.assemble("job-1", List.of(hit(10, "d", "s", "text")));
 
         CitationVerifier.Verdict verdict = new CitationVerifier()
-                .verify(context, Map.of("Power", "C1"));
+                .verify(context, Set.of("Power"), Map.of("Power", "C1"));
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings()).hasSize(1);

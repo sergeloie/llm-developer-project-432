@@ -37,8 +37,9 @@ class CardActivitiesOutputFilterTest {
         LlmClient llm = mock(LlmClient.class);
         given(llm.draftCardFromContext(anyString(), anyList())).willReturn(drafted);
         var judgeLlm = mock(LlmClient.class);
-        TrustService trust = new TrustService(new PiiDetector(), new InjectionDetector(),
-                new InjectionModel(new InjectionDetector(), judgeLlm));
+        TrustService trust = new TrustService(new PiiDetector(),
+                new InjectionDetector(new TrustSettings(2, 120)),
+                new InjectionModel(new InjectionDetector(new TrustSettings(2, 120)), judgeLlm));
         return new CardActivitiesImpl(llm, mock(com.carddraft.repositories.JobsRepository.class),
                 mock(com.carddraft.context.ContextAssembler.class),
                 mock(com.carddraft.search.SearchService.class),
@@ -77,7 +78,7 @@ class CardActivitiesOutputFilterTest {
         var judgeLlm = mock(LlmClient.class);
         given(judgeLlm.judgeInjection(anyString()))
                 .willThrow(new IllegalStateException("provider unreachable"));
-        var rules = new InjectionDetector();
+        var rules = new InjectionDetector(new TrustSettings(2, 120));
         TrustService trust = new TrustService(new PiiDetector(), rules,
                 new InjectionModel(rules, judgeLlm));
 
