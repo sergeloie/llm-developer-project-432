@@ -17,6 +17,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import com.carddraft.agents.ProductCard;
 import com.carddraft.repositories.ModelCallRepository;
 
@@ -260,7 +262,8 @@ class ModelCallRepositoryTest {
                 new BigDecimal("3.00"), new BigDecimal("15.00"),
                 new BigDecimal("0.50"), new BigDecimal("1.50"), BigDecimal.ZERO);
         SpringAiLlmClient client =
-                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder);
+                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder,
+                        new SimpleMeterRegistry());
 
         JobLogContext.withJob("job-42", () ->
                 client.draftCardFromContext("[C1] Power 800 W", List.of()));
@@ -299,7 +302,8 @@ class ModelCallRepositoryTest {
                 1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         SpringAiLlmClient client =
-                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder);
+                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder,
+                        new SimpleMeterRegistry());
 
         client.draftCardFromContext("[C1] text", List.of());
 

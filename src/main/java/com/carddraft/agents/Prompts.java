@@ -18,48 +18,58 @@ public final class Prompts {
     private Prompts() {
     }
 
+    /**
+     * The reply format, stated once.
+     *
+     * <p>Every prompt that expects JSON ends with the same instruction, so a change of wording is a
+     * change to one constant rather than to six prompts that can drift apart.
+     */
+    private static final String JSON_REPLY_PREFIX =
+            "Reply with a JSON object matching this schema and nothing else";
+
+    private static final String NO_PROSE = "No prose, no markdown fences.";
+
+    static final String JSON_REPLY = JSON_REPLY_PREFIX + ". " + NO_PROSE;
+
+    static final String JSON_REPLY_WITH_KEYS = JSON_REPLY_PREFIX + ", with these two keys:";
+
+    static final String NO_MARKDOWN = "Do not wrap the JSON in markdown. Do not add commentary.";
+
+    static final String CORRECTED_JSON_REPLY =
+            "Reply with the corrected JSON object and nothing else. " + NO_PROSE;
+
     public static String extractor(String supplierText) {
         return """
                 You are the extractor. From the supplier text below, pull out only the facts it \
                 actually states. Do not invent anything: whatever is absent goes into \
                 missingFields by name, never into the characteristics.
 
-                Reply with a JSON object matching this schema and nothing else. No prose, no \
-                markdown fences.
+                %s
 
-                SCHEMA:
                 %s
 
                 SUPPLIER TEXT:
                 %s
-                """.formatted(ResultContract.schemaFor(SupplierFacts.class), supplierText);
+                """.formatted(JSON_REPLY, schemaSection(SupplierFacts.class), supplierText);
     }
 
     public static String generator(String factsJson, List<ReviewIssue> issues) {
         StringBuilder prompt = new StringBuilder("""
                 You are the generator. Write a product card using only the facts below.
 
-                Reply with a JSON object matching this schema and nothing else. No prose, no \
-                markdown fences. The title must be at most %d characters. Every characteristic \
+                %s The title must be at most %d characters. Every characteristic \
                 must be present in the facts; do not promise anything the facts do not support. \
                 For each characteristic, sources maps the characteristic name to the identifier \
                 of the fragment it came from. If the facts carry no identifiers, leave sources \
                 empty rather than inventing one. Put anything absent into missingFields.
 
-                SCHEMA:
                 %s
 
                 FACTS:
                 %s
-                """.formatted(ProductCard.MAX_TITLE_LENGTH,
-                ResultContract.schemaFor(ProductCard.class), factsJson));
-
-if (issues != null && !issues.isEmpty()) {
-            prompt.append("\nThe reviewer rejected the previous draft. Address every point:\n");
-            for (ReviewIssue issue : issues) {
-                prompt.append("- ").append(issue.asFeedback()).append('\n');
-            }
-        }
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH,
+                schemaSection(ProductCard.class), factsJson));
+        prompt.append(issues("The reviewer rejected the previous draft. Address every point:", issues));
         return prompt.toString();
     }
 
@@ -72,16 +82,14 @@ public static String critic(String factsJson, String draftJson) {
                 4. there are no empty promises such as "high quality" or "premium";
                 5. every characteristic has a source, or the facts carried no identifiers.
 
-                Reply with a JSON object matching this schema and nothing else, with these two \
-                keys:
+                %s
                   verdict  string   "APPROVE" if the card is fit, otherwise "REGENERATE"
                   issues   array    one object per problem, each with `field` naming the \
                 characteristic or "" when the objection is about the card as a whole, and `problem` \
                 saying what is wrong in one sentence. Empty when approving.
 
-                Do not wrap the JSON in markdown. Do not add commentary.
+                %s
 
-                SCHEMA:
                 %s
 
                 FACTS:
@@ -89,8 +97,8 @@ public static String critic(String factsJson, String draftJson) {
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(ProductCard.MAX_TITLE_LENGTH,
-                ResultContract.schemaFor(CritiqueReport.class), factsJson, draftJson);
+                """.formatted(ProductCard.MAX_TITLE_LENGTH, JSON_REPLY_WITH_KEYS, NO_MARKDOWN,
+                schemaSection(CritiqueReport.class), factsJson, draftJson);
     }
 
     /**
@@ -119,23 +127,15 @@ other. Never invent a reference: if no fragment supports a characteristic, leave
 characteristic out and name it in missingFields instead. A characteristic with no supporting \
 fragment is far better than a characteristic citing a fragment that does not support it.
 
-                Reply with a JSON object matching this schema and nothing else. No prose, no \
-                markdown fences. The title must be at most %d characters.
+                %s The title must be at most %d characters.
 
-                SCHEMA:
                 %s
 
                 FRAGMENTS:
                 %s
-                """.formatted(ProductCard.MAX_TITLE_LENGTH,
-                ResultContract.schemaFor(ProductCard.class), contextText));
-
-        if (issues != null && !issues.isEmpty()) {
-            prompt.append("\nThe previous draft was rejected. Address every point:\n");
-            for (ReviewIssue issue : issues) {
-                prompt.append("- ").append(issue.asFeedback()).append('\n');
-            }
-        }
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH,
+                schemaSection(ProductCard.class), contextText));
+        prompt.append(issues("The previous draft was rejected. Address every point:", issues));
         return prompt.toString();
     }
 
@@ -161,8 +161,7 @@ fragment is far better than a characteristic citing a fragment that does not sup
                 right fact attributed to the wrong fragment is a failure: the value and the \
                 fragment are both plausible, and a reader cannot see the mismatch.
 
-                Reply with a JSON object matching this schema and nothing else, with these two \
-                keys:
+                %s
                   verdict  string   "APPROVE" if every cited characteristic is supported, \
                 otherwise "REGENERATE"
                   issues   array    one object per problem, each with `field` naming the \
@@ -170,9 +169,8 @@ fragment is far better than a characteristic citing a fragment that does not sup
                 saying in one sentence what is wrong - naming the fragment label when the problem \
                 is that the card cites the wrong one. Empty when approving.
 
-                Do not wrap the JSON in markdown. Do not add commentary.
+                %s
 
-                SCHEMA:
                 %s
 
                 FRAGMENTS:
@@ -180,7 +178,8 @@ fragment is far better than a characteristic citing a fragment that does not sup
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(ResultContract.schemaFor(CritiqueReport.class), contextText, draftJson);
+                """.formatted(JSON_REPLY_WITH_KEYS, NO_MARKDOWN,
+                schemaSection(CritiqueReport.class), contextText, draftJson);
     }
 
     /**
@@ -203,16 +202,40 @@ fragment is far better than a characteristic citing a fragment that does not sup
 
                 The problem with that field: %s
 
-                Reply with the corrected JSON object and nothing else. No prose, no markdown \
-                fences.
+                %s
 
-                SCHEMA:
                 %s
 
                 CURRENT CARD:
                 %s
-                """.formatted(field, problem,
-                ResultContract.schemaFor(ProductCard.class),
-                currentJson);
+                """.formatted(field, problem, CORRECTED_JSON_REPLY,
+                schemaSection(ProductCard.class), currentJson);
+    }
+
+    /**
+     * The JSON-object section, built from the type so it cannot drift from the record.
+     *
+     * <p>One place announces the schema, so a change to the announcement reaches every prompt. The
+     * schema itself is cached by {@link ResultContract#schemaFor(Class)}.
+     */
+    private static String schemaSection(Class<?> type) {
+        return "SCHEMA:\n" + ResultContract.schemaFor(type);
+    }
+
+    /**
+     * The reviewer's objections, appended after a rejected round.
+     *
+     * <p>One place renders the list, so the next attempt sees the same shape whether the draft came
+     * from the facts path or the fragments path.
+     */
+    private static String issues(String heading, List<ReviewIssue> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return "";
+        }
+        StringBuilder section = new StringBuilder("\n").append(heading).append('\n');
+        for (ReviewIssue issue : issues) {
+            section.append("- ").append(issue.asFeedback()).append('\n');
+        }
+        return section.toString();
     }
 }

@@ -27,6 +27,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.SupplierFacts;
@@ -101,6 +103,7 @@ class SpringAiLlmClientTemperatureTest {
                     @Override
                     public void record(ModelCallRecord call) {
                     }
-                });
+                },
+                new SimpleMeterRegistry());
     }
 }

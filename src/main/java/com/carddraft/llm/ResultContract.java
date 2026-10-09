@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 import com.carddraft.agents.CritiqueReport;
@@ -123,7 +124,7 @@ public final class ResultContract {
      * to regenerate the whole card here. Everything else still is: an empty title cannot be
      * shortened into existence, and a missing description cannot be repaired without writing one.
      */
-    public static List<String> problemsForGeneration(ProductCard card) {
+    static List<String> problemsForGeneration(ProductCard card) {
         List<String> problems = new java.util.ArrayList<>();
 
         if (card.title() == null || card.title().isBlank()) {
@@ -239,10 +240,16 @@ public final class ResultContract {
      *
      * <p>Sent as prompt text because local servers do not enforce a strict structured-output mode.
      * The assignment permits this fallback explicitly.
+     *
+     * <p>Built once per type and reused, because a prompt is rebuilt on every repair round and the
+     * schema is a pure function of the type. Only the full-depth schema is cached; the recursion
+     * inside works from the depth argument and never re-enters here.
      */
     public static String schemaFor(Class<?> type) {
-        return schemaFor(type, 2);
+        return SCHEMAS.computeIfAbsent(type, t -> schemaFor(t, 2));
     }
+
+    private static final Map<Class<?>, String> SCHEMAS = new ConcurrentHashMap<>();
 
     private static String schemaFor(Class<?> type, int depth) {
         StringBuilder json = new StringBuilder();

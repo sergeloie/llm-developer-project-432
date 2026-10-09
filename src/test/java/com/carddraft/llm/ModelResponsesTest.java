@@ -130,6 +130,17 @@ class ModelResponsesTest {
     }
 
     @Test
+    void theSchemaIsBuiltOnceAndReusedAcrossPromptBuilds() {
+        String first = ResultContract.schemaFor(com.carddraft.agents.ProductCard.class);
+        String second = ResultContract.schemaFor(com.carddraft.agents.ProductCard.class);
+
+        assertThat(second)
+                .as("a prompt is rebuilt on every repair round, so the schema must be reused "
+                        + "rather than regenerated each time")
+                .isSameAs(first);
+    }
+
+    @Test
     void nestedRecordsBecomeNestedObjectsInTheSchema() {
         String schema = ResultContract.schemaFor(com.carddraft.agents.CritiqueReport.class);
 
