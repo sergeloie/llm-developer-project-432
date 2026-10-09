@@ -172,6 +172,11 @@ management:
       show-details: always
       probes:
         enabled: true
+      group:
+        # Readiness means the two dependencies a request needs: the database, and the vector
+        # extension the search runs on. Liveness stays Boot's default, which touches neither.
+        readiness:
+          include: readinessState,db,vectorExtension
 
 logging:
   level:

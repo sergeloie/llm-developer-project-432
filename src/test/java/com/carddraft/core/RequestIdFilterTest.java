@@ -65,7 +65,8 @@ class RequestIdFilterTest {
 
     @Test
     void anIdentifierSuppliedByTheCallerReachesTheLogRecords() {
-        rest.exchange("/health/live?probe=1", HttpMethod.GET, new HttpEntity<>(headers("caller-supplied-id")), Map.class);
+        rest.exchange("/actuator/health/liveness?probe=1", HttpMethod.GET,
+                new HttpEntity<>(headers("caller-supplied-id")), Map.class);
 
         List<ILoggingEvent> events = captured.list.stream()
                 .filter(event -> event.getLoggerName().endsWith("RequestIdFilter"))
@@ -79,7 +80,7 @@ class RequestIdFilterTest {
 
     @Test
     void anIdentifierIsGeneratedWhenTheCallerSuppliesNone() {
-        ResponseEntity<Map> response = rest.getForEntity("/health/live?probe=2", Map.class);
+        ResponseEntity<Map> response = rest.getForEntity("/actuator/health/liveness?probe=2", Map.class);
 
         assertThat(response.getHeaders().getFirst(RequestIdFilter.HEADER)).isNotBlank();
         assertThat(captured.list.stream()
@@ -91,7 +92,7 @@ class RequestIdFilterTest {
     @Test
     void theSuppliedIdentifierIsEchoedBackToTheCaller() {
         ResponseEntity<Map> response = rest.exchange(
-                "/health/live?probe=3", HttpMethod.GET, new HttpEntity<>(headers("echoed-id")), Map.class);
+                "/actuator/health/liveness?probe=3", HttpMethod.GET, new HttpEntity<>(headers("echoed-id")), Map.class);
 
         assertThat(response.getHeaders().getFirst(RequestIdFilter.HEADER)).isEqualTo("echoed-id");
     }

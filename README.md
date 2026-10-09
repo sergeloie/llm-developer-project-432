@@ -63,8 +63,8 @@ docker compose up -d      # PostgreSQL с pgvector и Temporal
 Сервис поднимется на `http://127.0.0.1:8080`. Проверьте, что он готов:
 
 ```bash
-curl http://127.0.0.1:8080/health/ready
-# {"status":"UP","checks":{"database":{"status":"UP"},"vectorExtension":{"status":"UP","version":"0.8.7"}}}
+curl http://127.0.0.1:8080/actuator/health/readiness
+# {"status":"UP","components":{"db":{"status":"UP"},"readinessState":{"status":"UP"},"vectorExtension":{"status":"UP","details":{"version":"0.8.7"}}}}
 ```
 
 > Все адреса в `.env` и в примерах — `127.0.0.1`, а не `localhost`. На Windows
@@ -120,8 +120,8 @@ curl http://127.0.0.1:8080/jobs/<jobId>
 
 | Метод и путь | Что делает |
 |---|---|
-| `GET /health/live` | процесс жив |
-| `GET /health/ready` | база отвечает, расширение pgvector активно |
+| `GET /actuator/health/liveness` | процесс жив |
+| `GET /actuator/health/readiness` | база отвечает, расширение pgvector активно |
 | `POST /documents` | загрузить документ (`multipart/form-data`, поле `file`) |
 | `GET /documents/{id}` | состояние документа и число фрагментов |
 | `GET /documents/{id}/chunks` | сами фрагменты — то, что будет искаться |
