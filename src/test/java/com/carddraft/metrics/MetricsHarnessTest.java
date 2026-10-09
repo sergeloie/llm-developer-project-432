@@ -129,7 +129,7 @@ class MetricsHarnessTest {
                 new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
-        DocumentMetrics metrics = runner.measureForTest("probe.pdf",
+        DocumentMetrics metrics = runner.measure("probe.pdf",
                 Map.of("Power", "800 W", "Volume", "1.5 l"));
 
         assertThat(metrics.characteristicMatch()).isEqualTo(1.0);
@@ -262,10 +262,10 @@ class MetricsHarnessTest {
                 new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
-        assertThat(runner.averageForTest(results, 2))
+        assertThat(runner.average(results, Metric.SOURCE_SUPPORT))
                 .as("0.5 would mean the cards were half unsupported, rather than that one was never judged")
                 .isEqualTo(1.0);
-        assertThat(runner.averageForTest(results, 0))
+        assertThat(runner.average(results, Metric.CHARACTERISTIC_MATCH))
                 .as("the other two metrics were measured on every document and still average over all")
                 .isEqualTo(1.0);
     }
@@ -285,6 +285,61 @@ class MetricsHarnessTest {
                 .contains("0.625")
                 .contains("worst document b.pdf")
                 .contains("0.250");
+    }
+
+    /**
+     * The metric set is defined once, and every name the harness prints or serialises comes from it.
+     *
+     * <p>Without this, adding or renaming a metric is a multi-file edit and a typo becomes a
+     * silently-missing number: the average, the weakest summary, the per-document table and
+     * {@code asMap} each carried their own copy of the names.
+     */
+    @Test
+    void oneEnumDefinesEveryMetricNameAndValue() {
+        DocumentMetrics metrics = new DocumentMetrics("a.pdf", 1.0, 0.5, 0.25, 4, List.of(), List.of());
+
+        assertThat(Metric.CHARACTERISTIC_MATCH.valueOf(metrics)).isEqualTo(1.0);
+        assertThat(Metric.CITATION_PRECISION.valueOf(metrics)).isEqualTo(0.5);
+        assertThat(Metric.SOURCE_SUPPORT.valueOf(metrics)).isEqualTo(0.25);
+        assertThat(metrics.asMap()).containsOnlyKeys(
+                Metric.CHARACTERISTIC_MATCH.key(),
+                Metric.CITATION_PRECISION.key(),
+                Metric.SOURCE_SUPPORT.key());
+    }
+
+    @Test
+    void theReportPrintsTheEnumsOwnNames() {
+        MetricsReport report = new MetricsReport("run-1", "default",
+                List.of(new DocumentMetrics("a.pdf", 1.0, 0.5, 0.25, 2, List.of(), List.of())),
+                1.0, 0.5, 0.25);
+
+        String text = new MetricsReportWriter().render(report);
+
+        for (Metric metric : Metric.values()) {
+            assertThat(text).contains(metric.label());
+        }
+    }
+
+    /**
+     * A tie has one answer, and every path gives it.
+     *
+     * <p>The document-level weakest metric and the report-level weakest summary used to walk the
+     * same three numbers through different shapes — an equality chain and an indexed loop — so a tie
+     * could resolve to different metrics depending on which path asked. Declaration order settles it.
+     */
+    @Test
+    void tiedMetricsNameTheSameMetricInEveryPath() {
+        DocumentMetrics tied = new DocumentMetrics("tie.pdf", 0.5, 0.5, 0.5, 2, List.of(), List.of());
+
+        assertThat(tied.weakestMetric())
+                .as("a three-way tie resolves to declaration order, not to an arbitrary path")
+                .isEqualTo(Metric.CHARACTERISTIC_MATCH.label());
+
+        MetricsReport report = new MetricsReport("run-1", "default", List.of(tied), 0.5, 0.5, 0.5);
+
+        assertThat(report.weakestSummary())
+                .as("the report resolves the same tie the document does")
+                .contains("weakest metric: " + Metric.CHARACTERISTIC_MATCH.label());
     }
 
     @Test
@@ -406,7 +461,7 @@ class MetricsHarnessTest {
                 new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
-        assertThat(runner.measureForTest("kettle_manual.pdf", Map.of("Power", "2200 W")))
+        assertThat(runner.measure("kettle_manual.pdf", Map.of("Power", "2200 W")))
                 .as("one document with an unusable model answer must not cost the run its report")
                 .satisfies(metrics -> {
                     assertThat(metrics.supportMeasured())

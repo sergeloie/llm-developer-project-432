@@ -43,14 +43,14 @@ public class MetricsReportWriter {
         out.append("## Averages\n\n");
         out.append("| metric | value |\n");
         out.append("|---|---|\n");
-        out.append(row("characteristic match", report.averageCharacteristicMatch()));
-        out.append(row("citation precision", report.averageCitationPrecision()));
+        out.append(row(Metric.CHARACTERISTIC_MATCH.label(), report.averageCharacteristicMatch()));
+        out.append(row(Metric.CITATION_PRECISION.label(), report.averageCitationPrecision()));
         long supportCovered = report.perDocument().stream().filter(DocumentMetrics::supportMeasured).count();
         out.append(report.perDocument().stream().anyMatch(m -> !m.supportMeasured())
-                ? "| source support (estimate) | not measured for "
+                ? "| " + Metric.SOURCE_SUPPORT.label() + " (estimate) | not measured for "
                         + (report.perDocument().size() - supportCovered) + " of "
                         + report.perDocument().size() + " documents |\n"
-                : row("source support (estimate)", report.averageSourceSupport()));
+                : row(Metric.SOURCE_SUPPORT.label() + " (estimate)", report.averageSourceSupport()));
         out.append('\n');
 
         out.append("## Cost\n\n");
