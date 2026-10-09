@@ -199,7 +199,7 @@ public final class ResultContract {
             }
             if (chunkId == null || chunkId.isBlank()) {
                 problems.add("the source for '" + name + "' has no chunk identifier");
-            } else if (!isReference(chunkId)) {
+            } else if (!isExactReference(chunkId)) {
                 problems.add("the source for '" + name + "' is '" + chunkId.strip() + "', which is "
                         + "not a fragment reference; use the label exactly as shown in brackets, "
                         + "such as C3");
@@ -209,23 +209,46 @@ public final class ResultContract {
     }
 
     /**
-     * A fragment reference exactly as the citation verifier will accept it.
+     * A fragment reference in the shape the prompts define: {@code [C3]} or {@code C3}.
      *
-     * <p>The verifier unwraps the display form {@code [C3]} and nothing else: brackets count only
-     * as a pair, case is the model's to get right, and surrounding space is not forgiven. The
-     * contract must accept exactly the same forms, or a card passes one gate and fails the next.
-     * {@link com.carddraft.context.CitationVerifierTest} locks the two together.
+     * <p>What the shape is and what is forgiven are two separate questions, and the sources gate
+     * and the characteristic-value check answer them differently.
+     *
+     * <p>The sources gate answers the shape question only, and exactly: the verifier unwraps a
+     * full pair of brackets and nothing else — case and surrounding space are the model's to get
+     * right — so {@link #sourcesProblems} must accept the same forms the verifier resolves or a
+     * card passes one gate and fails the next. That exactness is
+     * {@link com.carddraft.context.CitationVerifierTest}, which locks the two together.
+     *
+     * <p>The characteristic-value check answers a different question — "is this value a reference
+     * rather than a fact?" — and for that, a value the model padded with a stray space is still
+     * clearly the mistake it is, so it is worth sending back even though the sources gate would
+     * phrase the same padding differently.
      */
     private static final Pattern FRAGMENT_REFERENCE = Pattern.compile("(?:\\[C\\d+\\]|C\\d+)");
 
     /**
-     * Whether a value is a fragment reference rather than prose.
+     * Whether a sources value is a reference exactly as the citation verifier will resolve it.
+     *
+     * <p>No stripping: {@code " C3 "} is what the model wrote, and the verifier looks that up as a
+     * label the context does not have. See {@link #FRAGMENT_REFERENCE} for why the two checks here
+     * are not the same predicate.
+     */
+    static boolean isExactReference(String value) {
+        return FRAGMENT_REFERENCE.matcher(value).matches();
+    }
+
+    /**
+     * Whether a value is a fragment reference rather than prose, forgiving surrounding space.
      *
      * <p>Anchored to the whole value, so a real value merely containing such text is untouched.
      * Observed live in both directions: a model that is told to cite every claim sometimes writes
      * the label where the fact goes ({@code "Power": "C1"}), and sometimes writes a sentence where
      * the label goes — a card that is valid JSON, passes every other check, and scores zero on
      * attribute match.
+     *
+     * <p>Only used for the characteristic-value check, never for the sources gate; see
+     * {@link #FRAGMENT_REFERENCE}.
      */
     static boolean isReference(String value) {
         return FRAGMENT_REFERENCE.matcher(value.strip()).matches();
