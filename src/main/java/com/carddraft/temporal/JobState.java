@@ -11,8 +11,6 @@ package com.carddraft.temporal;
 public enum JobState {
 
     PENDING("pending"),
-    PARSING("parsing"),
-    INDEXING("indexing"),
     EXTRACTING("extracting"),
     RETRIEVING("retrieving"),
     GENERATING("generating"),
