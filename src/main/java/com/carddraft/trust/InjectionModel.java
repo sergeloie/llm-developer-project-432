@@ -34,13 +34,14 @@ public class InjectionModel {
     /**
      * Whether the model clears this fragment.
      *
-     * @return false when the fragment is suspicious <em>or</em> when the model could not be asked.
-     *         Both readings lead to the fragment being dropped, which is the fail-closed direction.
+     * @return false when the fragment is suspicious <em>or</em> when the model could not be asked
+     *         <em>or</em> did not answer either way. All three readings lead to the fragment being
+     *         dropped, which is the fail-closed direction.
      */
     public boolean clears(ContextChunk fragment, InjectionDetector.RuleVerdict rules) {
         try {
             ModelVerdict verdict = llm.judgeInjection(detector.prompt(fragment.text()));
-            return !verdict.suspicious();
+            return Boolean.FALSE.equals(verdict.suspicious());
         } catch (RuntimeException e) {
             // Logged at warn, not error, and not retried here: the call already used the client's
             // own retry policy, and a third attempt would mean a security decision costing three

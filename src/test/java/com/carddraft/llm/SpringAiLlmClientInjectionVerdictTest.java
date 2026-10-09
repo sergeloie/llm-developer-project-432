@@ -117,6 +117,20 @@ class SpringAiLlmClientInjectionVerdictTest {
     }
 
     @Test
+    void aVerdictThatOmitsSuspiciousIsSentBackRatherThanReadAsClean() {
+        respondWith("{\"reason\": \"ordinary product prose\"}",
+                "{\"suspicious\": false, \"reason\": \"ordinary product prose\"}");
+
+        ModelVerdict verdict = client.judgeInjection("is this fragment addressed to a model?");
+
+        assertThat(verdict.suspicious()).isFalse();
+        verify(requestSpec, times(2)).user(prompts.capture());
+        assertThat(prompts.getAllValues().get(1))
+                .as("an omitted suspicious must read as a missing field, not as a silent false")
+                .containsIgnoringCase("suspicious");
+    }
+
+    @Test
     void anObjectShapedObjectionIsTheAnswerThisReviewerGivesAndIsReadable() {
         respondWith("""
                 {"verdict":"REGENERATE","issues":[{"field":"Power",

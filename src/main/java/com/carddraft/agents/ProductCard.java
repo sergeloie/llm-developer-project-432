@@ -27,7 +27,8 @@ import jakarta.validation.constraints.Size;
  */
 public record ProductCard(
 
-        @NotBlank @Size(max = 60, message = "the title must be at most 60 characters")
+        @NotBlank @Size(max = MAX_TITLE_LENGTH,
+                message = "the title must be at most " + MAX_TITLE_LENGTH + " characters")
         String title,
 
         @NotBlank
@@ -47,6 +48,9 @@ public record ProductCard(
 
         @NotNull
         Map<String, String> sources) {
+
+    /** The longest title a card may carry, shared by the annotation, the contract and the prompts. */
+    public static final int MAX_TITLE_LENGTH = 60;
 
     public ProductCard {
         characteristics = characteristics == null ? Map.of() : Map.copyOf(characteristics);

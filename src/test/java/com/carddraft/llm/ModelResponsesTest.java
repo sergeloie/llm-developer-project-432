@@ -134,6 +134,14 @@ class ModelResponsesTest {
         String schema = ResultContract.schemaFor(com.carddraft.agents.CritiqueReport.class);
 
         assertThat(schema).contains("\"verdict\"").contains("\"issues\"");
+        assertThat(schema)
+                .as("a list of records must be declared as an array of objects, not of strings: "
+                        + "a model following an array-of-strings schema returns strings that fail "
+                        + "deserialization")
+                .contains("\"issues\": {\"type\": \"array\", \"items\": {\n  \"type\": \"object\"")
+                .contains("\"field\"")
+                .contains("\"problem\"")
+                .doesNotContain("\"items\": {\"type\": \"string\"}");
     }
 
     @Test
@@ -202,5 +210,37 @@ class ModelResponsesTest {
 
         assertThat(weak.awaitsHuman(0.7)).as("low confidence must not read as done").isTrue();
         assertThat(strong.awaitsHuman(0.7)).isFalse();
+    }
+
+    @Test
+    void aReferenceWithOneBracketOnlyIsNotAccepted() {
+        assertThat(ResultContract.isReference("C3")).isTrue();
+        assertThat(ResultContract.isReference("[C3]")).isTrue();
+        assertThat(ResultContract.isReference("[C3")).isFalse();
+        assertThat(ResultContract.isReference("C3]")).isFalse();
+        assertThat(ResultContract.isReference("c3")).isFalse();
+    }
+
+    @Test
+    void aVerdictThatOmitsSuspiciousIsMissingRatherThanClean() {
+        assertThat(ResultContract.problemsWith(
+                new com.carddraft.agents.ModelVerdict(null, "ordinary product prose")))
+                .anyMatch(problem -> problem.contains("suspicious"));
+    }
+
+    @Test
+    void theTitleLimitLivesOnTheCardAndTheContractUsesIt() {
+        var tooLong = new com.carddraft.agents.ProductCard(
+                "T".repeat(com.carddraft.agents.ProductCard.MAX_TITLE_LENGTH + 1),
+                "d", Map.of(), List.of("b"), List.of(), 0.9, Map.of());
+        var fits = new com.carddraft.agents.ProductCard(
+                "T".repeat(com.carddraft.agents.ProductCard.MAX_TITLE_LENGTH),
+                "d", Map.of(), List.of("b"), List.of(), 0.9, Map.of());
+
+        assertThat(ResultContract.titleLengthProblem(tooLong))
+                .get()
+                .asString()
+                .contains(String.valueOf(com.carddraft.agents.ProductCard.MAX_TITLE_LENGTH));
+        assertThat(ResultContract.titleLengthProblem(fits)).isEmpty();
     }
 }
