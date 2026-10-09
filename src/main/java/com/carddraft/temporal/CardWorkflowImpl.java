@@ -3,6 +3,7 @@ package com.carddraft.temporal;
 import java.time.Duration;
 import java.util.List;
 
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.ReviewIssue;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
@@ -67,7 +68,6 @@ public class CardWorkflowImpl implements CardWorkflow {
         String draftJson = "{}";
         int attempts = 0;
         boolean reviewerApproved = false;
-        CitationCheck citations = new CitationCheck(true, List.of(), 0, 0);
 
         try {
             if (request.retrievesFromDocuments()) {
@@ -123,7 +123,7 @@ public class CardWorkflowImpl implements CardWorkflow {
                     "job " + jobId + " failed", "CardJobFailed", e);
         }
 
-        if (decision == JobDecision.APPROVE && !hasDraft(draftJson)) {
+        if (decision == JobDecision.APPROVE && !ProductCard.isDraftJson(draftJson)) {
             String reason = "approval refused: no draft card was generated, so there is nothing to approve";
             status = JobState.FAILED.wireName();
             statusWrites.recordFailure(jobId, reason);
@@ -260,16 +260,5 @@ public class CardWorkflowImpl implements CardWorkflow {
             }
         }
         return message == null ? e.getClass().getSimpleName() : message;
-    }
-
-    /**
-     * Whether generation produced a card rather than the empty object the workflow starts from.
-     *
-     * <p>An approval that reached the workflow another way than the guarded endpoint must not be
-     * recorded as a success with nothing to show. The same shape the endpoint refuses, kept here
-     * as well so the branch that waits for a person cannot approve an empty draft.
-     */
-    private boolean hasDraft(String draftJson) {
-        return draftJson != null && !draftJson.isBlank() && !"{}".equals(draftJson.strip());
     }
 }
