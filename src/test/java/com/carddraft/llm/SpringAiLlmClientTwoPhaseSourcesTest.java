@@ -78,7 +78,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
         LlmSettings settings = new LlmSettings(
                 "main-model", "utility-model", 3,
                 java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         calls = new RecordingCallRepository();
         client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls);

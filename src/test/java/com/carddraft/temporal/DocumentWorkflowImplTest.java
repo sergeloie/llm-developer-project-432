@@ -116,7 +116,7 @@ class DocumentWorkflowImplTest {
     }
 
     private static TemporalSettings settings() {
-        return new TemporalSettings("local", "default", TASK_QUEUE, Duration.ofMillis(500), 100, 200);
+        return new TemporalSettings("local", "default", TASK_QUEUE, 100, 200);
     }
 
     @Test

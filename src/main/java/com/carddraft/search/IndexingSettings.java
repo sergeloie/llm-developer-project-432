@@ -23,10 +23,4 @@ public record IndexingSettings(
         @DefaultValue("16") @Min(1) int batchSize,
 
         @DefaultValue("1000") @Min(1) int maxBatches) {
-
-    public IndexingSettings {
-        if (batchSize < 1 || maxBatches < 1) {
-            throw new IllegalArgumentException("batchSize and maxBatches must both be positive");
-        }
-    }
 }

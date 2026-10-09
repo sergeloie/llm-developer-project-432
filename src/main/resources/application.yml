@@ -29,6 +29,12 @@ spring:
     baseline-on-migrate: false
 
   ai:
+    # Our client owns retry classification and writes the call record itself (ADR-0005). Both of
+    # Spring AI's retry layers are switched off below; leaving either on multiplies attempts - a
+    # three-attempt loop over a retrying client is up to nine requests, and nine times the bill.
+    # The retry template's own default is ten attempts, so silence here would not mean "off".
+    retry:
+      max-attempts: 1
     openai:
       # The /v1 suffix is required. Without it the SDK posts to /chat/completions, and this
       # server answers HTTP 200 with an error object rather than a 404 — so the failure surfaces
@@ -40,13 +46,8 @@ spring:
         # A local reasoning model answers in tens of seconds; the ceiling bounds one request so
         # a hung call cannot occupy a worker slot forever.
         timeout: ${CARD_LLM_TIMEOUT:120s}
-        # Our client owns retry classification and writes the call record itself (ADR-0005).
-        # Leaving either retry layer enabled would multiply attempts: a three-attempt loop over
-        # a retrying client is up to nine requests to the provider, and nine times the bill.
+        # The OpenAI client's own retry, off for the same reason as the template above.
         max-retries: 0
-  # Spring AI's own retry template, disabled for the same reason.
-  retry:
-    max-attempts: 1
 
   jackson:
     # Absent fields are left out of every response rather than sent as null, so a client reading
@@ -75,6 +76,7 @@ card:
     retry-base-delay: ${CARD_LLM_RETRY_BASE_DELAY:500ms}
     retry-max-delay: ${CARD_LLM_RETRY_MAX_DELAY:8s}
     max-repair-attempts: ${CARD_LLM_MAX_REPAIR_ATTEMPTS:2}
+    temperature: ${CARD_LLM_TEMPERATURE:0}
 
     # Prices per million tokens, per tier, as exact decimals. Zero for a local model; set the
     # reference cloud price of the same model to make the breakdown meaningful without moving
@@ -112,7 +114,6 @@ card:
     target: ${CARD_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${CARD_TEMPORAL_NAMESPACE:default}
     task-queue: ${CARD_TEMPORAL_TASK_QUEUE:card-drafting}
-    result-timeout: ${CARD_TEMPORAL_RESULT_TIMEOUT:PT0.5S}
     max-workflow-threads: ${CARD_TEMPORAL_MAX_WORKFLOW_THREADS:100}
     max-activity-threads: ${CARD_TEMPORAL_MAX_ACTIVITY_THREADS:200}
     # Turned off where the worker runs as its own process, and in tests, which bring their own
@@ -144,7 +145,6 @@ card:
     model: ${CARD_EMBEDDING_MODEL:text-embedding-embeddinggemma-300m}
     # Must match the vector column's width, or every search fails on a dimension mismatch.
     dimension: ${CARD_EMBEDDING_DIMENSION:768}
-    batch-size: ${CARD_EMBEDDING_BATCHSIZE:16}
     timeout: ${CARD_EMBEDDING_TIMEOUT:120s}
     # Task prefixes are deliberately not exposed here. They contain spaces and a trailing space,
     # neither of which survives an environment variable reliably, and they come from the model
@@ -159,7 +159,7 @@ card:
       max-batches: ${CARD_EMBEDDING_INDEXING_MAX_BATCHES:1000}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   shutdown: graceful
 
 management:

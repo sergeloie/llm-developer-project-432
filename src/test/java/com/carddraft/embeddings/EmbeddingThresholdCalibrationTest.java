@@ -60,7 +60,6 @@ class EmbeddingThresholdCalibrationTest {
                     Integer.parseInt(System.getProperty("card.embedding.dimension", "768")),
                     System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
                     System.getProperty("card.embedding.documentPrefix", "title: "),
-                    16,
                     java.time.Duration.ofSeconds(120));
             var model = new LocalEmbeddingModel(
                     org.springframework.web.client.RestClient.builder(),
@@ -194,7 +193,7 @@ class EmbeddingThresholdCalibrationTest {
     private static EmbeddingModel bareModel() {
         return new LocalEmbeddingModel(
                 org.springframework.web.client.RestClient.builder(), new ObjectMapper(),
-                new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "", 16,
+                new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "",
                         java.time.Duration.ofSeconds(120)));
     }
 
@@ -205,7 +204,6 @@ class EmbeddingThresholdCalibrationTest {
                         baseUrl(), modelName(), dimension(),
                         System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
                         System.getProperty("card.embedding.documentPrefix", "title: "),
-                        16,
                         java.time.Duration.ofSeconds(120)));
     }
 

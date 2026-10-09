@@ -258,7 +258,7 @@ public class SpringAiLlmClient implements LlmClient {
      */
     private String callOnce(String operation, ModelTier tier, String prompt) {
         var options = ChatOptions.builder();
-        options.model(settings.modelFor(tier)).temperature(0.0);
+        options.model(settings.modelFor(tier)).temperature(settings.temperature().doubleValue());
 
         long startedAt = System.nanoTime();
         var response = chatClient.prompt()

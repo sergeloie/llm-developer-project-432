@@ -1,5 +1,6 @@
 package com.carddraft.context;
 
+import jakarta.validation.constraints.Min;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
@@ -21,16 +22,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("card.context")
 public record ContextSettings(
 
-        @DefaultValue("12") int maxChunks,
+        @DefaultValue("12") @Min(1) int maxChunks,
 
-        @DefaultValue("12000") int maxCharacters) {
-
-    public ContextSettings {
-        if (maxChunks < 1) {
-            throw new IllegalArgumentException("a context of no chunks cannot answer anything; maxChunks=" + maxChunks);
-        }
-        if (maxCharacters < 1) {
-            throw new IllegalArgumentException("maxCharacters must be positive; got " + maxCharacters);
-        }
-    }
+        @DefaultValue("12000") @Min(1) int maxCharacters) {
 }

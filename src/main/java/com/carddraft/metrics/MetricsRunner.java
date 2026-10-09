@@ -269,10 +269,7 @@ public class MetricsRunner implements ApplicationRunner {
 
     /** Whether to measure the whole reference set or its declared default. */
     @org.springframework.boot.context.properties.ConfigurationProperties("card.metrics")
-    public record MetricsProperties(boolean fullSet) {
-
-        public MetricsProperties {
-            // Default false, so the cheap run is the one that happens.
-        }
+    public record MetricsProperties(
+            @org.springframework.boot.context.properties.bind.DefaultValue("false") boolean fullSet) {
     }
 }

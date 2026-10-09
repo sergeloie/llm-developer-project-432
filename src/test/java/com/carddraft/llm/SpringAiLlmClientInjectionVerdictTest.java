@@ -79,7 +79,7 @@ class SpringAiLlmClientInjectionVerdictTest {
         LlmSettings settings = new LlmSettings(
                 "main-model", "utility-model", 3,
                 java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
                 new ModelCallRepository(null) {

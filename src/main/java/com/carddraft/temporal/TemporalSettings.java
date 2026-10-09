@@ -1,7 +1,5 @@
 package com.carddraft.temporal;
 
-import java.time.Duration;
-
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
@@ -36,9 +34,6 @@ public record TemporalSettings(
         @DefaultValue("default") @NotBlank String namespace,
 
         @DefaultValue("card-drafting") @NotBlank String taskQueue,
-
-        /** Longest a caller will wait for a result before being told to come back later. */
-        @DefaultValue("PT0.5S") Duration resultTimeout,
 
         @DefaultValue("100") @Min(1) int maxWorkflowThreads,
         @DefaultValue("200") @Min(1) int maxActivityThreads) {
