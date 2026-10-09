@@ -3,11 +3,13 @@ package com.carddraft.repositories;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.junit.jupiter.Container;
@@ -33,6 +35,7 @@ class DocumentsRepositoryTest {
             .withPassword("card");
 
     private static JdbcClient jdbc;
+    private static JdbcTemplate template;
 
     private DocumentsRepository documents;
 
@@ -43,15 +46,17 @@ class DocumentsRepositoryTest {
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
-        jdbc = JdbcClient.create(new DriverManagerDataSource(
-                DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword()));
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
+        jdbc = JdbcClient.create(dataSource);
+        template = new JdbcTemplate(dataSource);
     }
 
     @BeforeEach
     void useAnEmptyTable() {
         jdbc.sql("DELETE FROM chunks").update();
         jdbc.sql("DELETE FROM documents").update();
-        documents = new DocumentsRepository(jdbc);
+        documents = new DocumentsRepository(jdbc, template);
     }
 
     @Test
@@ -139,5 +144,54 @@ class DocumentsRepositoryTest {
         assertThat(documents.findById("doc-pending").orElseThrow().state())
                 .as("the document that still has a chunk with no vector")
                 .isEqualTo("parsing");
+    }
+
+    @Test
+    void aValueThatLooksLikeSqlIsStoredVerbatimRatherThanInterpreted() {
+        String hostileFilename = "spec'); DROP TABLE documents; --";
+        String hostileText = "800 W'; DELETE FROM chunks; --";
+
+        documents.create("doc-hostile", hostileFilename, "9".repeat(64), 0, null);
+        documents.insertChunks("doc-hostile", List.of(new DocumentsRepository.ChunkRow(
+                0, "doc-hostile", 0, 1, "Power", hostileText, false)));
+
+        assertThat(documents.findById("doc-hostile").orElseThrow().filename())
+                .as("a filename that looks like SQL is a filename, not a statement")
+                .isEqualTo(hostileFilename);
+        assertThat(documents.chunksOf("doc-hostile"))
+                .singleElement()
+                .satisfies(chunk -> assertThat(chunk.text()).isEqualTo(hostileText));
+    }
+
+    @Test
+    void aDocumentWithManyChunksPersistsEveryRowInOrder() {
+        documents.create("doc-many", "many.pdf", "8".repeat(64), 0, null);
+        List<DocumentsRepository.ChunkRow> chunks = java.util.stream.IntStream.range(0, 40)
+                .mapToObj(i -> new DocumentsRepository.ChunkRow(
+                        0, "doc-many", i, 1 + (i % 3), "S" + i, "fragment " + i, i % 2 == 0))
+                .toList();
+
+        documents.insertChunks("doc-many", chunks);
+
+        assertThat(documents.chunksOf("doc-many"))
+                .as("one batch writes every fragment, and reads back in ordinal order")
+                .hasSize(40)
+                .extracting(DocumentsRepository.ChunkRow::ordinal)
+                .containsExactlyElementsOf(java.util.stream.IntStream.range(0, 40).boxed().toList());
+    }
+
+    @Test
+    void returningADocumentToParsingClearsAStaleRejectionReason() {
+        documents.create("doc-retry", "retry.pdf", "7".repeat(64), 0, null);
+        documents.markRejected("doc-retry", "the file could not be parsed");
+
+        documents.markParsing("doc-retry");
+
+        DocumentsRepository.DocumentRow retrying = documents.findById("doc-retry").orElseThrow();
+        assertThat(retrying.state()).isEqualTo("parsing");
+        assertThat(retrying.rejectionReason())
+                .as("a document being parsed again is no longer rejected, and a reason left "
+                        + "behind is a rejection that never happened")
+                .isNull();
     }
 }

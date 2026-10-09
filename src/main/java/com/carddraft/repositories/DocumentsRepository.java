@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -39,10 +40,12 @@ public class DocumentsRepository {
             """;
 
     private final JdbcClient jdbc;
+    private final JdbcTemplate template;
 
 
-    public DocumentsRepository(JdbcClient jdbc) {
+    public DocumentsRepository(JdbcClient jdbc, JdbcTemplate template) {
         this.jdbc = jdbc;
+        this.template = template;
     }
 
     public record DocumentRow(String id, String filename, String contentSha256, long sizeBytes,
@@ -112,7 +115,11 @@ public class DocumentsRepository {
 
 
     public void markParsing(String id) {
-        jdbc.sql("UPDATE documents SET state = 'parsing', updated_at = now() WHERE id = :id")
+        jdbc.sql("""
+                        UPDATE documents
+                           SET state = 'parsing', rejection_reason = NULL, updated_at = now()
+                         WHERE id = :id
+                        """)
                 .param("id", id)
                 .update();
     }
@@ -201,27 +208,29 @@ public class DocumentsRepository {
     }
 
     /**
-     * Written in a loop rather than as a JDBC batch.
+     * Writes every chunk in one round trip.
      *
-     * <p>JdbcClient has no batch statement, and reaching for NamedParameterJdbcTemplate to get one
-     * would mean two JDBC abstractions in the repository layer for a few hundred rows. Batching
-     * earns its keep when vectors are written, which is hundreds of times these rows.
+     * <p>{@code JdbcClient} exposes no batch API, so the batch template carries this write the same
+     * way it carries the vector writes; the reads stay on {@code JdbcClient}. A parse produces up to
+     * thousands of rows, and one statement per row turns storage into a round trip per fragment.
      */
     public void insertChunks(String documentId, List<ChunkRow> chunks) {
-        for (ChunkRow chunk : chunks) {
-            jdbc.sql("""
-                            INSERT INTO chunks (document_id, ordinal, page, section, text, is_table)
-                            VALUES (:documentId, :ordinal, :page, :section, :text, :table)
-                            """)
-                    .param("documentId", documentId)
-                    .param("ordinal", chunk.ordinal())
-                    .param("page", chunk.page())
-                    .param("section", chunk.section())
-                    .param("text", chunk.text())
-                    .param("table", chunk.tableFlag())
-
-                    .update();
+        if (chunks.isEmpty()) {
+            return;
         }
+        template.batchUpdate(
+                "INSERT INTO chunks (document_id, ordinal, page, section, text, is_table) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                chunks,
+                chunks.size(),
+                (statement, chunk) -> {
+                    statement.setString(1, documentId);
+                    statement.setInt(2, chunk.ordinal());
+                    statement.setInt(3, chunk.page());
+                    statement.setString(4, chunk.section());
+                    statement.setString(5, chunk.text());
+                    statement.setBoolean(6, chunk.tableFlag());
+                });
     }
 
     public List<ChunkRow> chunksOf(String documentId) {
