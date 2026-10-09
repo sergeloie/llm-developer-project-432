@@ -183,7 +183,7 @@ class CitationVerifierTest {
             assertThat(ResultContract.sourcesProblems(card))
                     .as("the contract accepts " + accepted)
                     .isEmpty();
-            assertThat(verifier.verify(context, card.sources()).isClean())
+            assertThat(verifier.verify(context, Set.of("Power"), card.sources()).isClean())
                     .as("a card the contract accepted must verify: " + accepted)
                     .isTrue();
         }
@@ -193,7 +193,7 @@ class CitationVerifierTest {
             assertThat(ResultContract.sourcesProblems(card))
                     .as("the contract rejects " + rejected)
                     .isNotEmpty();
-            assertThat(verifier.verify(context, card.sources()).isClean())
+            assertThat(verifier.verify(context, Set.of("Power"), card.sources()).isClean())
                     .as("and the verifier rejects it too: " + rejected)
                     .isFalse();
         }
