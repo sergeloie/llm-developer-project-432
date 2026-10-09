@@ -4,6 +4,7 @@ import java.time.Duration;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -40,7 +41,5 @@ public record EmbeddingSettings(
         @DefaultValue("task: search result | query: ") @NotBlank String queryPrefix,
         @DefaultValue("title: ") @NotBlank String documentPrefix,
 
-        @DefaultValue("16") @Min(1) int batchSize,
-
-        @DefaultValue("120s") Duration timeout) {
+        @DefaultValue("120s") @NotNull Duration timeout) {
 }

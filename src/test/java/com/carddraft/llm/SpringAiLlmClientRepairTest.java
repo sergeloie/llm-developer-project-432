@@ -80,7 +80,7 @@ class SpringAiLlmClientRepairTest {
         LlmSettings settings = new LlmSettings(
                 "main-model", "utility-model", 3,
                 java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         // A recording repository rather than a mock, so "the client wrote a row per call" can be
         // asserted by counting rows instead of by restating the expectation.

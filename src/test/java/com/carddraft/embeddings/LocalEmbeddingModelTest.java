@@ -37,7 +37,6 @@ class LocalEmbeddingModelTest {
                 3,
                 "task: search result | query: ",
                 "title: ",
-                16,
                 java.time.Duration.ofSeconds(5));
     }
 

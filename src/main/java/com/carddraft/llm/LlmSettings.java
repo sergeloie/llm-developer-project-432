@@ -2,6 +2,7 @@ package com.carddraft.llm;
 
 import java.time.Duration;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -58,10 +59,11 @@ public record LlmSettings(
          * <p>As {@code BigDecimal} because the values arrive from configuration as text and a
          * double would lose the trailing precision a quoted price carries.
          */
-        @DefaultValue("0") @NotNull java.math.BigDecimal mainInputPricePerMillion,
-        @DefaultValue("0") @NotNull java.math.BigDecimal mainOutputPricePerMillion,
-        @DefaultValue("0") @NotNull java.math.BigDecimal utilityInputPricePerMillion,
-        @DefaultValue("0") @NotNull java.math.BigDecimal utilityOutputPricePerMillion) {
+        @DefaultValue("0") @NotNull @DecimalMin("0") java.math.BigDecimal mainInputPricePerMillion,
+        @DefaultValue("0") @NotNull @DecimalMin("0") java.math.BigDecimal mainOutputPricePerMillion,
+        @DefaultValue("0") @NotNull @DecimalMin("0") java.math.BigDecimal utilityInputPricePerMillion,
+        @DefaultValue("0") @NotNull @DecimalMin("0") java.math.BigDecimal utilityOutputPricePerMillion,
+        @DefaultValue("0") @NotNull @Min(0) java.math.BigDecimal temperature) {
 
     /**
      * The calculator for one tier.
@@ -97,7 +99,11 @@ public record LlmSettings(
     public Duration delayBefore(int nextAttempt) {
         long exponential = Math.multiplyExact(retryBaseDelay.toMillis(), 1L << Math.min(nextAttempt - 1, 20));
         long capped = Math.min(exponential, retryMaxDelay.toMillis());
-        long jittered = capped + (long) (capped * 0.25 * java.util.concurrent.ThreadLocalRandom.current().nextDouble());
+        double jitterFraction = java.util.concurrent.ThreadLocalRandom.current().nextDouble();
+        long jittered = capped + (long) (capped * 0.25 * jitterFraction);
+        if (jittered > retryMaxDelay.toMillis()) {
+            jittered = retryMaxDelay.toMillis();
+        }
         return Duration.ofMillis(jittered);
     }
 }

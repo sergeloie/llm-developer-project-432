@@ -258,7 +258,7 @@ class ModelCallRepositoryTest {
         LlmSettings settings = new LlmSettings("main-model", "utility-model",
                 1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
                 new BigDecimal("3.00"), new BigDecimal("15.00"),
-                new BigDecimal("0.50"), new BigDecimal("1.50"));
+                new BigDecimal("0.50"), new BigDecimal("1.50"), BigDecimal.ZERO);
         SpringAiLlmClient client =
                 new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder);
 
@@ -297,7 +297,7 @@ class ModelCallRepositoryTest {
         RecordingRepository recorder = new RecordingRepository();
         LlmSettings settings = new LlmSettings("main-model", "utility-model",
                 1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         SpringAiLlmClient client =
                 new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder);
 
