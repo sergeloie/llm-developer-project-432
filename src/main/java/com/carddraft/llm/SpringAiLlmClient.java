@@ -355,7 +355,7 @@ public class SpringAiLlmClient implements LlmClient {
 
         calls.record(new ModelCallRecord(
                 JobLogContext.currentJob(), tier.wireName(), model, operation,
-                inputTokens, outputTokens, cost, elapsed, loadTimeOf(response), Instant.now()));
+                inputTokens, outputTokens, cost, elapsed, Instant.now()));
 
         log.info("llm_call_recorded operation={} tier={} model={} input_tokens={} output_tokens={} "
                         + "cost={} duration_ms={}", operation, tier.wireName(), model, inputTokens,
@@ -368,20 +368,6 @@ public class SpringAiLlmClient implements LlmClient {
             return null;
         }
         return response.getMetadata().getUsage();
-    }
-
-    /**
-     * The provider's own load time, when it reports one.
-     *
-     * <p>Worth separating from generation because they call for different remedies: a slow load is
-     * the server pulling weights in, and a slow generation is the model or the prompt. A duration
-     * column that mixes them cannot tell a content manager which one they are looking at.
-     *
-     * <p>Null rather than zero when the provider is silent, because zero would assert that no load
-     * happened when the truth is that nobody said. See {@link ModelCallRecord#loadDuration()}.
-     */
-    private Duration loadTimeOf(org.springframework.ai.chat.model.ChatResponse response) {
-        return null;
     }
 
     private String finishReason(org.springframework.ai.chat.model.ChatResponse response) {

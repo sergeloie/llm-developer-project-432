@@ -23,8 +23,9 @@ mismatch with the model card would silently degrade retrieval.
 
 The application's HTTP timeout for embeddings must absorb model load time, measured at 6s
 cold for this model. Because the server keeps only one model resident, alternating between
-embedding and chat calls costs 5–30s per switch; call records therefore separate
-`coldStartMs` from `durationMs`.
+embedding and chat calls costs 5–30s per switch; the total call duration the call records
+carry is therefore the whole story, load included, because the OpenAI-compatible chat
+response reports no load time to separate it with.
 
 The relevance threshold is calibrated against the reference set *with prefixes applied*, and
 the calibration is a test rather than a note: measured cosine similarity for a correct

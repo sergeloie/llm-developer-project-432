@@ -1,0 +1,14 @@
+-- The provider load-time column, removed with everything that pretended to read it.
+--
+-- V7 kept load_ms beside duration_ms on the promise that a provider reporting its own load time
+-- would let a slow local server pulling weights be told apart from a slow generation. The client
+-- never found such a value: the OpenAI-compatible chat response Spring AI hands back exposes
+-- prompt/completion/total tokens and nothing else, so the "load time when the provider reports
+-- one" was a method that returned null, a column that was only ever written as null, and a
+-- question the table could not answer however it was phrased. The honest shape is the one that
+-- exists: duration_ms, the whole call.
+--
+-- Dropping the column also drops V9's model_calls_load_ms_non_negative check, which can no
+-- longer exist without the column it constrains. Nothing else names load_ms; the ADR that
+-- promised the separation is corrected alongside.
+ALTER TABLE model_calls DROP COLUMN load_ms;

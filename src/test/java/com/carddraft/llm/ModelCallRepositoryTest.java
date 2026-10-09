@@ -66,7 +66,7 @@ class ModelCallRepositoryTest {
     private ModelCallRecord call(String tier, String model, String operation,
                                  int in, int out, String cost, Duration duration) {
         return new ModelCallRecord("job-1", tier, model, operation, in, out,
-                new BigDecimal(cost), duration, null, Instant.now());
+                new BigDecimal(cost), duration, Instant.now());
     }
 
     @Test
@@ -162,7 +162,7 @@ class ModelCallRepositoryTest {
     @Test
     void aCallWithNoJobIsRecordedAndLeftOutOfEveryJobTotal() {
         calls.record(new ModelCallRecord(null, "main", "m", "draftCard", 500, 100,
-                new BigDecimal("0.0020"), Duration.ofMillis(1), null, Instant.now()));
+                new BigDecimal("0.0020"), Duration.ofMillis(1), Instant.now()));
 
         assertThat(jdbc.sql("SELECT count(*) FROM model_calls WHERE job_id IS NULL")
                 .query(Integer.class).single()).isEqualTo(1);
@@ -200,35 +200,6 @@ class ModelCallRepositoryTest {
         assertThat(calls.forJob("job-1").get(0).operation())
                 .as("the field name is part of the operation, so which repair failed is answerable")
                 .contains("title");
-    }
-
-    /**
-     * A load time is kept beside generation when the provider reports one.
-     *
-     * <p>Worth the extra column because the two call for different remedies: a slow load is a
-     * server pulling weights in, a slow generation is the model or the prompt. Null rather than
-     * zero when the provider is silent, since zero would claim no load happened.
-     */
-    @Test
-    void aReportedLoadTimeIsStoredSeparatelyFromTheTotal() {
-        calls.record(new ModelCallRecord("job-1", "main", "m", "draftCard", 100, 100,
-                new BigDecimal("0.0001"), Duration.ofSeconds(12), Duration.ofSeconds(9), Instant.now()));
-
-        ModelCallRecord row = calls.forJob("job-1").get(0);
-
-        assertThat(row.duration()).isEqualTo(Duration.ofSeconds(12));
-        assertThat(row.loadDuration())
-                .as("so a caller can see that nine seconds of twelve went to loading weights")
-                .isEqualTo(Duration.ofSeconds(9));
-    }
-
-    @Test
-    void anAbsentLoadTimeStaysAbsentRatherThanBecomingZero() {
-        calls.record(call("main", "m", "draftCard", 100, 100, "0.0001", Duration.ofSeconds(12)));
-
-        assertThat(calls.forJob("job-1").get(0).loadDuration())
-                .as("zero would assert that no load happened; nobody said")
-                .isNull();
     }
 
     /**
