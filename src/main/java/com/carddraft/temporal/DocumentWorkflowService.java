@@ -1,10 +1,6 @@
 package com.carddraft.temporal;
 
-import java.time.Duration;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.springframework.stereotype.Service;
 
@@ -64,28 +60,6 @@ public class DocumentWorkflowService {
             return true;
         } catch (WorkflowExecutionAlreadyStarted alreadyUnderWay) {
             return false;
-        }
-    }
-
-    /** The outcome, only if the parse has already finished. Never blocks. */
-    public Optional<DocumentActivities.DocumentResult> completedResult(String documentId) {
-        CompletableFuture<DocumentActivities.DocumentResult> pending = stubFor(documentId)
-                .getResultAsync(0, TimeUnit.MILLISECONDS, DocumentActivities.DocumentResult.class);
-        if (!pending.isDone()) {
-            return Optional.empty();
-        }
-        DocumentActivities.DocumentResult result = pending.join();
-        return result == null ? Optional.empty() : Optional.of(result);
-    }
-
-    /** Blocks until the parse finishes. For callers that genuinely wait, such as tests. */
-    public DocumentActivities.DocumentResult awaitResult(String documentId, Duration timeout) {
-        try {
-            return stubFor(documentId).getResult(timeout.toMillis(), TimeUnit.MILLISECONDS,
-                    DocumentActivities.DocumentResult.class);
-        } catch (TimeoutException e) {
-            throw new IllegalStateException(
-                    "the parse of document " + documentId + " did not finish within " + timeout, e);
         }
     }
 
