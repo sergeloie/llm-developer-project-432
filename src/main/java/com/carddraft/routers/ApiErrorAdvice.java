@@ -1,7 +1,10 @@
 package com.carddraft.routers;
 
+import java.util.stream.Collectors;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -23,6 +26,21 @@ public class ApiErrorAdvice {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail onClientRefusal(IllegalArgumentException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    /**
+     * A request body that failed its constraints.
+     *
+     * <p>Each offending field is named alongside the reason, because "the body was invalid" tells a
+     * caller to re-read the whole contract while "supplierText: must not be blank" tells it what to
+     * change.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail onInvalidBody(MethodArgumentNotValidException e) {
+        String detail = e.getBindingResult().getFieldErrors().stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
     }
 
     @ExceptionHandler(WorkflowNotFoundException.class)
