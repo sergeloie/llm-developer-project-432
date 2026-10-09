@@ -6,24 +6,33 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+/**
+ * Proves the vector-extension indicator is a member of the readiness group, not a bystander.
+ *
+ * <p>The database is reachable but Flyway never runs, so {@code CREATE EXTENSION vector} was never
+ * applied and the extension is absent. The {@code db} component is therefore UP while the readiness
+ * group must still be DOWN, which is only true if the custom indicator participates in the group.
+ */
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "test.context-id=health-missing-vector",
+                "spring.flyway.enabled=false"
+        })
 @AutoConfigureTestRestTemplate
 @Testcontainers(disabledWithoutDocker = true)
-
-@TestPropertySource(properties = "test.context-id=health")
-class HealthControllerTest {
+class HealthEndpointMissingVectorExtensionTest {
 
     @Container
     static final PostgreSQLContainer DATABASE = new PostgreSQLContainer("pgvector/pgvector:pg17")
@@ -42,27 +51,17 @@ class HealthControllerTest {
     TestRestTemplate rest;
 
     @Test
-    void livenessAnswersSuccessWhileTheServiceIsRunning() {
-        ResponseEntity<Map> response = rest.getForEntity("/health/live", Map.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("status", "UP");
-    }
-
-    @Test
     @SuppressWarnings("unchecked")
-    void readinessReportsThatTheVectorExtensionIsActive() {
-        ResponseEntity<Map> response = rest.getForEntity("/health/ready", Map.class);
+    void readinessFailsWhenTheVectorExtensionIsMissing() {
+        ResponseEntity<Map> response = rest.getForEntity("/actuator/health/readiness", Map.class);
 
         assertThat(response.getStatusCode())
                 .as("readiness report was %s", response.getBody())
-                .isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("status", "UP");
+                .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).containsEntry("status", "DOWN");
 
-        Map<String, Object> checks = (Map<String, Object>) response.getBody().get("checks");
-        assertThat(checks).containsKeys("database", "vectorExtension");
-        assertThat((Map<String, Object>) checks.get("vectorExtension"))
-                .containsEntry("status", "UP")
-                .containsKey("version");
+        Map<String, Object> components = (Map<String, Object>) response.getBody().get("components");
+        assertThat((Map<String, Object>) components.get("db")).containsEntry("status", "UP");
+        assertThat((Map<String, Object>) components.get("vectorExtension")).containsEntry("status", "DOWN");
     }
 }
