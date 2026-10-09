@@ -137,6 +137,28 @@ public class DocumentService {
         return documents.chunksOf(documentId);
     }
 
+    /**
+     * Whether any parser handles the named file.
+     *
+     * <p>Asked of the parsers rather than answered from a list kept here, so the upload path and
+     * the message it refuses with cannot disagree with what parsing would actually accept.
+     */
+    public boolean supports(String filename) {
+        return parsers.stream().anyMatch(parser -> parser.supports(filename));
+    }
+
+    /**
+     * The extensions the parsers accept, without their leading dot, sorted for a stable message.
+     */
+    public List<String> supportedFormats() {
+        return parsers.stream()
+                .flatMap(parser -> parser.extensions().stream())
+                .map(extension -> extension.startsWith(".") ? extension.substring(1) : extension)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
     private DocumentParser parserFor(String filename) {
         return parsers.stream()
                 .filter(parser -> parser.supports(filename))

@@ -24,9 +24,6 @@ import io.temporal.workflow.Workflow;
  */
 public class CardWorkflowImpl implements CardWorkflow {
 
-    private static final String DECISION_APPROVE = "approve";
-    private static final String DECISION_REJECT = "reject";
-
     /**
      * How many times a card may come back for a fabricated citation before a person sees it.
      *
@@ -62,7 +59,7 @@ public class CardWorkflowImpl implements CardWorkflow {
                     .build());
 
     private String status = "starting";
-    private String decision;
+    private JobDecision decision;
 
     @Override
     public WorkflowResult run(WorkflowRequest request) {
@@ -126,18 +123,18 @@ public class CardWorkflowImpl implements CardWorkflow {
                     "job " + jobId + " failed", "CardJobFailed", e);
         }
 
-        if (DECISION_APPROVE.equals(decision) && !hasDraft(draftJson)) {
+        if (decision == JobDecision.APPROVE && !hasDraft(draftJson)) {
             String reason = "approval refused: no draft card was generated, so there is nothing to approve";
             status = JobState.FAILED.wireName();
             statusWrites.recordFailure(jobId, reason);
-            return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision);
+            return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision.wireName());
         }
 
-        JobState finalState = DECISION_APPROVE.equals(decision) ? JobState.APPROVED : JobState.REJECTED;
+        JobState finalState = decision == JobDecision.APPROVE ? JobState.APPROVED : JobState.REJECTED;
         status = finalState.wireName();
         statusWrites.recordOutcome(jobId, finalState.wireName(), draftJson);
 
-        return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision);
+        return new WorkflowResult(jobId, draftJson, attempts, reviewerApproved, decision.wireName());
     }
 
     /**
@@ -231,12 +228,12 @@ public class CardWorkflowImpl implements CardWorkflow {
 
     @Override
     public void approve() {
-        this.decision = DECISION_APPROVE;
+        this.decision = JobDecision.APPROVE;
     }
 
     @Override
     public void reject() {
-        this.decision = DECISION_REJECT;
+        this.decision = JobDecision.REJECT;
     }
 
     @Override
