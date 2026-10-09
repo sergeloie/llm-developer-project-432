@@ -53,15 +53,14 @@ public class DocumentsController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         if (file.getSize() > settings.maxUploadBytes()) {
-            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                    .body(Map.of("error", "the file is larger than the "
-                            + (settings.maxUploadBytes() / (1024 * 1024)) + " MB limit"));
+            throw new ApiRefusalException(HttpStatus.PAYLOAD_TOO_LARGE,
+                    "the file is larger than the "
+                            + (settings.maxUploadBytes() / (1024 * 1024)) + " MB limit");
         }
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         if (!isSupported(filename)) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "unsupported file type: " + filename
-                            + ". Supported: " + settings.formats()));
+            throw new IllegalArgumentException("unsupported file type: " + filename
+                    + ". Supported: " + settings.formats());
         }
         try {
             DocumentsRepository.DocumentRow document =
@@ -69,7 +68,7 @@ public class DocumentsController {
             parses.start(document.id());
             return ResponseEntity.accepted().body(describe(document));
         } catch (IOException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "the upload could not be read"));
+            throw new IllegalArgumentException("the upload could not be read", e);
         }
     }
 

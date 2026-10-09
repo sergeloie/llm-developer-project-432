@@ -108,10 +108,10 @@ public class JobsController {
             // report itself as a confident refusal of the product rather than as a job that ran
             // before its input was ready. The state is returned per document so a caller can tell
             // work still in progress from a document that will never be searchable.
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "error", "these documents are not indexed; poll GET /documents/{id} until the "
+            throw new ApiRefusalException(HttpStatus.CONFLICT,
+                    "these documents are not indexed; poll GET /documents/{id} until the "
                             + "state is indexed, and submit again",
-                    "documents", notIndexed));
+                    Map.of("documents", notIndexed));
         }
 
         JobsRepository.JobCreation creation = jobs.createOrFindByIdempotencyKey(
@@ -155,17 +155,25 @@ public class JobsController {
 
         String decision = normalise(request.decision());
         if (decision == null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "decision must be approve or reject"));
+            throw new IllegalArgumentException("decision must be approve or reject");
         }
 
-        if (JobState.fromWireName(job.status()).isTerminal()) {
+        if (JobState.fromWireName(job.status()).map(JobState::isTerminal).orElse(false)) {
             return ResponseEntity.ok(describe(job));
         }
+        // A job escalated before generation never produced a draft to approve: no generation
+        // attempt was ever recorded and its draft stayed an empty object, and signalling approval
+        // would make the workflow record a success with nothing to show. A job that attempted
+        // generation carries its draft in the workflow and only writes it at the outcome, so a
+        // null result alone is not the signal — zero attempts is. Refused here, before the signal
+        // reaches the workflow.
+        if (DECISION_APPROVE.equals(decision) && job.attempts() == 0 && !hasDraft(job)) {
+            throw new ApiRefusalException(HttpStatus.CONFLICT,
+                    "this job has no draft card to approve; it was escalated before generation, "
+                            + "and approving it would record a success with nothing to show");
+        }
         if (!workflows.exists(jobId)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "error", "no process is waiting on a decision for this job; its state is "
-                            + job.status()));
+            throw new WorkflowNotFoundException(job.status());
         }
 
         if (DECISION_APPROVE.equals(decision)) {
@@ -186,6 +194,22 @@ public class JobsController {
             case DECISION_APPROVE, DECISION_REJECT -> spoken;
             default -> null;
         };
+    }
+
+    /**
+     * Whether the job already carries a draft to approve.
+     *
+     * <p>An escalated job's recorded result stays an empty object — no card was drafted, so
+     * nothing was stored — and a job not yet run has no result at all. Anything else is a result the
+     * caller can read back, and therefore a draft that a decision can honestly record.
+     */
+    private boolean hasDraft(JobsRepository.Job job) {
+        String result = job.result();
+        if (result == null) {
+            return false;
+        }
+        String trimmed = result.strip();
+        return !trimmed.isEmpty() && !"{}".equals(trimmed);
     }
 
 /**

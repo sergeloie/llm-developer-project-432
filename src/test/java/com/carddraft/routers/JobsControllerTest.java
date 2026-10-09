@@ -21,6 +21,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -44,6 +45,7 @@ import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
 import com.carddraft.llm.LlmClient;
+import com.carddraft.repositories.JobsRepository;
 
 /**
  * The asynchronous path, end to end: HTTP, the database, and a real process engine.
@@ -121,6 +123,9 @@ class JobsControllerTest {
 
     @Autowired
     TestRestTemplate rest;
+
+    @Autowired
+    JobsRepository jobs;
 
     private void givenAnApprovingReviewer() {
         given(llmClient.extractFacts(anyString()))
@@ -241,7 +246,7 @@ class JobsControllerTest {
                 Map.of("decision", "maybe"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody().get("error").toString())
+        assertThat(response.getBody().get("detail").toString())
                 .as("the caller has to be told what it may say, not merely that it was wrong")
                 .contains("approve")
                 .contains("reject");
@@ -253,6 +258,94 @@ class JobsControllerTest {
                 Map.of("decision", "approve"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void anEmptySubmitIsRefusedAtTheDoorWithAProblemDetailBody() {
+        ResponseEntity<Map> response = rest.postForEntity("/jobs",
+                Map.of("supplierText", "   "), Map.class);
+
+        assertThat(response.getStatusCode())
+                .as("a job with neither text nor documents to work from is refused, "
+                        + "not accepted and failed three minutes later")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: every refusal is a ProblemDetail, not a hand-rolled map")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody()).containsEntry("status", 400);
+        assertThat(response.getBody().get("detail").toString()).contains("supplierText");
+    }
+
+    @Test
+    void aDecisionForAJobWhoseProcessIsGoneIsA409Conflict() {
+        String jobId = "process-gone-" + System.nanoTime();
+        jobs.createWithId(jobId, "awaiting_human", "{}");
+        jobs.complete(jobId, "awaiting_human", "{\"title\":\"a draft\"}");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "approve"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: the conflict is a ProblemDetail")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody()).containsEntry("status", 409);
+    }
+
+    @Test
+    void aDecisionAgainstAMetricsStyleJobStatusIsA4xxRatherThanA500() {
+        // The metrics harness stores its runs in the same jobs table with statuses the
+        // card-job enum does not know, so a decision must not blow up the enum lookup.
+        String jobId = "metrics-" + System.nanoTime();
+        jobs.createWithId(jobId, "metrics_complete", "{}");
+        jobs.complete(jobId, "metrics_complete", "{\"title\":\"Kettle\"}");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "approve"), Map.class);
+
+        assertThat(response.getStatusCode().value())
+                .as("an unknown job status must never surface as a 500: "
+                        + "there is no process waiting on a decision for a metrics job")
+                .isBetween(400, 499);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: the refusal is a ProblemDetail")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+    }
+
+    @Test
+    void approvingAJobWithNoDraftIsRefusedWithoutSignallingTheWorkflow() {
+        // The row a job escalated before generation leaves behind: waiting on a person,
+        // with no generation attempt and no draft recorded.
+        String jobId = "escalated-" + System.nanoTime();
+        jobs.createWithId(jobId, "awaiting_human", "{}");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "approve"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: the refusal is a ProblemDetail")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                .as("the refusal must not have signalled anything: the job still waits")
+                .containsEntry("status", "awaiting_human");
+    }
+
+    @Test
+    void approvingAJobWhoseRecordedDraftIsAnEmptyObjectIsRefused() {
+        String jobId = "empty-draft-" + System.nanoTime();
+        jobs.createWithId(jobId, "awaiting_human", "{}");
+        jobs.complete(jobId, "awaiting_human", "{}");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "approve"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: the refusal is a ProblemDetail")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                .containsEntry("status", "awaiting_human");
     }
 
     private String submitAndAwaitAHuman(String idempotencyKey) {
