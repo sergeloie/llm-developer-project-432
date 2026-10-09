@@ -1,34 +1,29 @@
 package com.carddraft.embeddings;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.RestClient;
-
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.ai.embedding.Embedding;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
- * The embedding client, against a recorded request.
+ * The embedding adapter, against the Spring AI client seam.
  *
  * <p>What matters here is the text that leaves this process. The model server embeds exactly what it
  * is handed, so a prefix this code failed to apply would not be reported by anything — the vectors
  * would still be 768 numbers wide and retrieval would quietly get worse. Asserting on the request
- * body is the only place that failure is visible.
+ * the adapter builds is the only place that failure is visible.
+ *
+ * <p>The seam is Spring AI's own {@link org.springframework.ai.embedding.EmbeddingModel} rather
+ * than the HTTP layer, because the wire call is now the framework's: the fake captures the typed
+ * request and returns a typed response.
  */
 class LocalEmbeddingModelTest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static EmbeddingSettings settings() {
         return new EmbeddingSettings(
@@ -40,40 +35,70 @@ class LocalEmbeddingModelTest {
                 java.time.Duration.ofSeconds(5));
     }
 
-    private record Harness(LocalEmbeddingModel model, MockRestServiceServer server) {
+    private static LocalEmbeddingModel model(RecordingWire wire) {
+        return new LocalEmbeddingModel(wire, settings());
     }
 
-    private static Harness harness() {
-        RestClient.Builder builder = RestClient.builder().baseUrl("http://127.0.0.1:1234");
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        // The assembled client, not the builder: the production constructor stamps its timeout
-        // factory onto the builder, which would replace the mock's interception.
-        return new Harness(new LocalEmbeddingModel(builder.build(), MAPPER, settings()), server);
-    }
+    /** The Spring AI client, recorded and answered by hand. */
+    private static final class RecordingWire implements org.springframework.ai.embedding.EmbeddingModel {
 
-    private static String response(String... indicesAndVectors) {
-        StringBuilder json = new StringBuilder("{\"data\":[");
-        for (int i = 0; i < indicesAndVectors.length; i++) {
-            if (i > 0) {
-                json.append(',');
+        private final List<List<String>> batches = new ArrayList<>();
+        private EmbeddingResponse response = new EmbeddingResponse(List.of());
+        private RuntimeException failure;
+
+        @Override
+        public EmbeddingResponse call(EmbeddingRequest request) {
+            batches.add(request.getInstructions());
+            if (failure != null) {
+                throw failure;
             }
-            json.append("{\"index\":").append(indicesAndVectors[i]).append(",\"embedding\":[0.1,0.2,0.3]}");
+            return response;
         }
-        return json.append("]}").toString();
+
+        @Override
+        public float[] embed(org.springframework.ai.document.Document document) {
+            throw new UnsupportedOperationException("the adapter always embeds a batch");
+        }
+
+        RecordingWire respondingWith(EmbeddingResponse response) {
+            this.response = response;
+            return this;
+        }
+
+        RecordingWire failingWith(RuntimeException failure) {
+            this.failure = failure;
+            return this;
+        }
+
+        List<List<String>> batches() {
+            return batches;
+        }
+    }
+
+    private static EmbeddingResponse response(int index, double... values) {
+        float[] vector = new float[values.length];
+        for (int i = 0; i < values.length; i++) {
+            vector[i] = (float) values[i];
+        }
+        return new EmbeddingResponse(List.of(new Embedding(vector, index)));
+    }
+
+    private static EmbeddingResponse shuffled() {
+        List<Embedding> embeddings = List.of(
+                new Embedding(new float[] {0.3f, 0.3f, 0.3f}, 2),
+                new Embedding(new float[] {0.1f, 0.1f, 0.1f}, 0),
+                new Embedding(new float[] {0.2f, 0.2f, 0.2f}, 1));
+        return new EmbeddingResponse(embeddings);
     }
 
     @Test
     void aQueryIsEncodedWithTheQueryPrefix() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andExpect(method(org.springframework.http.HttpMethod.POST))
-                .andExpect(jsonPath("$.model").value("test-embedding-model"))
-                .andExpect(jsonPath("$.input[0]").value("task: search result | query: what is the boiling point"))
-                .andRespond(withSuccess(response("0"), MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        assertThat(h.model().embedQuery("what is the boiling point"))
+        assertThat(model(wire).embedQuery("what is the boiling point"))
                 .containsExactly(0.1, 0.2, 0.3);
-        h.server().verify();
+        assertThat(wire.batches()).containsExactly(
+                List.of("task: search result | query: what is the boiling point"));
     }
 
     /**
@@ -84,14 +109,12 @@ class LocalEmbeddingModelTest {
      */
     @Test
     void aChunkIsEncodedWithItsSectionInTheTitleSlot() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andExpect(jsonPath("$.input[0]")
-                        .value("title: Boiling point | text: Water boils at 100 C"))
-                .andRespond(withSuccess(response("0"), MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        h.model().embedDocument("Water boils at 100 C", "Boiling point");
-        h.server().verify();
+        model(wire).embedDocument("Water boils at 100 C", "Boiling point");
+
+        assertThat(wire.batches()).containsExactly(
+                List.of("title: Boiling point | text: Water boils at 100 C"));
     }
 
     /**
@@ -102,13 +125,11 @@ class LocalEmbeddingModelTest {
      */
     @Test
     void aChunkWithoutASectionIsToldSoExplicitly() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andExpect(jsonPath("$.input[0]").value("title: none | text: orphan text"))
-                .andRespond(withSuccess(response("0"), MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        h.model().embedDocument("orphan text", null);
-        h.server().verify();
+        model(wire).embedDocument("orphan text", null);
+
+        assertThat(wire.batches()).containsExactly(List.of("title: none | text: orphan text"));
     }
 
     /**
@@ -120,33 +141,22 @@ class LocalEmbeddingModelTest {
      */
     @Test
     void vectorsArePlacedByTheIndexTheServerGivesThem() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andExpect(jsonPath("$.input.length()").value(3))
-                .andRespond(withSuccess("""
-                        {"data":[
-                          {"index":2,"embedding":[0.3,0.3,0.3]},
-                          {"index":0,"embedding":[0.1,0.1,0.1]},
-                          {"index":1,"embedding":[0.2,0.2,0.2]}
-                        ]}
-                        """, MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(shuffled());
 
-        List<List<Double>> vectors = h.model().embedDocuments(List.of(
+        List<List<Double>> vectors = model(wire).embedDocuments(List.of(
                 new EmbeddingModel.Document("first", null),
                 new EmbeddingModel.Document("second", null),
                 new EmbeddingModel.Document("third", null)));
 
-        assertThat(vectors).extracting(v -> v.get(0))
-                .containsExactly(0.1, 0.2, 0.3);
-        h.server().verify();
+        assertThat(vectors).extracting(v -> v.get(0)).containsExactly(0.1, 0.2, 0.3);
     }
 
     @Test
     void anEmptyBatchMakesNoRequest() {
-        Harness h = harness();
+        RecordingWire wire = new RecordingWire();
 
-        assertThat(h.model().embedDocuments(List.of())).isEmpty();
-        h.server().verify();
+        assertThat(model(wire).embedDocuments(List.of())).isEmpty();
+        assertThat(wire.batches()).isEmpty();
     }
 
     /**
@@ -157,48 +167,46 @@ class LocalEmbeddingModelTest {
      */
     @Test
     void aVectorOfTheWrongWidthIsRejectedWithTheModelNamed() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andRespond(withSuccess("{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]}]}",
-                        MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2));
 
-        assertThatThrownBy(() -> h.model().embedQuery("anything"))
+        assertThatThrownBy(() -> model(wire).embedQuery("anything"))
                 .isInstanceOf(LocalEmbeddingModel.EmbeddingDimensionMismatchException.class)
                 .hasMessageContaining("test-embedding-model")
                 .hasMessageContaining("2-dimension")
                 .hasMessageContaining("vector column is 3");
-        h.server().verify();
     }
 
     /** A truncated response would otherwise leave a chunk silently unembedded. */
     @Test
     void aResponseMissingAnIndexIsRejected() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andRespond(withSuccess("""
-                        {"data":[{"index":0,"embedding":[0.1,0.2,0.3]}]}
-                        """, MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        assertThatThrownBy(() -> h.model().embedDocuments(List.of(
+        assertThatThrownBy(() -> model(wire).embedDocuments(List.of(
                 new EmbeddingModel.Document("a", null),
                 new EmbeddingModel.Document("b", null))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("omitted index 1");
-        h.server().verify();
+    }
+
+    /** An empty vector in place of an input must not pass as an embedded chunk. */
+    @Test
+    void anEmptyVectorIsRejected() {
+        RecordingWire wire = new RecordingWire().respondingWith(
+                new EmbeddingResponse(List.of(new Embedding(new float[0], 0))));
+
+        assertThatThrownBy(() -> model(wire).embedQuery("anything"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("empty vector at index 0");
     }
 
     /** An index outside the request means the response belongs to another call. */
     @Test
     void aResponseWithAnImpossibleIndexIsRejected() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andRespond(withSuccess("{\"data\":[{\"index\":7,\"embedding\":[0.1,0.2,0.3]}]}",
-                        MediaType.APPLICATION_JSON));
+        RecordingWire wire = new RecordingWire().respondingWith(response(7, 0.1, 0.2, 0.3));
 
-        assertThatThrownBy(() -> h.model().embedQuery("anything"))
+        assertThatThrownBy(() -> model(wire).embedQuery("anything"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("index 7");
-        h.server().verify();
     }
 
     /**
@@ -210,19 +218,14 @@ class LocalEmbeddingModelTest {
      */
     @Test
     void aServerFailureIsSurfacedRatherThanSwallowed() {
-        Harness h = harness();
-        h.server().expect(requestTo("http://127.0.0.1:1234/v1/embeddings"))
-                .andRespond(withServerError());
+        RuntimeException failure = new IllegalStateException("the model server refused the call");
+        RecordingWire wire = new RecordingWire().failingWith(failure);
 
-        assertThatThrownBy(() -> h.model().embedQuery("anything"))
-                .isInstanceOf(org.springframework.web.client.RestClientResponseException.class);
-        h.server().verify();
+        assertThatThrownBy(() -> model(wire).embedQuery("anything")).isSameAs(failure);
     }
 
     @Test
     void theConfiguredDimensionIsWhatTheModelAdvertises() {
-        assertThat(harness().model().dimension()).isEqualTo(3);
+        assertThat(model(new RecordingWire()).dimension()).isEqualTo(3);
     }
-
-
 }

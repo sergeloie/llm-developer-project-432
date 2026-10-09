@@ -48,6 +48,13 @@ spring:
         timeout: ${CARD_LLM_TIMEOUT:120s}
         # The OpenAI client's own retry, off for the same reason as the template above.
         max-retries: 0
+      embedding:
+        # The wire call is Spring AI's OpenAI-compatible client, so the transport comes from here
+        # while the prefix templates and the response checks stay in our adapter. The /v1 suffix
+        # is required by the SDK, exactly as for chat, so it is added rather than carried by
+        # card.embedding.base-url. The hand-rolled call never retried, so neither may this one.
+        base-url: ${card.embedding.base-url}/v1
+        max-retries: 0
 
   jackson:
     # Absent fields are left out of every response rather than sent as null, so a client reading
