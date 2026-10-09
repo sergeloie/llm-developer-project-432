@@ -43,13 +43,18 @@ public enum JobState {
         return wireName;
     }
 
-    public static JobState fromWireName(String value) {
+    public static java.util.Optional<JobState> fromWireName(String value) {
         for (JobState state : values()) {
             if (state.wireName.equals(value)) {
-                return state;
+                return java.util.Optional.of(state);
             }
         }
-        throw new IllegalArgumentException("unknown job state: " + value);
+        // The job table holds rows the card-job enum does not know — the metrics harness
+        // records its runs in the same table under metrics_complete and pending — so an
+        // unknown status is a fact of the data, not a bug. It comes back empty and the
+        // caller decides what an unknown state means; it must never throw out of the
+        // controller.
+        return java.util.Optional.empty();
     }
 
     public boolean isTerminal() {
