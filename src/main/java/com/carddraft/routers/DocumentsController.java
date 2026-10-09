@@ -58,9 +58,9 @@ public class DocumentsController {
                             + (settings.maxUploadBytes() / (1024 * 1024)) + " MB limit");
         }
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
-        if (!isSupported(filename)) {
+        if (!documentService.supports(filename)) {
             throw new IllegalArgumentException("unsupported file type: " + filename
-                    + ". Supported: " + settings.formats());
+                    + ". Supported: " + String.join(",", documentService.supportedFormats()));
         }
         try {
             DocumentsRepository.DocumentRow document =
@@ -99,11 +99,5 @@ public class DocumentsController {
             body.put("rejectionReason", document.rejectionReason());
         }
         return body;
-    }
-
-    private boolean isSupported(String filename) {
-        String lower = filename.toLowerCase();
-        return lower.endsWith(".pdf") || lower.endsWith(".docx")
-                || lower.endsWith(".xlsx") || lower.endsWith(".xls");
     }
 }
