@@ -80,8 +80,10 @@ class JobContextRepositoryTest {
         AssembledContext reloaded = contexts.load("job-1");
         CitationVerifier verifier = new CitationVerifier();
 
-        assertThat(verifier.verify(reloaded, java.util.Map.of("Power", "C1")).isClean()).isTrue();
-        assertThat(verifier.verify(reloaded, java.util.Map.of("Power", "C4")).isClean())
+        assertThat(verifier.verify(reloaded, java.util.Set.of("Power"), java.util.Map.of("Power", "C1"))
+                .isClean()).isTrue();
+        assertThat(verifier.verify(reloaded, java.util.Set.of("Power"), java.util.Map.of("Power", "C4"))
+                .isClean())
                 .as("a label that was never allocated is fabricated, even after a round trip")
                 .isFalse();
     }

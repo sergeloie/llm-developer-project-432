@@ -26,6 +26,11 @@ import java.util.Set;
  * the context necessarily names a chunk that exists. Existence is still checked as a defence against
  * a corrupted retention record, and reported separately so the two are distinguishable in a log.
  *
+ * <p>Coverage is checked too, and it is a condition rather than a convenience: the prompt requires a
+ * source for every characteristic, so a card that declares one and cites nothing has omitted the
+ * very thing this check certifies. Verification walks the characteristics the card declares, not
+ * the sources it happens to carry — a card with no sources has no sources to walk.
+ *
  * <p>References are compared exactly, and that is a security property rather than pedantry: trimming,
  * lower-casing or otherwise forgiving would let a card write a near-miss of a real reference and pass
  * a check it should fail. The one concession is the display form this service itself renders the
@@ -35,7 +40,7 @@ import java.util.Set;
 @org.springframework.stereotype.Component
 public class CitationVerifier {
 
-    /** The outcome for one claim's citation. */
+    /** The outcome for one characteristic's citation. */
     public enum Status {
         /** Named a fragment from the submitted context. */
         SUPPORTED,
@@ -43,7 +48,7 @@ public class CitationVerifier {
         NOT_IN_CONTEXT,
         /** Named nothing that exists. */
         UNKNOWN_REFERENCE,
-        /** Claimed a source at all, or cited a characteristic the card does not declare. */
+        /** The card declares the characteristic but gives no source reference for it at all. */
         MISSING
     }
 
@@ -55,17 +60,26 @@ public class CitationVerifier {
     }
 
     /**
-     * @param findings every claim's citation, in card order, so a reviewer sees them all
+     * @param findings every declared characteristic's citation, in card order, so a reviewer sees
+     *                 them all
      * @param fabricated subset that names a fragment the model was not shown
      */
     public record Verdict(List<Finding> findings, List<Finding> fabricated) {
 
+        /**
+         * Whether every declared characteristic is supported.
+         *
+         * <p>A missing citation fails the card exactly as a fabricated one does: a reviewer cannot
+         * accept a claim with no evidence, and the coverage gap is the failure the prompt was written
+         * to prevent. {@code fabricated} still separates the two for the conversation that follows.
+         */
         public boolean isClean() {
-            return fabricated.isEmpty();
+            return findings.stream().noneMatch(finding -> finding.status() != Status.SUPPORTED);
         }
 
         public List<String> messages() {
-            return fabricated.stream()
+            return findings.stream()
+                    .filter(finding -> finding.status() != Status.SUPPORTED)
                     .map(finding -> switch (finding.status()) {
                         case NOT_IN_CONTEXT ->
                                 "'" + finding.characteristic() + "' cites " + finding.reference()
@@ -80,14 +94,25 @@ public class CitationVerifier {
     }
 
     /**
+     * Checks every characteristic the card declares.
+     *
+     * <p>Walked from the declared characteristics rather than from the sources map, and that is the
+     * fix: iterating the sources reported nothing for a card that cited nothing, so a draft the
+     * prompt required to cite passed verification by having no sources to check. A characteristic
+     * with no entry — including every characteristic when the map is empty — is a missing citation.
+     *
+     * @param characteristics every characteristic the card promises to support
      * @param sources characteristic name to the reference the model gave it, straight off the card
      */
-    public Verdict verify(AssembledContext context, Map<String, String> sources) {
+    public Verdict verify(AssembledContext context, Set<String> characteristics,
+                          Map<String, String> sources) {
         List<Finding> findings = new ArrayList<>();
-        Set<String> declared = sources == null ? Set.of() : new LinkedHashSet<>(sources.keySet());
+        Set<String> declared = characteristics == null
+                ? Set.of() : new LinkedHashSet<>(characteristics);
+        Map<String, String> cited = sources == null ? Map.of() : sources;
 
         for (String characteristic : declared) {
-            String reference = canonicalReference(sources.get(characteristic));
+            String reference = canonicalReference(cited.get(characteristic));
             if (reference == null || reference.isBlank()) {
                 findings.add(new Finding(characteristic, reference, Status.MISSING));
                 continue;
@@ -133,9 +158,10 @@ public class CitationVerifier {
      * provenance failure, and a citation to no fragment at all is a hallucination, and the two lead
      * to different conversations with whoever maintains the documents.
      */
-    public Verdict verifyAgainst(AssembledContext context, Map<String, String> sources,
+    public Verdict verifyAgainst(AssembledContext context, Set<String> characteristics,
+                                 Map<String, String> sources,
                                  java.util.function.Predicate<String> existsInCorpus) {
-        Verdict basic = verify(context, sources);
+        Verdict basic = verify(context, characteristics, sources);
         List<Finding> findings = new ArrayList<>();
         for (Finding finding : basic.findings()) {
             if (finding.status() == Status.UNKNOWN_REFERENCE

@@ -24,7 +24,7 @@ import static org.mockito.Mockito.mock;
 class TrustLayerTest {
 
     private final PiiDetector pii = new PiiDetector();
-    private final InjectionDetector rules = new InjectionDetector();
+    private final InjectionDetector rules = new InjectionDetector(new TrustSettings(2, 120));
 
     // --- personal data -------------------------------------------------------------------
 
@@ -208,6 +208,26 @@ class TrustLayerTest {
         assertThat(rules.inspect("Данные: " + encoded).rules())
                 .as("base64 in a supplier document is rare, and long base64 is not benign")
                 .contains("long encoded insertion");
+    }
+
+    /**
+     * The configured bound is what decides what counts as an insertion.
+     *
+     * <p>The behavioural half of the wiring regression test: the detector has no default
+     * constructor, so the operator's {@code card.trust.max-opaque-fragment-length} is the bound the
+     * pattern is compiled from. The same fragment falls on different sides of two different
+     * settings, which is only true if the setting is consumed rather than merely bindable.
+     */
+    @Test
+    void theConfiguredOpaqueLengthDecidesWhatCountsAsAnInsertion() {
+        String fragment = "#".repeat(40);
+
+        assertThat(new InjectionDetector(new TrustSettings(2, 20)).inspect(fragment).rules())
+                .as("forty opaque characters exceed a bound of twenty")
+                .contains("long opaque insertion");
+        assertThat(new InjectionDetector(new TrustSettings(2, 60)).inspect(fragment).rules())
+                .as("the same forty characters are under a bound of sixty")
+                .doesNotContain("long opaque insertion");
     }
 
     /**

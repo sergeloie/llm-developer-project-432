@@ -193,7 +193,8 @@ public class CardActivitiesImpl implements CardActivities {
         ProductCard card = fromJson(draftJson, ProductCard.class);
         AssembledContext context = contexts.load(jobId);
 
-        CitationVerifier.Verdict verdict = verifier.verifyAgainst(context, card.sources(),
+        CitationVerifier.Verdict verdict = verifier.verifyAgainst(context,
+                card.characteristics().keySet(), card.sources(),
                 contexts::existsReferenceInAnyContext);
 
         return new CitationCheck(verdict.isClean(), verdict.messages(),

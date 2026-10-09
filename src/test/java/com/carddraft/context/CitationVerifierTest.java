@@ -34,7 +34,7 @@ class CitationVerifierTest {
 
     @Test
     void aCitationToAShownFragmentIsSupported() {
-        Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "C2"));
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C2"));
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings()).singleElement()
@@ -59,7 +59,8 @@ class CitationVerifierTest {
  */
 @Test
     void aCitationInTheDisplayedFormResolvesToTheReferenceItWasShownAs() {
-    Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "[C2]", "Weight", "[C1]"));
+    Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Weight"),
+            Map.of("Power", "[C2]", "Weight", "[C1]"));
 
     assertThat(verdict.isClean()).isTrue();
     assertThat(verdict.findings()).extracting(CitationVerifier.Finding::reference)
@@ -69,7 +70,7 @@ class CitationVerifierTest {
 
 @Test
     void forgivingOneNotationDoesNotMakeTheCheckForgiving() {
-    Verdict verdict = verifier.verify(contextOf(2), Map.of(
+    Verdict verdict = verifier.verify(contextOf(2), Set.of("Power", "Weight", "Model"), Map.of(
             "Power", "[c1]",
             "Weight", "[]",
             "Model", "[ C1 ]"));
@@ -82,7 +83,7 @@ class CitationVerifierTest {
 
 @Test
     void aCitationBeyondTheContextIsFabricated() {
-    Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "C7"));
+    Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C7"));
 
     assertThat(verdict.isClean()).isFalse();
     assertThat(verdict.fabricated()).singleElement()
@@ -105,7 +106,7 @@ class CitationVerifierTest {
     void aCitationToARealFragmentOutsideTheContextIsStillAFabrication() {
         AssembledContext context = contextOf(3);
 
-        Verdict verdict = verifier.verifyAgainst(context, Map.of("Power", "C9"),
+        Verdict verdict = verifier.verifyAgainst(context, Set.of("Power"), Map.of("Power", "C9"),
                 reference -> Set.of("C9").contains(reference));
 
         assertThat(verdict.isClean()).isFalse();
@@ -119,7 +120,7 @@ class CitationVerifierTest {
 
     @Test
     void aClaimWithNoSourceAtAllIsNotSupported() {
-        Verdict verdict = verifier.verify(contextOf(3), Map.of("Power", "  "));
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "  "));
 
         assertThat(verdict.findings()).singleElement()
                 .extracting(CitationVerifier.Finding::status)
@@ -137,7 +138,7 @@ class CitationVerifierTest {
      */
     @Test
     void aSingleFabricatedCitationFailsTheWholeCardAndNamesEveryOffender() {
-        Verdict verdict = verifier.verify(contextOf(4), Map.of(
+        Verdict verdict = verifier.verify(contextOf(4), Set.of("Power", "Volume", "Weight"), Map.of(
                 "Power", "C1",
                 "Volume", "C2",
                 "Weight", "C12"));
@@ -149,9 +150,16 @@ class CitationVerifierTest {
         assertThat(verdict.messages()).hasSize(1);
     }
 
+    /**
+     * Nothing declared, nothing to verify.
+     *
+     * <p>An empty card is not a pass in the sense that matters; it is a card with no claims to check.
+     * The coverage case — a declared characteristic with no source — is the failure, and it is tested
+     * below.
+     */
     @Test
-    void anEmptySourceMapIsCleanButEmpty() {
-        Verdict verdict = verifier.verify(contextOf(3), Map.of());
+    void noDeclaredCharacteristicsMeansNothingToVerify() {
+        Verdict verdict = verifier.verify(contextOf(3), Set.of(), Map.of());
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings()).isEmpty();
@@ -159,7 +167,7 @@ class CitationVerifierTest {
 
     @Test
     void aNullSourceMapIsTreatedAsNoSourcesRatherThanFailing() {
-        assertThat(verifier.verify(contextOf(3), null).isClean()).isTrue();
+        assertThat(verifier.verify(contextOf(3), Set.of(), null).isClean()).isTrue();
     }
 
     /**
@@ -170,7 +178,8 @@ class CitationVerifierTest {
      */
     @Test
     void anEmptyContextSupportsNothing() {
-        Verdict verdict = verifier.verify(AssembledContext.empty("job-1"), Map.of("Power", "C1"));
+        Verdict verdict = verifier.verify(AssembledContext.empty("job-1"), Set.of("Power"),
+                Map.of("Power", "C1"));
 
         assertThat(verdict.isClean()).isFalse();
         assertThat(verdict.fabricated()).hasSize(1);
@@ -178,7 +187,7 @@ class CitationVerifierTest {
 
     @Test
     void labelsAreCaseSensitiveSoACardCannotLowerCaseItsWayPastAFragment() {
-        Verdict verdict = verifier.verify(contextOf(2), Map.of("Power", "c1"));
+        Verdict verdict = verifier.verify(contextOf(2), Set.of("Power"), Map.of("Power", "c1"));
 
         assertThat(verdict.isClean()).isFalse();
         assertThat(verdict.fabricated()).hasSize(1);
@@ -186,7 +195,7 @@ class CitationVerifierTest {
 
     @Test
     void aLabelWithSurroundingSpaceIsRejectedRatherThanTrimmed() {
-        Verdict verdict = verifier.verify(contextOf(2), Map.of("Power", " C1 "));
+        Verdict verdict = verifier.verify(contextOf(2), Set.of("Power"), Map.of("Power", " C1 "));
 
         assertThat(verdict.isClean()).isFalse();
     }
@@ -203,13 +212,15 @@ class CitationVerifierTest {
         AssembledContext stored = new AssembledContext("job-1", contextOf(3).chunks(), 0, 0);
 
         assertThat(stored.references()).containsExactly("C1", "C2", "C3");
-        assertThat(verifier.verify(stored, Map.of("Volume", "C3")).isClean()).isTrue();
-        assertThat(verifier.verify(stored, Map.of("Volume", "C4")).isClean()).isFalse();
+        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C3")).isClean())
+                .isTrue();
+        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C4")).isClean())
+                .isFalse();
     }
 
     @Test
     void messagesNameEveryFabricatedClaimForTheReworkPrompt() {
-        Verdict verdict = verifier.verify(contextOf(3), Map.of(
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume", "Weight"), Map.of(
                 "Power", "C1",
                 "Volume", "C8",
                 "Weight", "C9"));
@@ -218,5 +229,60 @@ class CitationVerifierTest {
                 .hasSize(2)
                 .anyMatch(message -> message.contains("'Volume' cites C8"))
                 .anyMatch(message -> message.contains("'Weight' cites C9"));
+    }
+
+    // --- coverage: every declared characteristic must be cited -----------------------------
+
+    /**
+     * A card with no sources at all fails every characteristic it declares.
+     *
+     * <p>The defect this guards: iterating the sources map reported nothing for a card that cited
+     * nothing, so a draft the generator prompt required to cite passed its own verification. The
+     * declared characteristics are what the card promised to support, so they are what is checked.
+     */
+    @Test
+    void aCardWithNoSourcesAtAllFailsEveryDeclaredCharacteristic() {
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"), Map.of());
+
+        assertThat(verdict.isClean()).isFalse();
+        assertThat(verdict.findings())
+                .extracting(CitationVerifier.Finding::status)
+                .containsExactlyInAnyOrder(Status.MISSING, Status.MISSING);
+    }
+
+    /**
+     * A characteristic with no source entry fails with a MISSING finding.
+     *
+     * <p>Not a fabrication: nothing was cited, rather than something false. It is still a card a
+     * reviewer cannot accept, so it fails verification and its sentence reaches the rework prompt.
+     */
+    @Test
+    void aCharacteristicWithNoSourceEntryFailsWithAMissingFinding() {
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"),
+                Map.of("Power", "C1"));
+
+        assertThat(verdict.isClean()).isFalse();
+        assertThat(verdict.findings())
+                .filteredOn(finding -> finding.characteristic().equals("Volume"))
+                .singleElement()
+                .extracting(CitationVerifier.Finding::status, CitationVerifier.Finding::isFabricated)
+                .containsExactly(Status.MISSING, false);
+        assertThat(verdict.messages())
+                .as("the omission reaches the rework prompt rather than failing silently")
+                .anySatisfy(message -> assertThat(message).contains("Volume"));
+    }
+
+    /**
+     * The clean path is unchanged: every characteristic covered by a shown fragment passes.
+     */
+    @Test
+    void aFullyCoveredCardIsClean() {
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"),
+                Map.of("Power", "C1", "Volume", "C2"));
+
+        assertThat(verdict.isClean()).isTrue();
+        assertThat(verdict.findings())
+                .extracting(CitationVerifier.Finding::status)
+                .containsOnly(Status.SUPPORTED);
     }
 }

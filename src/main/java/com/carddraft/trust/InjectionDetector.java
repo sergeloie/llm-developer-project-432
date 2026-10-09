@@ -31,10 +31,6 @@ public class InjectionDetector {
 
     private final Pattern longOpaque;
 
-    public InjectionDetector() {
-        this(new TrustSettings(2, 120));
-    }
-
     public InjectionDetector(TrustSettings settings) {
         this.longOpaque = Pattern.compile("\\S{" + Math.max(1, settings.maxOpaqueFragmentLength()) + ",}");
     }
@@ -66,14 +62,6 @@ public class InjectionDetector {
      */
     private static final Pattern LONG_ENCODED = Pattern.compile(
             "\\b[A-Za-z0-9+/]{40,}={0,2}\\b");
-
-    /**
-     * The default opaque-run length, kept for documentation.
-     *
-     * <p>The live rule is the instance field built from {@link TrustSettings}, so the two cannot
-     * drift apart. This constant records the value the tests assume.
-     */
-    private static final int DEFAULT_OPAQUE_LENGTH = 120;
 
     /**
      * What the rules found, before any model is consulted.
