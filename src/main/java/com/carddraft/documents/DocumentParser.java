@@ -1,6 +1,7 @@
 package com.carddraft.documents;
 
 import java.util.List;
+import java.util.Locale;
 
 import com.carddraft.agents.StructuralUnit;
 
@@ -20,7 +21,25 @@ public interface DocumentParser {
      */
     List<StructuralUnit> parse(byte[] content);
 
-    boolean supports(String filename);
+    /**
+     * The filename extensions this parser accepts, each including its leading dot.
+     *
+     * <p>This is the single declaration of what the format is: {@link #supports} and the document
+     * service's advertised list are both derived from it, so a format added here is accepted and
+     * advertised with no second edit to keep in step.
+     */
+    List<String> extensions();
+
+    /**
+     * Whether this parser handles the named file, derived from {@link #extensions()}.
+     */
+    default boolean supports(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        String lower = filename.toLowerCase(Locale.ROOT);
+        return extensions().stream().anyMatch(lower::endsWith);
+    }
 
     /**
      * A document the service will not process, with a reason a person can act on.

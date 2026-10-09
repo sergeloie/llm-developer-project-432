@@ -83,7 +83,7 @@ public class DocxDocumentParser implements DocumentParser {
     }
 
     @Override
-    public boolean supports(String filename) {
-        return filename != null && filename.toLowerCase().endsWith(".docx");
+    public List<String> extensions() {
+        return List.of(".docx");
     }
 }

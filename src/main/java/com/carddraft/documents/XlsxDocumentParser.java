@@ -114,8 +114,7 @@ public class XlsxDocumentParser implements DocumentParser {
     }
 
     @Override
-    public boolean supports(String filename) {
-        return filename != null && (filename.toLowerCase().endsWith(".xlsx")
-                || filename.toLowerCase().endsWith(".xls"));
+    public List<String> extensions() {
+        return List.of(".xlsx", ".xls");
     }
 }
