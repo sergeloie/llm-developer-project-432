@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.AssembledContext;
+import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextChunk;
 import com.carddraft.llm.JobLogContext;
 import com.carddraft.repositories.ModelCallRepository;
@@ -153,7 +154,7 @@ public class MetricsRunner implements ApplicationRunner {
 
         List<ContextChunk> cited = new ArrayList<>();
         for (String reference : card.sources().values()) {
-            context.find(canonicalReference(reference)).ifPresent(cited::add);
+            context.find(CitationVerifier.canonicalReference(reference)).ifPresent(cited::add);
         }
 
         SupportJudgement judgement = judge.judge(card, cited);
@@ -202,7 +203,7 @@ public class MetricsRunner implements ApplicationRunner {
             if (expected.isEmpty()) {
                 continue;
             }
-            boolean contains = context.find(canonicalReference(source.getValue()))
+            boolean contains = context.find(CitationVerifier.canonicalReference(source.getValue()))
                     .map(chunk -> ValueNormaliser.normalise(chunk.text()).contains(expected))
                     .orElse(false);
             if (contains) {
@@ -235,17 +236,6 @@ public class MetricsRunner implements ApplicationRunner {
             total += metric.valueOf(metrics);
         }
         return total / measured.size();
-    }
-
-    private static String canonicalReference(String written) {
-        if (written == null || written.length() < 3) {
-            return written;
-        }
-        if (written.startsWith("[") && written.endsWith("]")) {
-            String inner = written.substring(1, written.length() - 1);
-            return inner.isBlank() ? written : inner;
-        }
-        return written;
     }
 
     /** Whether to measure the whole reference set or its declared default. */
