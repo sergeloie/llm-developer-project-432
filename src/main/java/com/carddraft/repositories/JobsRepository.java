@@ -9,9 +9,10 @@ import org.springframework.stereotype.Repository;
 /**
  * The only place in the project that writes SQL about jobs.
  *
- * <p>The attempt counter is incremented by the database with {@code attempts = attempts + 1}
- * rather than read-then-written in Java. Under a redelivered message or two workers, a
- * read-then-write loses the increment, and the rewrite budget resets.
+ * <p>The attempt count is written as an absolute ordinal the workflow already knows, never
+ * incremented here. A redelivered activity invocation for the same attempt then writes the same
+ * value instead of counting it twice — which is what would hand the rewrite budget back to a job
+ * that had already spent it.
  */
 @Repository
 public class JobsRepository {
@@ -140,8 +141,17 @@ public class JobsRepository {
                 .update();
     }
 
-    public void recordAttempt(String id) {
-        jdbc.sql("UPDATE jobs SET attempts = attempts + 1, updated_at = now() WHERE id = :id")
+    /**
+     * Sets the attempt ordinal the workflow already knows.
+     *
+     * <p>An absolute set rather than an increment, because the workflow passes the ordinal it has
+     * counted itself. A redelivered activity invocation carries the same ordinal and overwrites
+     * with the same value, where an increment would count one attempt twice and hand the rewrite
+     * budget back to a job that had spent it.
+     */
+    public void setAttempts(String id, int attempt) {
+        jdbc.sql("UPDATE jobs SET attempts = :attempt, updated_at = now() WHERE id = :id")
+                .param("attempt", attempt)
                 .param("id", id)
                 .update();
     }

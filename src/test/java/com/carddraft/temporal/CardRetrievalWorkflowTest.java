@@ -189,9 +189,14 @@ class CardRetrievalWorkflowTest {
         assertThat(activities.statuses)
                 .containsSubsequence("retrieving", "awaiting_human");
 
+        // An approval that reaches the workflow another way than the guarded endpoint must not
+        // record a success with an empty draft: there was never a card to approve.
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
-        WorkflowResult result = resultOf(workflowId);
-        assertThat(result.humanDecision()).isEqualTo("approve");
+        resultOf(workflowId);
+        assertThat(activities.failures)
+                .as("the workflow refuses the approval and records why")
+                .singleElement()
+                .satisfies(error -> assertThat(error).containsIgnoringCase("no draft"));
     }
 
     /** The hints and documents reach retrieval rather than being dropped on the floor. */
@@ -256,6 +261,7 @@ class CardRetrievalWorkflowTest {
         private final CitationVerifier verifier = new CitationVerifier();
 
         final List<String> statuses = new ArrayList<>();
+        final List<String> failures = new ArrayList<>();
         final List<List<ReviewIssue>> contextIssuesSeen = new ArrayList<>();
         final List<String> hintsSeen = new ArrayList<>();
         final List<List<String>> documentIdsSeen = new ArrayList<>();
@@ -342,7 +348,7 @@ class CardRetrievalWorkflowTest {
         }
 
         @Override
-        public void countAttempt(String jobId) {
+        public void countAttempt(String jobId, int attempt) {
         }
 
         @Override
@@ -350,7 +356,8 @@ class CardRetrievalWorkflowTest {
         }
 
         @Override
-        public void recordFailure(String jobId, String error) {
+        public synchronized void recordFailure(String jobId, String error) {
+            failures.add(error);
         }
     }
 }

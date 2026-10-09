@@ -127,25 +127,50 @@ class CardWorkflowImplTest {
     }
 
     @Test
-    void aFailingStepEndsTheJobAsFailedRatherThanRetryingForever() {
+    void aFailingStepEndsTheJobAsFailedAndRecordsTheError() {
         activities.failExtraction = true;
         String workflowId = start("job-failed", 3);
 
         await().atMost(Duration.ofSeconds(15))
-                .until(() -> activities.statuses.contains("failed"));
+                .until(() -> !activities.failures.isEmpty());
+
+        assertThat(activities.failures)
+                .as("a terminal failure must carry its reason, or GET /jobs/{id} cannot report it")
+                .anySatisfy(error -> assertThat(error).contains("provider unreachable"));
+        assertThat(activities.outcomes).as("nothing was approved or rejected").isEmpty();
     }
 
     @Test
-    void theAttemptCounterIsWrittenByTheWorkflowRatherThanHeldInMemory() {
+    void theAttemptOrdinalIsWrittenByTheWorkflowRatherThanHeldInMemory() {
         activities.alwaysRegenerate("no good");
         String workflowId = start("job-attempts", 3);
 
         await().atMost(Duration.ofSeconds(10))
                 .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
-        assertThat(activities.attemptCounts)
-                .as("each round increments the database counter, so a replay cannot reset it")
-                .hasValue(3);
+        assertThat(activities.attemptOrdinals)
+                .as("the workflow passes the ordinal it counted, so a redelivered write is idempotent")
+                .containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void approvingAJobThatProducedNoDraftIsRefusedRatherThanRecordedAsApproved() {
+        // Zero rounds is the shape an escalated or exhausted job leaves behind: it reaches the
+        // human with an empty draft. An approval that arrives anyway must not become a success.
+        String workflowId = start("job-no-draft", 0);
+
+        await().atMost(Duration.ofSeconds(10))
+                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
+
+        resultOf(workflowId);
+        assertThat(activities.outcomes)
+                .as("an approval with nothing to show must not be recorded as an outcome")
+                .isEmpty();
+        assertThat(activities.failures)
+                .as("and the refusal has a reason a caller can read")
+                .singleElement()
+                .satisfies(error -> assertThat(error).containsIgnoringCase("no draft"));
     }
 
     @Test
@@ -225,8 +250,9 @@ class CardWorkflowImplTest {
         final List<String> statuses = new ArrayList<>();
         final List<List<ReviewIssue>> issuesSeen = new ArrayList<>();
         final List<String> outcomes = new ArrayList<>();
+        final List<String> failures = new ArrayList<>();
+        final List<Integer> attemptOrdinals = new ArrayList<>();
         final AtomicInteger generateCalls = new AtomicInteger();
-        final AtomicInteger attemptCounts = new AtomicInteger();
 
         volatile boolean approve = true;
         volatile boolean failExtraction = false;
@@ -293,8 +319,8 @@ class CardWorkflowImplTest {
         }
 
         @Override
-        public synchronized void countAttempt(String jobId) {
-            attemptCounts.incrementAndGet();
+        public synchronized void countAttempt(String jobId, int attempt) {
+            attemptOrdinals.add(attempt);
         }
 
         @Override
@@ -303,7 +329,8 @@ class CardWorkflowImplTest {
         }
 
         @Override
-        public void recordFailure(String jobId, String error) {
+        public synchronized void recordFailure(String jobId, String error) {
+            failures.add(error);
         }
 
         private synchronized void record(String state) {

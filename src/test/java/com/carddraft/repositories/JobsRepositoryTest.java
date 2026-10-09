@@ -87,11 +87,23 @@ class JobsRepositoryTest {
     }
 
     @Test
-    void theAttemptCounterIsIncrementedByTheDatabase() {
+    void theAttemptOrdinalIsWrittenAbsolutelySoARedeliveryDoesNotDoubleCount() {
         String id = createNew("key-3", "{}");
 
-        jobs.recordAttempt(id);
-        jobs.recordAttempt(id);
+        jobs.setAttempts(id, 1);
+        jobs.setAttempts(id, 1);
+
+        assertThat(jobs.findById(id).orElseThrow().attempts())
+                .as("a redelivered attempt carries the same ordinal and must overwrite, not add")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void laterAttemptsAdvanceTheOrdinal() {
+        String id = createNew("key-3b", "{}");
+
+        jobs.setAttempts(id, 1);
+        jobs.setAttempts(id, 2);
 
         assertThat(jobs.findById(id).orElseThrow().attempts()).isEqualTo(2);
     }

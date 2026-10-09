@@ -1,9 +1,5 @@
 package com.carddraft.temporal;
 
-import java.time.Duration;
-
-import io.temporal.activity.ActivityOptions;
-import io.temporal.common.RetryOptions;
 import io.temporal.workflow.Workflow;
 
 /**
@@ -22,24 +18,8 @@ import io.temporal.workflow.Workflow;
  */
 public class DocumentWorkflowImpl implements DocumentWorkflow {
 
-    /**
-     * Parsing a large file runs to minutes on a slow disk and a cold parser, and embedding it is a
-     * model call per batch on top, so five is a ceiling rather than a target. It is a constant
-     * because workflow code may not read configuration.
-     */
-    private static final Duration STEP_TIMEOUT = Duration.ofMinutes(5);
-
-    private static final RetryOptions STEP_RETRY = RetryOptions.newBuilder()
-            .setMaximumAttempts(3)
-            .setInitialInterval(Duration.ofSeconds(1))
-            .build();
-
     private final DocumentActivities steps = Workflow.newActivityStub(
-            DocumentActivities.class,
-            ActivityOptions.newBuilder()
-                    .setStartToCloseTimeout(STEP_TIMEOUT)
-                    .setRetryOptions(STEP_RETRY)
-                    .build());
+            DocumentActivities.class, StepActivityOptions.options());
 
     @Override
     public DocumentActivities.DocumentResult run(String documentId) {
