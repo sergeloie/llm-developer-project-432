@@ -253,6 +253,40 @@ class JobsControllerTest {
     }
 
     @Test
+    void aDecisionBodyWithoutAValueIsRefusedWithTheFieldNamed() {
+        String jobId = submitAndAwaitAHuman("decision-missing");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of(), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders().getContentType())
+                .as("RFC-7807: a body that fails validation is a ProblemDetail")
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody().get("detail").toString())
+                .as("the offending field is named rather than the body being declared invalid")
+                .contains("decision");
+        assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                .as("a refused decision must not have signalled anything")
+                .containsEntry("status", "awaiting_human");
+    }
+
+    @Test
+    void aDecisionIsAcceptedRegardlessOfCaseAndSurroundingSpace() {
+        String jobId = submitAndAwaitAHuman("decision-shouting");
+
+        ResponseEntity<Map> response = rest.postForEntity("/jobs/" + jobId + "/decision",
+                Map.of("decision", "  APPROVE  "), Map.class);
+
+        assertThat(response.getStatusCode())
+                .as("a person's answer, not a machine's enum: case and space are ignored")
+                .isEqualTo(HttpStatus.ACCEPTED);
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(rest.getForObject("/jobs/" + jobId, Map.class))
+                        .containsEntry("status", "approved"));
+    }
+
+    @Test
     void aDecisionForAnUnknownJobIsNotFound() {
         ResponseEntity<Map> response = rest.postForEntity("/jobs/no-such-job/decision",
                 Map.of("decision", "approve"), Map.class);
