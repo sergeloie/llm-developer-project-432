@@ -26,6 +26,18 @@ public class ChunkSearchRepository {
     /** Canonical from the original rank-fusion paper; other values work, this one is not a guess. */
     public static final int DEFAULT_RRF_K = 60;
 
+    /**
+     * Restricts a search to a set of documents, and optionally to one section.
+     *
+     * <p>Defined once because all three modes narrow the corpus identically, and a filter that
+     * drifted between them would make hybrid retrieval disagree with its own halves. The whole
+     * clause is bound parameters: the document ids are an array and the section a scalar, so no
+     * caller value is ever spliced into the SQL text.
+     */
+    private static final String DOCUMENT_FILTER =
+            " AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))\n"
+                    + " AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))\n";
+
     private final JdbcClient jdbc;
     private final JdbcTemplate template;
 
@@ -156,8 +168,7 @@ public class ChunkSearchRepository {
                           FROM chunks c
                          WHERE c.embedding IS NOT NULL
                            AND c.embedding <=> CAST(:vector AS vector) <= :maxDistance
-                           AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))
-                           AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))
+                        """ + DOCUMENT_FILTER + """
                          ORDER BY score
                          LIMIT :limit
                         """)
@@ -181,8 +192,7 @@ public class ChunkSearchRepository {
                                ts_rank(c.search_text, websearch_to_tsquery('simple', :query)) AS score, 'text' AS matched_by
                           FROM chunks c
                          WHERE c.search_text @@ websearch_to_tsquery('simple', :query)
-                           AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))
-                           AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))
+                        """ + DOCUMENT_FILTER + """
                          ORDER BY score DESC
                          LIMIT :limit
                         """)
@@ -215,23 +225,21 @@ public class ChunkSearchRepository {
                               FROM chunks c
                              WHERE c.embedding IS NOT NULL
                                AND c.embedding <=> CAST(:vector AS vector) <= :maxDistance
-                               AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))
-                               AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))
+                        """ + DOCUMENT_FILTER + """
                              ORDER BY rank
                              LIMIT :perList
-                        ),
-                        text_hits AS (
+                         ),
+                         text_hits AS (
                             SELECT c.id, c.document_id, c.page, c.section, c.text,
                                    row_number() OVER (ORDER BY ts_rank(c.search_text,
                                        websearch_to_tsquery('simple', :query)) DESC) AS rank
                               FROM chunks c
                              WHERE c.search_text @@ websearch_to_tsquery('simple', :query)
-                               AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))
-                               AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))
+                        """ + DOCUMENT_FILTER + """
                              ORDER BY rank
                              LIMIT :perList
-                        ),
-                        fused AS (
+                         ),
+                         fused AS (
                             SELECT id, document_id, page, section, text,
                                    sum(contribution) AS score,
                                    string_agg(source, ',' ORDER BY source) AS matched_by

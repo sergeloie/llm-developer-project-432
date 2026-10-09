@@ -16,6 +16,18 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JobsRepository {
 
+    /**
+     * Columns named explicitly rather than {@code SELECT *}.
+     *
+     * <p>A star select binds the record to whatever the table happens to contain today: adding a
+     * column breaks the mapping, removing one does the same, and neither is caught until a query
+     * fails at runtime.
+     */
+    private static final String JOB_COLUMNS = """
+            SELECT id, idempotency_key, status, detail, payload, result, attempts, error,
+                   created_at, updated_at
+            """;
+
     private final JdbcClient jdbc;
 
     public JobsRepository(JdbcClient jdbc) {
@@ -71,7 +83,7 @@ public class JobsRepository {
     }
 
     public Optional<Job> findById(String id) {
-        return jdbc.sql("SELECT * FROM jobs WHERE id = :id")
+        return jdbc.sql(JOB_COLUMNS + " FROM jobs WHERE id = :id")
                 .param("id", id)
                 .query(Job.class)
                 .optional();
@@ -104,7 +116,7 @@ public class JobsRepository {
     }
 
     public Optional<Job> findByIdempotencyKey(String key) {
-        return jdbc.sql("SELECT * FROM jobs WHERE idempotency_key = :key")
+        return jdbc.sql(JOB_COLUMNS + " FROM jobs WHERE idempotency_key = :key")
                 .param("key", key)
                 .query(Job.class)
                 .optional();
