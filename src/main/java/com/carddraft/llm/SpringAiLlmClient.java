@@ -116,7 +116,8 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public ProductCard repairCardField(ProductCard current, String field, String problem) {
-        ProductCard repaired = invoke("repairField:" + field, ModelTier.MAIN, Prompts.repairField(current, field, problem), ProductCard.class,
+        ProductCard repaired = invoke("repairField:" + field, ModelTier.MAIN,
+                Prompts.repairField(toJson(current), field, problem), ProductCard.class,
                 ResultContract::problemsWith);
         log.info("llm_field_repaired field={} problem={}", field, problem);
         return repaired;

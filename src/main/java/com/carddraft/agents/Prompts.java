@@ -40,7 +40,7 @@ public final class Prompts {
                 You are the generator. Write a product card using only the facts below.
 
                 Reply with a JSON object matching this schema and nothing else. No prose, no \
-                markdown fences. The title must be at most 60 characters. Every characteristic \
+                markdown fences. The title must be at most %d characters. Every characteristic \
                 must be present in the facts; do not promise anything the facts do not support. \
                 For each characteristic, sources maps the characteristic name to the identifier \
                 of the fragment it came from. If the facts carry no identifiers, leave sources \
@@ -51,7 +51,8 @@ public final class Prompts {
 
                 FACTS:
                 %s
-                """.formatted(ResultContract.schemaFor(ProductCard.class), factsJson));
+                """.formatted(ProductCard.MAX_TITLE_LENGTH,
+                ResultContract.schemaFor(ProductCard.class), factsJson));
 
 if (issues != null && !issues.isEmpty()) {
             prompt.append("\nThe reviewer rejected the previous draft. Address every point:\n");
@@ -65,7 +66,7 @@ if (issues != null && !issues.isEmpty()) {
 public static String critic(String factsJson, String draftJson) {
         return """
                 You are the reviewer. Check the draft card against the facts by these rules:
-                1. the title is at most 60 characters;
+                1. the title is at most %d characters;
                 2. no characteristic appears that is absent from the facts;
                 3. the description and the benefits are not empty;
                 4. there are no empty promises such as "high quality" or "premium";
@@ -88,7 +89,8 @@ public static String critic(String factsJson, String draftJson) {
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(ResultContract.schemaFor(CritiqueReport.class), factsJson, draftJson);
+                """.formatted(ProductCard.MAX_TITLE_LENGTH,
+                ResultContract.schemaFor(CritiqueReport.class), factsJson, draftJson);
     }
 
     /**
@@ -118,14 +120,15 @@ characteristic out and name it in missingFields instead. A characteristic with n
 fragment is far better than a characteristic citing a fragment that does not support it.
 
                 Reply with a JSON object matching this schema and nothing else. No prose, no \
-                markdown fences. The title must be at most 60 characters.
+                markdown fences. The title must be at most %d characters.
 
                 SCHEMA:
                 %s
 
                 FRAGMENTS:
                 %s
-                """.formatted(ResultContract.schemaFor(ProductCard.class), contextText));
+                """.formatted(ProductCard.MAX_TITLE_LENGTH,
+                ResultContract.schemaFor(ProductCard.class), contextText));
 
         if (issues != null && !issues.isEmpty()) {
             prompt.append("\nThe previous draft was rejected. Address every point:\n");
@@ -187,8 +190,11 @@ fragment is far better than a characteristic citing a fragment that does not sup
      * and the instruction is explicit that everything else must come back byte-identical — a
      * rewrite of the description here would cost a second generation for no reason and would show
      * up as a silent change nobody asked for.
+     *
+     * <p>The draft arrives already serialised, because "exactly as it appears below" only means
+     * something when what is below is the same JSON the application parses back.
      */
-    public static String repairField(ProductCard current, String field, String problem) {
+    public static String repairField(String currentJson, String field, String problem) {
         return """
                 You are correcting one field of a product card.
 
@@ -207,6 +213,6 @@ fragment is far better than a characteristic citing a fragment that does not sup
                 %s
                 """.formatted(field, problem,
                 ResultContract.schemaFor(ProductCard.class),
-                ResultContract.describe(current));
+                currentJson);
     }
 }

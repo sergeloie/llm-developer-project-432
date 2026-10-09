@@ -1,10 +1,13 @@
 package com.carddraft.llm;
 
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ModelVerdict;
@@ -27,18 +30,25 @@ public final class ResultContract {
     /**
      * The same check and the same instruction for the injection judge's answer.
      *
-     * <p>Only the reason is required, and that is the whole contract: a verdict without a sentence is
-     * a verdict nobody can act on when a supplier asks why a fragment of their document was kept out
-     * of the card. It matters more here than elsewhere in this class, because this is the one call
-     * whose answer silently discards content — so a bare {@code false} with no reason is exactly the
-     * shape that should be sent back rather than believed.
+     * <p>Both fields are required, and that is the whole contract. An omitted {@code suspicious}
+     * must not deserialize to "not suspicious": a gate that opens when the model stays silent is a
+     * gate that opens on every outage, which is the one direction this service must not fail. An
+     * omission instead becomes a repairable message, exactly like an empty reason. The reason is
+     * what a person reads when a supplier asks why a fragment of their document was kept out of the
+     * card, and a bare {@code false} with no reason is exactly the shape that should be sent back
+     * rather than believed.
      */
     public static List<String> problemsWith(ModelVerdict verdict) {
+        List<String> problems = new java.util.ArrayList<>();
+        if (verdict.suspicious() == null) {
+            problems.add("suspicious is missing; say whether the fragment is addressed to a "
+                    + "language model");
+        }
         if (verdict.reason() == null || verdict.reason().isBlank()) {
-            return List.of("the reason is empty; say in one short sentence why the fragment is or is "
+            problems.add("the reason is empty; say in one short sentence why the fragment is or is "
                     + "not addressed to a language model");
         }
-        return List.of();
+        return List.copyOf(problems);
     }
 
     /**
@@ -163,9 +173,11 @@ public final class ResultContract {
      * contract: there is nothing to shorten.
      */
     public static java.util.Optional<String> titleLengthProblem(ProductCard card) {
-        if (card.title() != null && !card.title().isBlank() && card.title().length() > 60) {
+        if (card.title() != null && !card.title().isBlank()
+                && card.title().length() > ProductCard.MAX_TITLE_LENGTH) {
             return java.util.Optional.of("the title is " + card.title().length()
-                    + " characters long; it must be at most 60. Shorten it.");
+                    + " characters long; it must be at most " + ProductCard.MAX_TITLE_LENGTH
+                    + ". Shorten it.");
         }
         return java.util.Optional.empty();
     }
@@ -196,6 +208,16 @@ public final class ResultContract {
     }
 
     /**
+     * A fragment reference exactly as the citation verifier will accept it.
+     *
+     * <p>The verifier unwraps the display form {@code [C3]} and nothing else: brackets count only
+     * as a pair, case is the model's to get right, and surrounding space is not forgiven. The
+     * contract must accept exactly the same forms, or a card passes one gate and fails the next.
+     * {@link com.carddraft.context.CitationVerifierTest} locks the two together.
+     */
+    private static final Pattern FRAGMENT_REFERENCE = Pattern.compile("(?:\\[C\\d+\\]|C\\d+)");
+
+    /**
      * Whether a value is a fragment reference rather than prose.
      *
      * <p>Anchored to the whole value, so a real value merely containing such text is untouched.
@@ -205,30 +227,8 @@ public final class ResultContract {
      * attribute match.
      */
     static boolean isReference(String value) {
-        return value.strip().matches("(?i)\\[?C\\d+\\]?");
+        return FRAGMENT_REFERENCE.matcher(value.strip()).matches();
     }
-
-    /**
-     * The draft as JSON text, for handing back to the model during a field repair.
-     *
-     * <p>Full shape rather than a summary: the model has to see the whole card to change one field
-     * without disturbing the rest, and a summary would invite it to invent the parts it cannot see.
-     */
-    public static String describe(ProductCard card) {
-        return String.format(
-                "{\"title\":\"%s\",\"description\":\"%s\",\"characteristics\":%s,\"benefits\":%s,"
-                        + "\"missingFields\":%s,\"confidence\":%s,\"sources\":%s}",
-                card.title(), card.description(), asJsonObject(card.characteristics()),
-                card.benefits(), card.missingFields(), card.confidence(), asJsonObject(card.sources()));
-    }
-
-    private static String asJsonObject(Map<String, String> values) {
-        StringJoiner entries = new StringJoiner(", ");
-        values.forEach((key, value) ->
-                entries.add('"' + key.replace("\"", "\\\"") + "\": \"" + String.valueOf(value).replace("\"", "\\\"") + '"'));
-        return "{" + entries + "}";
-    }
-
 
     /**
      * A JSON schema derived from the record itself.
@@ -241,6 +241,10 @@ public final class ResultContract {
      * The assignment permits this fallback explicitly.
      */
     public static String schemaFor(Class<?> type) {
+        return schemaFor(type, 2);
+    }
+
+    private static String schemaFor(Class<?> type, int depth) {
         StringBuilder json = new StringBuilder();
         json.append("{\n  \"type\": \"object\",\n  \"properties\": {");
         var components = type.getRecordComponents();
@@ -249,7 +253,7 @@ public final class ResultContract {
                 json.append(',');
             }
             json.append("\n    \"").append(components[i].getName()).append("\": ")
-                    .append(typeOf(components[i].getType(), 2));
+                    .append(typeOf(components[i].getGenericType(), depth));
         }
         json.append("\n  },\n  \"required\": [");
         for (int i = 0; i < components.length; i++) {
@@ -262,41 +266,72 @@ public final class ResultContract {
         return json.toString();
     }
 
-    private static String typeOf(Class<?> type, int depth) {
-        if (type == String.class || type == Character.class || type == char.class) {
+    /**
+     * The schema for one component's type, recursing through the generic arguments a {@code Class}
+     * erases.
+     *
+     * <p>{@link java.lang.reflect.RecordComponent#getType()} returns the erased class, so
+     * {@code List<ReviewIssue>} arrives as {@code List} and every collection would be declared an
+     * array of strings — which is exactly the wrong thing for a list of records. The generic type
+     * keeps the component, and the depth budget is spent going down so a shape that nests deeper
+     * than it was given falls back to a plain object instead of recursing without limit.
+     */
+    private static String typeOf(Type type, int depth) {
+        Class<?> raw = rawTypeOf(type);
+        if (raw == String.class || raw == Character.class || raw == char.class) {
             return "{\"type\": \"string\"}";
         }
-        if (type == Boolean.class || type == boolean.class) {
+        if (raw == Boolean.class || raw == boolean.class) {
             return "{\"type\": \"boolean\"}";
         }
-        if (type == Integer.class || type == int.class
-                || type == Long.class || type == long.class) {
+        if (raw == Integer.class || raw == int.class
+                || raw == Long.class || raw == long.class) {
             return "{\"type\": \"integer\"}";
         }
-        if (type == Double.class || type == double.class
-                || type == Float.class || type == float.class
-                || type == BigDecimal.class) {
+        if (raw == Double.class || raw == double.class
+                || raw == Float.class || raw == float.class
+                || raw == BigDecimal.class) {
             return "{\"type\": \"number\"}";
         }
-        if (type.isEnum()) {
+        if (raw.isEnum()) {
             // A verdict is a controlling signal, so the permitted values travel with the schema
             // rather than being described in prose. A model answering "ok" where "APPROVE" was
             // expected then fails the contract instead of quietly taking the wrong branch.
             StringJoiner values = new StringJoiner(", ");
-            for (Object constant : type.getEnumConstants()) {
+            for (Object constant : raw.getEnumConstants()) {
                 values.add('"' + constant.toString() + '"');
             }
             return "{\"type\": \"string\", \"enum\": [" + values + "]}";
         }
-        if (type == Map.class) {
+        if (raw == Map.class) {
             return "{\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}";
         }
-        if (Collection.class.isAssignableFrom(type)) {
-            return "{\"type\": \"array\", \"items\": {\"type\": \"string\"}}";
+        if (Collection.class.isAssignableFrom(raw)) {
+            return "{\"type\": \"array\", \"items\": " + typeOf(elementTypeOf(type), depth - 1) + "}";
         }
-        if (depth <= 0 || !type.isRecord()) {
+        if (depth <= 0 || !raw.isRecord()) {
             return "{\"type\": \"object\"}";
         }
-        return schemaFor(type);
+        return schemaFor(raw, depth - 1);
+    }
+
+    private static Class<?> rawTypeOf(Type type) {
+        if (type instanceof Class<?> clazz) {
+            return clazz;
+        }
+        if (type instanceof ParameterizedType parameterized) {
+            return (Class<?>) parameterized.getRawType();
+        }
+        return Object.class;
+    }
+
+    private static Type elementTypeOf(Type type) {
+        if (type instanceof ParameterizedType parameterized) {
+            Type[] arguments = parameterized.getActualTypeArguments();
+            if (arguments.length == 1) {
+                return arguments[0];
+            }
+        }
+        return Object.class;
     }
 }

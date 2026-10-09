@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import com.carddraft.context.CitationVerifier.Status;
 import com.carddraft.context.CitationVerifier.Verdict;
+import com.carddraft.llm.ResultContract;
 import com.carddraft.repositories.ChunkSearchRepository.Hit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,6 +156,45 @@ class CitationVerifierTest {
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings()).isEmpty();
+    }
+
+    /**
+     * The contract and the verifier must never disagree about a reference.
+     *
+     * <p>A card that passes the contract goes on to be verified, so a form the contract accepts but
+     * the verifier will not resolve is a card that passes one gate and fails the next. The verifier
+     * unwraps only a full pair of brackets — anything else is exactly what the model wrote — so the
+     * contract must accept exactly the paired-or-absent forms and reject everything else.
+     */
+    @Test
+    void theContractAcceptsExactlyTheFormsTheVerifierResolves() {
+        AssembledContext context = contextOf(3);
+
+        for (String accepted : List.of("C3", "[C3]")) {
+            var card = cardWithSource(accepted);
+            assertThat(ResultContract.sourcesProblems(card))
+                    .as("the contract accepts " + accepted)
+                    .isEmpty();
+            assertThat(verifier.verify(context, card.sources()).isClean())
+                    .as("a card the contract accepted must verify: " + accepted)
+                    .isTrue();
+        }
+
+        for (String rejected : List.of("[C3", "C3]", "c3", "[c3]", "[ C3 ]", "[]")) {
+            var card = cardWithSource(rejected);
+            assertThat(ResultContract.sourcesProblems(card))
+                    .as("the contract rejects " + rejected)
+                    .isNotEmpty();
+            assertThat(verifier.verify(context, card.sources()).isClean())
+                    .as("and the verifier rejects it too: " + rejected)
+                    .isFalse();
+        }
+    }
+
+    private static com.carddraft.agents.ProductCard cardWithSource(String reference) {
+        return new com.carddraft.agents.ProductCard("Blender", "A blender.",
+                Map.of("Power", "800 W"), List.of("Fast"), List.of(), 0.9,
+                Map.of("Power", reference));
     }
 
     @Test
