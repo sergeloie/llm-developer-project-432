@@ -248,6 +248,8 @@ public final class ResultContract {
         return FRAGMENT_REFERENCE.matcher(value.strip()).matches();
     }
 
+    private static final Map<Class<?>, String> SCHEMAS = new ConcurrentHashMap<>();
+
     /**
      * A JSON schema derived from the record itself.
      *
@@ -265,8 +267,6 @@ public final class ResultContract {
     public static String schemaFor(Class<?> type) {
         return SCHEMAS.computeIfAbsent(type, t -> schemaFor(t, 2));
     }
-
-    private static final Map<Class<?>, String> SCHEMAS = new ConcurrentHashMap<>();
 
     private static String schemaFor(Class<?> type, int depth) {
         StringBuilder json = new StringBuilder();

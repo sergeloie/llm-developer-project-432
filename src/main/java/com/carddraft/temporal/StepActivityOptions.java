@@ -25,12 +25,12 @@ final class StepActivityOptions {
             .setInitialInterval(Duration.ofSeconds(1))
             .build();
 
+    private StepActivityOptions() {}
+
     static ActivityOptions options() {
         return ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(TIMEOUT)
                 .setRetryOptions(RETRY)
                 .build();
     }
-
-    private StepActivityOptions() {}
 }

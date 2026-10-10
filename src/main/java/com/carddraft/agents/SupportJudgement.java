@@ -52,6 +52,11 @@ public record SupportJudgement(
         return unavailableReason == null;
     }
 
+    /** Convenience for when the judge answered every claim it was asked about. */
+    public double score() {
+        return score(supported.size());
+    }
+
     /**
      * The share of a known set of claims the judge marked supported.
      *
@@ -70,10 +75,7 @@ public record SupportJudgement(
         return (double) yes / expectedClaims;
     }
 
-    /** Convenience for when the judge answered every claim it was asked about. */
-    public double score() {
-        return score(supported.size());
-    }
+
 
     /**
      * Claims the judge did not mark supported, among those it was asked about.
