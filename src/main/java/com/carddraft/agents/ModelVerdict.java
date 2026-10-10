@@ -18,5 +18,4 @@ package com.carddraft.agents;
  *                   and the sentence is what a person reads when a supplier asks why their document
  *                   lost a fragment
  */
-public record ModelVerdict(Boolean suspicious, String reason) {
-}
+public record ModelVerdict(Boolean suspicious, String reason) {}

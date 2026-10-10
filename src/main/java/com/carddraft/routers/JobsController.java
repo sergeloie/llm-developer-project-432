@@ -12,14 +12,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.validation.Valid;
-
 import com.carddraft.repositories.JobsRepository;
 import com.carddraft.services.JobSubmissionService;
 import com.carddraft.services.JobSubmissionService.DecisionOutcome;
 import com.carddraft.services.JobSubmissionService.JobStatus;
 import com.carddraft.services.JobSubmissionService.SubmitOutcome;
 import com.carddraft.temporal.JobDecision;
+
+import jakarta.validation.Valid;
 
 /**
  * The asynchronous entry point.
@@ -46,15 +46,16 @@ public class JobsController {
     public ResponseEntity<JobAcceptedResponse> submit(
             @Valid @RequestBody SubmitJobRequest request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        return switch (submissions.submit(idempotencyKey, request.supplierText(),
-                request.documentIds(), request.productHint())) {
+        return switch (submissions.submit(
+                idempotencyKey, request.supplierText(), request.documentIds(), request.productHint())) {
             case SubmitOutcome.DocumentsNotIndexed(Map<String, String> states) ->
-                    throw new ApiRefusalException(HttpStatus.CONFLICT,
-                            "these documents are not indexed; poll GET /documents/{id} until the "
-                                    + "state is indexed, and submit again",
-                            Map.of("documents", states));
+                throw new ApiRefusalException(
+                        HttpStatus.CONFLICT,
+                        "these documents are not indexed; poll GET /documents/{id} until the "
+                                + "state is indexed, and submit again",
+                        Map.of("documents", states));
             case SubmitOutcome.Accepted(JobsRepository.Job job) ->
-                    ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
+                ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
         };
     }
 
@@ -66,30 +67,30 @@ public class JobsController {
      * purpose: a job that has already reached a terminal state is reported as it stands.
      */
     @PostMapping("/{jobId}/decision")
-    public ResponseEntity<?> decide(@PathVariable String jobId,
-                                    @Valid @RequestBody DecisionRequest request) {
+    public ResponseEntity<?> decide(@PathVariable String jobId, @Valid @RequestBody DecisionRequest request) {
         JobDecision decision = JobDecision.fromWireName(request.decision()).orElseThrow();
         return switch (submissions.decide(jobId, decision)) {
             case DecisionOutcome.UnknownJob ignored -> ResponseEntity.notFound().build();
-            case DecisionOutcome.Settled(JobStatus status) ->
-                    ResponseEntity.ok(JobStatusResponse.from(status));
+            case DecisionOutcome.Settled(JobStatus status) -> ResponseEntity.ok(JobStatusResponse.from(status));
             // A job escalated before generation never produced a draft to approve: approving it
             // would record a success with nothing to show, so it is refused before the signal
             // reaches the workflow.
             case DecisionOutcome.NoDraft ignored ->
-                    throw new ApiRefusalException(HttpStatus.CONFLICT,
-                            "this job has no draft card to approve; it was escalated before generation, "
-                                    + "and approving it would record a success with nothing to show");
+                throw new ApiRefusalException(
+                        HttpStatus.CONFLICT,
+                        "this job has no draft card to approve; it was escalated before generation, "
+                                + "and approving it would record a success with nothing to show");
             case DecisionOutcome.ProcessGone(JobsRepository.Job job) ->
-                    throw new WorkflowNotFoundException(job.status());
+                throw new WorkflowNotFoundException(job.status());
             case DecisionOutcome.Accepted(JobsRepository.Job job) ->
-                    ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
+                ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
         };
     }
 
     @GetMapping("/{jobId}/sources")
     public ResponseEntity<JobSourcesResponse> sources(@PathVariable String jobId) {
-        return submissions.sources(jobId)
+        return submissions
+                .sources(jobId)
                 .map(JobSourcesResponse::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -97,7 +98,8 @@ public class JobsController {
 
     @GetMapping("/{jobId}")
     public ResponseEntity<JobStatusResponse> status(@PathVariable String jobId) {
-        return submissions.status(jobId)
+        return submissions
+                .status(jobId)
                 .map(JobStatusResponse::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());

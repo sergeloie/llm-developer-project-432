@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
-import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.SupportJudgement;
 
 /**
@@ -25,8 +24,7 @@ import com.carddraft.agents.SupportJudgement;
  */
 public final class ResultContract {
 
-    private ResultContract() {
-    }
+    private ResultContract() {}
 
     /**
      * The same check and the same instruction for the injection judge's answer.
@@ -42,8 +40,7 @@ public final class ResultContract {
     public static List<String> problemsWith(ModelVerdict verdict) {
         List<String> problems = new java.util.ArrayList<>();
         if (verdict.suspicious() == null) {
-            problems.add("suspicious is missing; say whether the fragment is addressed to a "
-                    + "language model");
+            problems.add("suspicious is missing; say whether the fragment is addressed to a " + "language model");
         }
         if (verdict.reason() == null || verdict.reason().isBlank()) {
             problems.add("the reason is empty; say in one short sentence why the fragment is or is "
@@ -172,8 +169,7 @@ public final class ResultContract {
      * contract: there is nothing to shorten.
      */
     public static java.util.Optional<String> titleLengthProblem(ProductCard card) {
-        if (card.title() != null && !card.title().isBlank()
-                && card.title().length() > ProductCard.MAX_TITLE_LENGTH) {
+        if (card.title() != null && !card.title().isBlank() && card.title().length() > ProductCard.MAX_TITLE_LENGTH) {
             return java.util.Optional.of("the title is " + card.title().length()
                     + " characters long; it must be at most " + ProductCard.MAX_TITLE_LENGTH
                     + ". Shorten it.");
@@ -280,7 +276,9 @@ public final class ResultContract {
             if (i > 0) {
                 json.append(',');
             }
-            json.append("\n    \"").append(components[i].getName()).append("\": ")
+            json.append("\n    \"")
+                    .append(components[i].getName())
+                    .append("\": ")
                     .append(typeOf(components[i].getGenericType(), depth));
         }
         json.append("\n  },\n  \"required\": [");
@@ -312,12 +310,13 @@ public final class ResultContract {
         if (raw == Boolean.class || raw == boolean.class) {
             return "{\"type\": \"boolean\"}";
         }
-        if (raw == Integer.class || raw == int.class
-                || raw == Long.class || raw == long.class) {
+        if (raw == Integer.class || raw == int.class || raw == Long.class || raw == long.class) {
             return "{\"type\": \"integer\"}";
         }
-        if (raw == Double.class || raw == double.class
-                || raw == Float.class || raw == float.class
+        if (raw == Double.class
+                || raw == double.class
+                || raw == Float.class
+                || raw == float.class
                 || raw == BigDecimal.class) {
             return "{\"type\": \"number\"}";
         }

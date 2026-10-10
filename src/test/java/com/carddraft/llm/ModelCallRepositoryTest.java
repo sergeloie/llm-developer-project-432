@@ -17,10 +17,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-
-import com.carddraft.agents.ProductCard;
 import com.carddraft.repositories.ModelCallRepository;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -42,7 +41,9 @@ class ModelCallRepositoryTest {
 
     @Container
     static final PostgreSQLContainer DATABASE = new PostgreSQLContainer("pgvector/pgvector:pg17")
-            .withDatabaseName("card").withUsername("card").withPassword("card");
+            .withDatabaseName("card")
+            .withUsername("card")
+            .withPassword("card");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
@@ -61,19 +62,19 @@ class ModelCallRepositoryTest {
     void clean() {
         jdbc.sql("DELETE FROM model_calls").update();
         jdbc.sql("DELETE FROM jobs").update();
-        jdbc.sql("INSERT INTO jobs (id, status, attempts, payload) VALUES ('job-1', 'approved', 2, '{}')").update();
+        jdbc.sql("INSERT INTO jobs (id, status, attempts, payload) VALUES ('job-1', 'approved', 2, '{}')")
+                .update();
     }
 
-    private ModelCallRecord call(String tier, String model, String operation,
-                                 int in, int out, String cost, Duration duration) {
-        return new ModelCallRecord("job-1", tier, model, operation, in, out,
-                new BigDecimal(cost), duration, Instant.now());
+    private ModelCallRecord call(
+            String tier, String model, String operation, int in, int out, String cost, Duration duration) {
+        return new ModelCallRecord(
+                "job-1", tier, model, operation, in, out, new BigDecimal(cost), duration, Instant.now());
     }
 
     @Test
     void oneCallBecomesOneRowWithEveryPartOfIt() {
-        calls.write(call("main", "qwen/qwen3.5-9b", "draftCard", 2100, 550, "0.0147",
-                Duration.ofMillis(4200)));
+        calls.write(call("main", "qwen/qwen3.5-9b", "draftCard", 2100, 550, "0.0147", Duration.ofMillis(4200)));
 
         List<ModelCallRecord> stored = calls.forJob("job-1");
 
@@ -101,8 +102,7 @@ class ModelCallRepositoryTest {
     void aCostKeepsEveryDigitTheColumnPromises() {
         calls.write(call("main", "m", "draftCard", 1, 1, "0.000000000016", Duration.ofMillis(1)));
 
-        assertThat(calls.forJob("job-1").get(0).cost())
-                .isEqualByComparingTo("0.000000000016");
+        assertThat(calls.forJob("job-1").get(0).cost()).isEqualByComparingTo("0.000000000016");
         assertThat(calls.costOfJob("job-1")).isEqualByComparingTo("0.000000000016");
     }
 
@@ -139,8 +139,7 @@ class ModelCallRepositoryTest {
 
         List<ModelCallRepository.TierSpend> breakdown = calls.breakdownByTier();
 
-        assertThat(breakdown).extracting(ModelCallRepository.TierSpend::tier)
-                .containsExactly("main", "utility");
+        assertThat(breakdown).extracting(ModelCallRepository.TierSpend::tier).containsExactly("main", "utility");
 
         ModelCallRepository.TierSpend main = breakdown.get(0);
         assertThat(main.calls()).isEqualTo(2);
@@ -162,11 +161,21 @@ class ModelCallRepositoryTest {
      */
     @Test
     void aCallWithNoJobIsRecordedAndLeftOutOfEveryJobTotal() {
-        calls.write(new ModelCallRecord(null, "main", "m", "draftCard", 500, 100,
-                new BigDecimal("0.0020"), Duration.ofMillis(1), Instant.now()));
+        calls.write(new ModelCallRecord(
+                null,
+                "main",
+                "m",
+                "draftCard",
+                500,
+                100,
+                new BigDecimal("0.0020"),
+                Duration.ofMillis(1),
+                Instant.now()));
 
         assertThat(jdbc.sql("SELECT count(*) FROM model_calls WHERE job_id IS NULL")
-                .query(Integer.class).single()).isEqualTo(1);
+                        .query(Integer.class)
+                        .single())
+                .isEqualTo(1);
         assertThat(calls.forJob("job-1")).isEmpty();
         assertThat(calls.costOfJob("job-1")).isEqualByComparingTo(BigDecimal.ZERO);
     }
@@ -182,8 +191,9 @@ class ModelCallRepositoryTest {
     void aRecordThatCannotBeWrittenIsSwallowedRatherThanFailingTheCall() {
         ModelCallRepository broken = new ModelCallRepository(null);
 
-        assertThatNoException().isThrownBy(() -> broken.write(
-                call("main", "m", "draftCard", 1, 1, "0.0000000001", Duration.ofMillis(1))));
+        assertThatNoException()
+                .isThrownBy(
+                        () -> broken.write(call("main", "m", "draftCard", 1, 1, "0.0000000001", Duration.ofMillis(1))));
     }
 
     /**
@@ -197,8 +207,7 @@ class ModelCallRepositoryTest {
     void repairIsRecordedUnderItsOwnOperation() {
         calls.write(call("main", "m", "repairField:title", 3000, 200, "0.0120", Duration.ofMillis(3100)));
 
-        assertThat(calls.forJob("job-1")).extracting(ModelCallRecord::operation)
-                .containsExactly("repairField:title");
+        assertThat(calls.forJob("job-1")).extracting(ModelCallRecord::operation).containsExactly("repairField:title");
         assertThat(calls.forJob("job-1").get(0).operation())
                 .as("the field name is part of the operation, so which repair failed is answerable")
                 .contains("title");
@@ -218,7 +227,8 @@ class ModelCallRepositoryTest {
     void theClientWritesOneRecordPerCallWithoutBeingAsked() {
         var builder = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class);
         var chatClient = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.class);
-        var requestSpec = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
+        var requestSpec =
+                org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
         var callSpec = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.CallResponseSpec.class);
 
         given(builder.build()).willReturn(chatClient);
@@ -230,20 +240,28 @@ class ModelCallRepositoryTest {
         given(callSpec.chatResponse()).willReturn(responseWithUsage(900, 120));
 
         RecordingRepository recorder = new RecordingRepository();
-        LlmSettings settings = new LlmSettings("main-model", "utility-model",
-                1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
-                new BigDecimal("3.00"), new BigDecimal("15.00"),
-                new BigDecimal("0.50"), new BigDecimal("1.50"), BigDecimal.ZERO);
-        SpringAiLlmClient client =
-                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder,
-                        new SimpleMeterRegistry());
+        LlmSettings settings = new LlmSettings(
+                "main-model",
+                "utility-model",
+                1,
+                Duration.ofMillis(1),
+                Duration.ofMillis(1),
+                0,
+                new BigDecimal("3.00"),
+                new BigDecimal("15.00"),
+                new BigDecimal("0.50"),
+                new BigDecimal("1.50"),
+                BigDecimal.ZERO);
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                builder, new tools.jackson.databind.ObjectMapper(), settings, recorder, new SimpleMeterRegistry());
 
-        JobLogContext.withJob("job-42", () ->
-                client.draftCardFromContext("[C1] Power 800 W", List.of()));
+        JobLogContext.withJob("job-42", () -> client.draftCardFromContext("[C1] Power 800 W", List.of()));
 
         // The stubbed card is already valid, so generation is a single call and a single record.
         assertThat(recorder.recorded).singleElement().satisfies(written -> {
-            assertThat(written.jobId()).as("taken from the execution context, not passed in").isEqualTo("job-42");
+            assertThat(written.jobId())
+                    .as("taken from the execution context, not passed in")
+                    .isEqualTo("job-42");
             assertThat(written.tier()).isEqualTo("main");
             assertThat(written.inputTokens()).isEqualTo(900);
             assertThat(written.outputTokens()).isEqualTo(120);
@@ -259,7 +277,8 @@ class ModelCallRepositoryTest {
     void aCallOutsideAJobIsStillRecordedWithNoJob() {
         var builder = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.Builder.class);
         var chatClient = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.class);
-        var requestSpec = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
+        var requestSpec =
+                org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
         var callSpec = org.mockito.Mockito.mock(org.springframework.ai.chat.client.ChatClient.CallResponseSpec.class);
 
         given(builder.build()).willReturn(chatClient);
@@ -271,20 +290,27 @@ class ModelCallRepositoryTest {
         given(callSpec.chatResponse()).willReturn(responseWithUsage(100, 50));
 
         RecordingRepository recorder = new RecordingRepository();
-        LlmSettings settings = new LlmSettings("main-model", "utility-model",
-                1, Duration.ofMillis(1), Duration.ofMillis(1), 0,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
-        SpringAiLlmClient client =
-                new SpringAiLlmClient(builder, new tools.jackson.databind.ObjectMapper(), settings, recorder,
-                        new SimpleMeterRegistry());
+        LlmSettings settings = new LlmSettings(
+                "main-model",
+                "utility-model",
+                1,
+                Duration.ofMillis(1),
+                Duration.ofMillis(1),
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                builder, new tools.jackson.databind.ObjectMapper(), settings, recorder, new SimpleMeterRegistry());
 
         client.draftCardFromContext("[C1] text", List.of());
 
         // The stubbed card is already valid: one call, one record, with a null job.
-        assertThat(recorder.recorded).singleElement().satisfies(written ->
-                assertThat(written.jobId())
-                        .as("the synchronous endpoint has no job, and must still be counted")
-                        .isNull());
+        assertThat(recorder.recorded).singleElement().satisfies(written -> assertThat(written.jobId())
+                .as("the synchronous endpoint has no job, and must still be counted")
+                .isNull());
     }
 
     /**
@@ -321,7 +347,6 @@ class ModelCallRepositoryTest {
                 .build();
         var generation = new org.springframework.ai.chat.model.Generation(
                 new org.springframework.ai.chat.messages.AssistantMessage(VALID_CARD));
-        return new org.springframework.ai.chat.model.ChatResponse(
-                java.util.List.of(generation), metadata);
+        return new org.springframework.ai.chat.model.ChatResponse(java.util.List.of(generation), metadata);
     }
 }

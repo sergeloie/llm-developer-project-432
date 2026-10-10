@@ -20,17 +20,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CostCalculatorTest {
 
     /** Rates quoted the way providers actually quote them: per million, to six places. */
-    private static final CostCalculator PRICED =
-            new CostCalculator(new BigDecimal("3.00"), new BigDecimal("15.00"));
+    private static final CostCalculator PRICED = new CostCalculator(new BigDecimal("3.00"), new BigDecimal("15.00"));
 
-    private static final CostCalculator FREE =
-            new CostCalculator(BigDecimal.ZERO, BigDecimal.ZERO);
+    private static final CostCalculator FREE = new CostCalculator(BigDecimal.ZERO, BigDecimal.ZERO);
 
     @Test
     void aCallCostsItsInputAndOutputAtTheirOwnRates() {
         // 1000 in at 3.00/M = 0.003; 500 out at 15.00/M = 0.0075. Total 0.0105.
-        assertThat(PRICED.costOf(1000, 500))
-                .isEqualByComparingTo("0.0105");
+        assertThat(PRICED.costOf(1000, 500)).isEqualByComparingTo("0.0105");
     }
 
     /**
@@ -42,9 +39,9 @@ class CostCalculatorTest {
      */
     @Test
     void inputAndOutputAreNotChargedAtTheSameRate() {
-        BigDecimal wrongAsOneRate =
-                new BigDecimal("1500").multiply(new BigDecimal("3.00"))
-                        .divide(new BigDecimal("1000000"), 8, RoundingMode.HALF_UP);
+        BigDecimal wrongAsOneRate = new BigDecimal("1500")
+                .multiply(new BigDecimal("3.00"))
+                .divide(new BigDecimal("1000000"), 8, RoundingMode.HALF_UP);
 
         assertThat(PRICED.costOf(1000, 500))
                 .as("splitting the two rates is worth a fifth of the call here")
@@ -53,10 +50,8 @@ class CostCalculatorTest {
 
     @Test
     void aFreeModelCostsNothingRatherThanFailing() {
-        assertThat(FREE.costOf(1_000_000, 1_000_000))
-                .isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(FREE.costOf(0, 0))
-                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(FREE.costOf(1_000_000, 1_000_000)).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(FREE.costOf(0, 0)).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -92,8 +87,7 @@ class CostCalculatorTest {
      */
     @Test
     void awkwardRatesAreExactRatherThanNearlyRight() {
-        CostCalculator awkward = new CostCalculator(
-                new BigDecimal("0.1"), new BigDecimal("0.2"));
+        CostCalculator awkward = new CostCalculator(new BigDecimal("0.1"), new BigDecimal("0.2"));
 
         BigDecimal cost = awkward.costOf(3, 3);
 
@@ -104,11 +98,9 @@ class CostCalculatorTest {
 
     @Test
     void theResultAlwaysFitsTheColumnsScale() {
-        CostCalculator awkward = new CostCalculator(
-                new BigDecimal("1.23456789"), new BigDecimal("9.87654321"));
+        CostCalculator awkward = new CostCalculator(new BigDecimal("1.23456789"), new BigDecimal("9.87654321"));
 
-        assertThat(awkward.costOf(123_456, 654_321).scale())
-                .isEqualTo(CostCalculator.SCALE);
+        assertThat(awkward.costOf(123_456, 654_321).scale()).isEqualTo(CostCalculator.SCALE);
     }
 
     @Test

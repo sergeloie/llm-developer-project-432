@@ -62,8 +62,8 @@ public class CostCalculator {
      */
     public BigDecimal costOf(int inputTokens, int outputTokens) {
         if (inputTokens < 0 || outputTokens < 0) {
-            throw new IllegalArgumentException("a call cannot have consumed negative tokens; got "
-                    + inputTokens + " in, " + outputTokens + " out");
+            throw new IllegalArgumentException("a call cannot have consumed negative tokens; got " + inputTokens
+                    + " in, " + outputTokens + " out");
         }
         BigDecimal input = new BigDecimal(inputTokens)
                 .multiply(inputPricePerMillion)

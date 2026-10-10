@@ -39,7 +39,8 @@ public class PipelineService {
             draft = llmClient.draftCard(facts, issues);
             var report = llmClient.reviewDraft(facts, draft);
             if (report != null && report.verdict() == com.carddraft.agents.Verdict.APPROVE) {
-                return new PipelineOutcome(draft, attempts, PipelineVerdict.APPROVED, draft.awaitsHuman(settings.confidenceThreshold()));
+                return new PipelineOutcome(
+                        draft, attempts, PipelineVerdict.APPROVED, draft.awaitsHuman(settings.confidenceThreshold()));
             }
             issues = report.issues();
             log.info("pipeline_regenerate attempt={} issues={}", attempts, issues);

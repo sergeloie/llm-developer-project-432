@@ -43,13 +43,12 @@ public class InjectionDetector {
                     + "(инструкц\\w*|указани\\w*|правил\\w*)");
 
     /** A role marker, which tries to make the model adopt a second persona. */
-    private static final Pattern ROLE_MARKER = Pattern.compile(
-            "(?iuU)(^|\\n)\\s*(system|assistant|user|developer)\\s*:"
-                    + "|\\b(you are now|act as|new instructions?)\\b");
+    private static final Pattern ROLE_MARKER = Pattern.compile("(?iuU)(^|\\n)\\s*(system|assistant|user|developer)\\s*:"
+            + "|\\b(you are now|act as|new instructions?)\\b");
 
     /** An attempt to read the prompt out, which is how an attack finds the guardrails. */
-    private static final Pattern PROMPT_EXTRACTION = Pattern.compile(
-            "(?iuU)\\b(reveal|print|repeat|show|output|echo)\\b[^.]{0,30}\\b"
+    private static final Pattern PROMPT_EXTRACTION =
+            Pattern.compile("(?iuU)\\b(reveal|print|repeat|show|output|echo)\\b[^.]{0,30}\\b"
                     + "(system prompt|your instructions?|your prompt|initial instructions?)\\b"
                     + "|\\b(покаж\\w*|вывед\\w*|повтор\\w*|раскро\\w*|распечата\\w*)\\b[^.]{0,30}\\b"
                     + "(системн\\w*|свои инструкц\\w*|начальн\\w* инструкц\\w*)");
@@ -60,8 +59,7 @@ public class InjectionDetector {
      * <p>Base64 and hex in a supplier document are rare, and a long unbroken encoded string in a PDF
      * is almost always an attempt to carry instructions past anything that reads words.
      */
-    private static final Pattern LONG_ENCODED = Pattern.compile(
-            "\\b[A-Za-z0-9+/]{40,}={0,2}\\b");
+    private static final Pattern LONG_ENCODED = Pattern.compile("\\b[A-Za-z0-9+/]{40,}={0,2}\\b");
 
     /**
      * What the rules found, before any model is consulted.
@@ -98,8 +96,7 @@ public class InjectionDetector {
         return new RuleVerdict(!matched.isEmpty(), matched, excerpts);
     }
 
-    private void check(String text, Pattern pattern, String name,
-                       List<String> matched, List<String> excerpts) {
+    private void check(String text, Pattern pattern, String name, List<String> matched, List<String> excerpts) {
         var matcher = pattern.matcher(text);
         if (matcher.find()) {
             matched.add(name);

@@ -1,11 +1,11 @@
 package com.carddraft.services;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 
 @Validated
 @ConfigurationProperties("card.generation")
@@ -27,5 +27,4 @@ public record GenerationSettings(
          * occasional refusal, because a refusal is visible and a fabrication is not — so the
          * default sits high enough that a card has to be clearly supported to pass on its own.
          */
-        @DefaultValue("0.7") @NotNull Double confidenceThreshold) {
-}
+        @DefaultValue("0.7") @NotNull Double confidenceThreshold) {}

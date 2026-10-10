@@ -7,8 +7,6 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
-import tools.jackson.databind.ObjectMapper;
-
 import com.carddraft.agents.ProductCard;
 import com.carddraft.documents.DocumentService;
 import com.carddraft.repositories.DocumentsRepository;
@@ -18,6 +16,8 @@ import com.carddraft.temporal.CardWorkflowService;
 import com.carddraft.temporal.JobDecision;
 import com.carddraft.temporal.JobState;
 import com.carddraft.temporal.WorkflowRequest;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The asynchronous job's business rules, without a web framework in sight.
@@ -41,9 +41,13 @@ public class JobSubmissionService {
     private final JobContextRepository contexts;
     private final ObjectMapper mapper;
 
-    public JobSubmissionService(JobsRepository jobs, CardWorkflowService workflows,
-                                DocumentService documents, GenerationSettings generationSettings,
-                                JobContextRepository contexts, ObjectMapper mapper) {
+    public JobSubmissionService(
+            JobsRepository jobs,
+            CardWorkflowService workflows,
+            DocumentService documents,
+            GenerationSettings generationSettings,
+            JobContextRepository contexts,
+            ObjectMapper mapper) {
         this.jobs = jobs;
         this.workflows = workflows;
         this.documents = documents;
@@ -54,11 +58,9 @@ public class JobSubmissionService {
 
     /** The job a submission created or found, or the documents that made it impossible. */
     public sealed interface SubmitOutcome {
-        record Accepted(JobsRepository.Job job) implements SubmitOutcome {
-        }
+        record Accepted(JobsRepository.Job job) implements SubmitOutcome {}
 
-        record DocumentsNotIndexed(Map<String, String> states) implements SubmitOutcome {
-        }
+        record DocumentsNotIndexed(Map<String, String> states) implements SubmitOutcome {}
     }
 
     /**
@@ -68,20 +70,15 @@ public class JobSubmissionService {
      * {@code NoDraft} and {@code ProcessGone} are the two refusals a running decision can meet.
      */
     public sealed interface DecisionOutcome {
-        record Accepted(JobsRepository.Job job) implements DecisionOutcome {
-        }
+        record Accepted(JobsRepository.Job job) implements DecisionOutcome {}
 
-        record Settled(JobStatus status) implements DecisionOutcome {
-        }
+        record Settled(JobStatus status) implements DecisionOutcome {}
 
-        record NoDraft(JobsRepository.Job job) implements DecisionOutcome {
-        }
+        record NoDraft(JobsRepository.Job job) implements DecisionOutcome {}
 
-        record ProcessGone(JobsRepository.Job job) implements DecisionOutcome {
-        }
+        record ProcessGone(JobsRepository.Job job) implements DecisionOutcome {}
 
-        record UnknownJob() implements DecisionOutcome {
-        }
+        record UnknownJob() implements DecisionOutcome {}
     }
 
     /**
@@ -91,16 +88,19 @@ public class JobSubmissionService {
      * card at all: a failed job carries an error instead, and a result written by an older version
      * may not parse. There is no confidence to report, so none is.
      */
-    public record JobStatus(String id, String status, int attempts, String detail, String result,
-                            Double confidence, Boolean awaitingHuman, String error) {
-    }
+    public record JobStatus(
+            String id,
+            String status,
+            int attempts,
+            String detail,
+            String result,
+            Double confidence,
+            Boolean awaitingHuman,
+            String error) {}
 
-    public record JobSources(String jobId, List<SourceFragment> context) {
-    }
+    public record JobSources(String jobId, List<SourceFragment> context) {}
 
-    public record SourceFragment(String reference, String documentId, String page, String section,
-                                 String text) {
-    }
+    public record SourceFragment(String reference, String documentId, String page, String section, String text) {}
 
     /**
      * Accepts the job, or names the documents that are not searchable yet.
@@ -109,8 +109,8 @@ public class JobSubmissionService {
      * that something is a document whose chunks are not retrievable, because a card built from a
      * document that cannot be searched is a card built from nothing.
      */
-    public SubmitOutcome submit(String idempotencyKey, String supplierText, List<String> documentIds,
-                                String productHint) {
+    public SubmitOutcome submit(
+            String idempotencyKey, String supplierText, List<String> documentIds, String productHint) {
         List<String> ids = documentIds == null ? List.of() : List.copyOf(documentIds);
         String hint = productHint == null ? "" : productHint;
 
@@ -119,8 +119,8 @@ public class JobSubmissionService {
             return new SubmitOutcome.DocumentsNotIndexed(notIndexed);
         }
 
-        JobsRepository.JobCreation creation = jobs.createOrFindByIdempotencyKey(
-                idempotencyKey, "pending", payloadFor(supplierText, ids, hint));
+        JobsRepository.JobCreation creation =
+                jobs.createOrFindByIdempotencyKey(idempotencyKey, "pending", payloadFor(supplierText, ids, hint));
         JobsRepository.Job job = creation.job();
 
         // Start only when this request is the one that created the job. A repeated request must not
@@ -128,8 +128,9 @@ public class JobSubmissionService {
         // The workflow-exists check covers the other gap - a job whose row landed but whose process
         // did not, because the engine was unreachable at the time.
         if (creation.created() || !workflows.exists(job.id())) {
-            workflows.start(job.id(), new WorkflowRequest(
-                    job.id(), supplierText, generationSettings.maxRewriteRounds(), hint, ids));
+            workflows.start(
+                    job.id(),
+                    new WorkflowRequest(job.id(), supplierText, generationSettings.maxRewriteRounds(), hint, ids));
         }
         return new SubmitOutcome.Accepted(job);
     }
@@ -174,22 +175,36 @@ public class JobSubmissionService {
     }
 
     public Optional<JobSources> sources(String jobId) {
-        return jobs.findById(jobId).map(job -> new JobSources(jobId,
-                contexts.load(jobId).chunks().stream().map(this::fragment).toList()));
+        return jobs.findById(jobId)
+                .map(job -> new JobSources(
+                        jobId,
+                        contexts.load(jobId).chunks().stream()
+                                .map(this::fragment)
+                                .toList()));
     }
 
     private JobStatus describe(JobsRepository.Job job) {
         Optional<Double> confidence = confidenceOf(job.result());
-        return new JobStatus(job.id(), job.status(), job.attempts(), job.detail(), job.result(),
+        return new JobStatus(
+                job.id(),
+                job.status(),
+                job.attempts(),
+                job.detail(),
+                job.result(),
                 confidence.orElse(null),
-                confidence.map(value -> value < generationSettings.confidenceThreshold()).orElse(null),
+                confidence
+                        .map(value -> value < generationSettings.confidenceThreshold())
+                        .orElse(null),
                 job.error());
     }
 
     private SourceFragment fragment(com.carddraft.context.ContextChunk chunk) {
-        return new SourceFragment(chunk.reference(), chunk.documentId(),
+        return new SourceFragment(
+                chunk.reference(),
+                chunk.documentId(),
                 chunk.page() == 0 ? "" : String.valueOf(chunk.page()),
-                chunk.section() == null ? "" : chunk.section(), chunk.text());
+                chunk.section() == null ? "" : chunk.section(),
+                chunk.text());
     }
 
     private String payloadFor(String supplierText, List<String> documentIds, String productHint) {
@@ -203,7 +218,8 @@ public class JobSubmissionService {
     private Map<String, String> documentsNotIndexed(List<String> documentIds) {
         Map<String, String> states = new LinkedHashMap<>();
         for (String documentId : documentIds) {
-            String state = documents.find(documentId)
+            String state = documents
+                    .find(documentId)
                     .map(DocumentsRepository.DocumentRow::state)
                     .orElse("unknown");
             if (!"indexed".equals(state)) {

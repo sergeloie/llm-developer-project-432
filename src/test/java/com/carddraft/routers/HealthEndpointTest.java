@@ -1,7 +1,5 @@
 package com.carddraft.routers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +15,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
@@ -58,7 +58,8 @@ class HealthEndpointTest {
                 .isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("status", "UP");
 
-        Map<String, Object> components = (Map<String, Object>) response.getBody().get("components");
+        Map<String, Object> components =
+                (Map<String, Object>) response.getBody().get("components");
         assertThat(components).containsKeys("db", "vectorExtension");
         assertThat((Map<String, Object>) components.get("db")).containsEntry("status", "UP");
 

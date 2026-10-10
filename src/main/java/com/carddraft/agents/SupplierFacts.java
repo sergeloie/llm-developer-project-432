@@ -12,10 +12,7 @@ import java.util.Map;
  * <p>Deliberately unvalidated for now. Constraints on title length, confidence range and the
  * overlap between characteristics and missing fields arrive with the result contract, not here.
  */
-public record SupplierFacts(
-        String productName,
-        Map<String, String> characteristics,
-        List<String> missingFields) {
+public record SupplierFacts(String productName, Map<String, String> characteristics, List<String> missingFields) {
 
     public SupplierFacts {
         characteristics = characteristics == null ? Map.of() : Map.copyOf(characteristics);

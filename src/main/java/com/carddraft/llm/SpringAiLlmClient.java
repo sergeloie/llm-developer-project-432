@@ -11,19 +11,18 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.stereotype.Component;
 
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
-
-import tools.jackson.databind.ObjectMapper;
-
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
-import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.Prompts;
+import com.carddraft.agents.ReviewIssue;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.SupportJudgement;
 import com.carddraft.repositories.ModelCallRepository;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The provider boundary.
@@ -58,8 +57,12 @@ public class SpringAiLlmClient implements LlmClient {
     private final ModelCallRepository calls;
     private final MeterRegistry meterRegistry;
 
-    public SpringAiLlmClient(ChatClient.Builder chatClientBuilder, ObjectMapper mapper, LlmSettings settings,
-                              ModelCallRepository calls, MeterRegistry meterRegistry) {
+    public SpringAiLlmClient(
+            ChatClient.Builder chatClientBuilder,
+            ObjectMapper mapper,
+            LlmSettings settings,
+            ModelCallRepository calls,
+            MeterRegistry meterRegistry) {
         this.chatClient = chatClientBuilder.build();
         this.mapper = mapper;
         this.settings = settings;
@@ -69,23 +72,29 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public SupplierFacts extractFacts(String supplierText) {
-        return generate("extractFacts", Prompts.extractor(supplierText),
-                SupplierFacts.class, ignored -> List.of());
+        return generate("extractFacts", Prompts.extractor(supplierText), SupplierFacts.class, ignored -> List.of());
     }
 
     @Override
     public ProductCard draftCard(SupplierFacts facts, List<ReviewIssue> issues) {
-        ProductCard draft = generate("draftCard", Prompts.generator(toJson(facts), issues),
-                ProductCard.class, ResultContract::problemsForGeneration);
+        ProductCard draft = generate(
+                "draftCard",
+                Prompts.generator(toJson(facts), issues),
+                ProductCard.class,
+                ResultContract::problemsForGeneration);
         draft = repairTitleIfNeeded(draft);
-        return repairSourcesIfNeeded(draft,
+        return repairSourcesIfNeeded(
+                draft,
                 "The facts carry no fragment identifiers, so sources must stay empty rather than "
                         + "naming invented references");
     }
 
     @Override
     public CritiqueReport reviewDraft(SupplierFacts facts, ProductCard draft) {
-        return review("reviewDraft", Prompts.critic(toJson(facts), toJson(draft)), CritiqueReport.class,
+        return review(
+                "reviewDraft",
+                Prompts.critic(toJson(facts), toJson(draft)),
+                CritiqueReport.class,
                 ResultContract::problemsWith);
     }
 
@@ -94,19 +103,22 @@ public class SpringAiLlmClient implements LlmClient {
         // First phase: the full card. A long title and a bad sources mapping pass through here on
         // purpose: both are repaired pointwise below, and regenerating the whole card for either
         // would bill a second generation for one field.
-        ProductCard firstDraft = generate("draftCardFromContext:phase1",
+        ProductCard firstDraft = generate(
+                "draftCardFromContext:phase1",
                 Prompts.generatorFromContext(contextText, issues),
-                ProductCard.class, ResultContract::problemsForGeneration);
+                ProductCard.class,
+                ResultContract::problemsForGeneration);
 
         ProductCard draft = repairTitleIfNeeded(firstDraft);
-        return repairSourcesIfNeeded(draft,
-                "Regenerate only the sources mapping using characteristic names as keys");
+        return repairSourcesIfNeeded(draft, "Regenerate only the sources mapping using characteristic names as keys");
     }
 
     @Override
     public CritiqueReport reviewCardAgainstContext(String contextText, ProductCard draft) {
-        return review("reviewCardAgainstContext",
-                Prompts.criticAgainstContext(contextText, toJson(draft)), CritiqueReport.class,
+        return review(
+                "reviewCardAgainstContext",
+                Prompts.criticAgainstContext(contextText, toJson(draft)),
+                CritiqueReport.class,
                 ResultContract::problemsWith);
     }
 
@@ -124,9 +136,11 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public ProductCard repairCardField(ProductCard current, String field, String problem) {
-        ProductCard repaired = generate("repairField:" + field,
+        ProductCard repaired = generate(
+                "repairField:" + field,
                 Prompts.repairField(toJson(current), field, problem),
-                ProductCard.class, ResultContract::problemsWith);
+                ProductCard.class,
+                ResultContract::problemsWith);
         log.info("llm_field_repaired field={} problem={}", field, problem);
         return repaired;
     }
@@ -137,8 +151,7 @@ public class SpringAiLlmClient implements LlmClient {
      * <p>Every generation passes through here, so the tier and the transport-and-repair policy are
      * written once and a new generation is its prompt and its contract and nothing else.
      */
-    private <T> T generate(String operation, String prompt, Class<T> type,
-                           Function<T, List<String>> contract) {
+    private <T> T generate(String operation, String prompt, Class<T> type, Function<T, List<String>> contract) {
         return withTransportRetry(operation, ModelTier.MAIN, prompt, type, contract);
     }
 
@@ -150,8 +163,7 @@ public class SpringAiLlmClient implements LlmClient {
      * at the call site because the overload of {@link ResultContract#problemsWith} resolves against
      * the concrete type there, which an unbounded type parameter cannot do.
      */
-    private <T> T review(String operation, String prompt, Class<T> type,
-                         Function<T, List<String>> contract) {
+    private <T> T review(String operation, String prompt, Class<T> type, Function<T, List<String>> contract) {
         return withTransportRetry(operation, ModelTier.UTILITY, prompt, type, contract);
     }
 
@@ -163,8 +175,7 @@ public class SpringAiLlmClient implements LlmClient {
      */
     private ProductCard repairTitleIfNeeded(ProductCard draft) {
         return ResultContract.titleLengthProblem(draft)
-                .map(problem -> keepingFirstDraft(draft,
-                        repairCardField(draft, TITLE_FIELD, problem), TITLE_FIELD))
+                .map(problem -> keepingFirstDraft(draft, repairCardField(draft, TITLE_FIELD, problem), TITLE_FIELD))
                 .orElse(draft);
     }
 
@@ -174,8 +185,8 @@ public class SpringAiLlmClient implements LlmClient {
             return draft;
         }
         try {
-            ProductCard repaired = repairCardField(draft, SOURCES_FIELD,
-                    instruction + ": " + String.join("; ", problems));
+            ProductCard repaired =
+                    repairCardField(draft, SOURCES_FIELD, instruction + ": " + String.join("; ", problems));
             return keepingFirstDraft(draft, repaired, SOURCES_FIELD);
         } catch (ModelResponseFormatException e) {
             // The mapping stayed imperfect within budget, and the first draft goes on anyway.
@@ -202,15 +213,28 @@ public class SpringAiLlmClient implements LlmClient {
      * whole, and a merged card that fails it is worse than a second draft that does not.
      */
     private ProductCard keepingFirstDraft(ProductCard first, ProductCard repaired, String field) {
-        ProductCard merged = switch (field) {
-            case SOURCES_FIELD -> new ProductCard(first.title(), first.description(),
-                    first.characteristics(), first.benefits(), first.missingFields(),
-                    first.confidence(), repaired.sources());
-            case TITLE_FIELD -> new ProductCard(repaired.title(), first.description(),
-                    first.characteristics(), first.benefits(), first.missingFields(),
-                    first.confidence(), first.sources());
-            default -> repaired;
-        };
+        ProductCard merged =
+                switch (field) {
+                    case SOURCES_FIELD ->
+                        new ProductCard(
+                                first.title(),
+                                first.description(),
+                                first.characteristics(),
+                                first.benefits(),
+                                first.missingFields(),
+                                first.confidence(),
+                                repaired.sources());
+                    case TITLE_FIELD ->
+                        new ProductCard(
+                                repaired.title(),
+                                first.description(),
+                                first.characteristics(),
+                                first.benefits(),
+                                first.missingFields(),
+                                first.confidence(),
+                                first.sources());
+                    default -> repaired;
+                };
         return ResultContract.problemsWith(merged).isEmpty() ? merged : repaired;
     }
 
@@ -219,8 +243,8 @@ public class SpringAiLlmClient implements LlmClient {
      * cannot. The repair of unusable content happens inside {@link #withContractRepair}, once per
      * attempt.
      */
-    private <T> T withTransportRetry(String operation, ModelTier tier, String prompt, Class<T> type,
-                                     Function<T, List<String>> contract) {
+    private <T> T withTransportRetry(
+            String operation, ModelTier tier, String prompt, Class<T> type, Function<T, List<String>> contract) {
         for (int attempt = 1; attempt <= settings.maxAttempts(); attempt++) {
             try {
                 return withContractRepair(operation, tier, prompt, type, contract);
@@ -231,8 +255,13 @@ public class SpringAiLlmClient implements LlmClient {
                     throw e;
                 }
                 Duration delay = settings.delayBefore(attempt);
-                log.warn("llm_call_retry operation={} tier={} attempt={} delay_ms={} error={}",
-                        operation, tier, attempt, delay.toMillis(), e.toString());
+                log.warn(
+                        "llm_call_retry operation={} tier={} attempt={} delay_ms={} error={}",
+                        operation,
+                        tier,
+                        attempt,
+                        delay.toMillis(),
+                        e.toString());
                 sleep(delay);
             }
         }
@@ -247,8 +276,8 @@ public class SpringAiLlmClient implements LlmClient {
      * is one instruction away from being right, and regenerating from scratch costs a generation
      * to fix a formatting slip.
      */
-    private <T> T withContractRepair(String operation, ModelTier tier, String prompt, Class<T> type,
-                                     Function<T, List<String>> contract) {
+    private <T> T withContractRepair(
+            String operation, ModelTier tier, String prompt, Class<T> type, Function<T, List<String>> contract) {
         String currentPrompt = prompt;
         List<String> problems = List.of();
 
@@ -277,8 +306,8 @@ public class SpringAiLlmClient implements LlmClient {
                     + "\nReturn a corrected JSON object matching the schema, and nothing else.";
         }
 
-        throw new ModelResponseFormatException(operation + ": still invalid after "
-                + settings.maxRepairAttempts() + " repair attempts. Problems: " + String.join("; ", problems));
+        throw new ModelResponseFormatException(operation + ": still invalid after " + settings.maxRepairAttempts()
+                + " repair attempts. Problems: " + String.join("; ", problems));
     }
 
     /**
@@ -299,23 +328,22 @@ public class SpringAiLlmClient implements LlmClient {
      */
     private String callOnce(String operation, ModelTier tier, String prompt) {
         var options = ChatOptions.builder();
-        options.model(settings.modelFor(tier)).temperature(settings.temperature().doubleValue());
+        options.model(settings.modelFor(tier))
+                .temperature(settings.temperature().doubleValue());
 
         long startedAt = System.nanoTime();
         Timer.Sample sample = Timer.start(meterRegistry);
         org.springframework.ai.chat.model.ChatResponse response;
         try {
-            response = chatClient.prompt()
-                    .user(prompt)
-                    .options(options)
-                    .call()
-                    .chatResponse();
+            response = chatClient.prompt().user(prompt).options(options).call().chatResponse();
         } finally {
             sample.stop(timerFor(operation, tier));
         }
         Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
-        if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+        if (response == null
+                || response.getResult() == null
+                || response.getResult().getOutput() == null) {
             throw new EmptyModelResponseException(settings.modelFor(tier), finishReason(response), operation);
         }
 
@@ -344,25 +372,40 @@ public class SpringAiLlmClient implements LlmClient {
      * then honest about what is known, and a card that prices at zero because the provider withheld
      * the number is visibly different from one priced correctly.
      */
-    private void recordCall(String operation, ModelTier tier,
-                            org.springframework.ai.chat.model.ChatResponse response,
-                            Duration elapsed) {
+    private void recordCall(
+            String operation,
+            ModelTier tier,
+            org.springframework.ai.chat.model.ChatResponse response,
+            Duration elapsed) {
         var usage = usageOf(response);
-        int inputTokens = usage == null || usage.getPromptTokens() == null
-                ? 0 : Math.max(0, usage.getPromptTokens());
-        int outputTokens = usage == null || usage.getCompletionTokens() == null
-                ? 0 : Math.max(0, usage.getCompletionTokens());
+        int inputTokens = usage == null || usage.getPromptTokens() == null ? 0 : Math.max(0, usage.getPromptTokens());
+        int outputTokens =
+                usage == null || usage.getCompletionTokens() == null ? 0 : Math.max(0, usage.getCompletionTokens());
 
         String model = settings.modelFor(tier);
         var cost = settings.calculatorFor(tier).costOf(inputTokens, outputTokens);
 
         calls.write(new ModelCallRecord(
-                JobLogContext.currentJob(), tier.wireName(), model, operation,
-                inputTokens, outputTokens, cost, elapsed, Instant.now()));
+                JobLogContext.currentJob(),
+                tier.wireName(),
+                model,
+                operation,
+                inputTokens,
+                outputTokens,
+                cost,
+                elapsed,
+                Instant.now()));
 
-        log.info("llm_call_recorded operation={} tier={} model={} input_tokens={} output_tokens={} "
-                        + "cost={} duration_ms={}", operation, tier.wireName(), model, inputTokens,
-                outputTokens, cost, elapsed.toMillis());
+        log.info(
+                "llm_call_recorded operation={} tier={} model={} input_tokens={} output_tokens={} "
+                        + "cost={} duration_ms={}",
+                operation,
+                tier.wireName(),
+                model,
+                inputTokens,
+                outputTokens,
+                cost,
+                elapsed.toMillis());
     }
 
     private org.springframework.ai.chat.metadata.Usage usageOf(
@@ -374,7 +417,9 @@ public class SpringAiLlmClient implements LlmClient {
     }
 
     private String finishReason(org.springframework.ai.chat.model.ChatResponse response) {
-        if (response == null || response.getResult() == null || response.getResult().getMetadata() == null) {
+        if (response == null
+                || response.getResult() == null
+                || response.getResult().getMetadata() == null) {
             return null;
         }
         var metadata = response.getResult().getMetadata();
@@ -387,7 +432,8 @@ public class SpringAiLlmClient implements LlmClient {
         try {
             return mapper.writeValueAsString(value);
         } catch (tools.jackson.core.JacksonException e) {
-            throw new IllegalStateException("could not serialise " + value.getClass().getSimpleName(), e);
+            throw new IllegalStateException(
+                    "could not serialise " + value.getClass().getSimpleName(), e);
         }
     }
 

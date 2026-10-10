@@ -14,7 +14,6 @@ import java.util.Optional;
  * identical, so a caller's word and the process's word are the same word.
  */
 public enum JobDecision {
-
     APPROVE("approve"),
     REJECT("reject");
 

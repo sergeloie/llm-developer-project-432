@@ -42,22 +42,26 @@ public class DocumentsRepository {
     private final JdbcClient jdbc;
     private final JdbcTemplate template;
 
-
     public DocumentsRepository(JdbcClient jdbc, JdbcTemplate template) {
         this.jdbc = jdbc;
         this.template = template;
     }
 
-    public record DocumentRow(String id, String filename, String contentSha256, long sizeBytes,
-                              String state, String rejectionReason, int chunkCount,
-                              Instant createdAt, Instant updatedAt) {
-    }
+    public record DocumentRow(
+            String id,
+            String filename,
+            String contentSha256,
+            long sizeBytes,
+            String state,
+            String rejectionReason,
+            int chunkCount,
+            Instant createdAt,
+            Instant updatedAt) {}
 
-        /** {@code is_table} arrives aliased as {@code table_flag}: "table" is reserved enough in SQL
+    /** {@code is_table} arrives aliased as {@code table_flag}: "table" is reserved enough in SQL
      *  to be an awkward column name to map onto a record component. */
-    public record ChunkRow(long id, String documentId, int ordinal, int page, String section,
-                           String text, boolean tableFlag) {
-    }
+    public record ChunkRow(
+            long id, String documentId, int ordinal, int page, String section, String text, boolean tableFlag) {}
 
     /**
      * Finds the document with this content, if it has been seen before.
@@ -72,8 +76,7 @@ public class DocumentsRepository {
                 .optional();
     }
 
-
-/**
+    /**
      * Records the document and the bytes it arrived as.
      *
      * <p>The content is written in the same statement as the row, so a document can never be
@@ -113,25 +116,22 @@ public class DocumentsRepository {
                 .optional();
     }
 
-
     public void markParsing(String id) {
         jdbc.sql("""
                         UPDATE documents
                            SET state = 'parsing', rejection_reason = NULL, updated_at = now()
                          WHERE id = :id
-                        """)
-                .param("id", id)
-                .update();
+                        """).param("id", id).update();
     }
 
-/**
+    /**
      * Marks the document searchable, but only once every one of its chunks has a vector.
- *
+     *
      * <p>The condition is the whole point. {@code indexed} is what tells a caller the document can be
- * *searched*, and a chunk with no vector is invisible to the vector index — which is built
- * {@code WHERE embedding IS NOT NULL} — however much text it holds. Marking a document indexed
- * before its vectors exist is how a service ends up reporting that four documents are ready and
- * retrieving from none of them.
+     * *searched*, and a chunk with no vector is invisible to the vector index — which is built
+     * {@code WHERE embedding IS NOT NULL} — however much text it holds. Marking a document indexed
+     * before its vectors exist is how a service ends up reporting that four documents are ready and
+     * retrieving from none of them.
      *
      * <p>Also the only safe way to move the state, because the check and the write are one statement.
      * A caller that asked first and wrote second would have to win a race against its own embedding
@@ -153,9 +153,7 @@ public class DocumentsRepository {
                            AND EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)
                            AND NOT EXISTS (SELECT 1 FROM chunks c
                                             WHERE c.document_id = d.id AND c.embedding IS NULL)
-                        """)
-                .param("id", id)
-                .update();
+                        """).param("id", id).update();
         return findById(id).orElseThrow();
     }
 
@@ -180,8 +178,7 @@ public class DocumentsRepository {
                            AND EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)
                            AND NOT EXISTS (SELECT 1 FROM chunks c
                                             WHERE c.document_id = d.id AND c.embedding IS NULL)
-                        """)
-                .update();
+                        """).update();
     }
 
     /**
@@ -196,15 +193,14 @@ public class DocumentsRepository {
                            SET state = 'rejected', rejection_reason = :reason, chunk_count = 0,
                                updated_at = now()
                          WHERE id = :id
-                        """)
-                .param("reason", reason)
-                .param("id", id)
-                .update();
+                        """).param("reason", reason).param("id", id).update();
         return findById(id).orElseThrow();
     }
 
     public void deleteChunks(String documentId) {
-        jdbc.sql("DELETE FROM chunks WHERE document_id = :id").param("id", documentId).update();
+        jdbc.sql("DELETE FROM chunks WHERE document_id = :id")
+                .param("id", documentId)
+                .update();
     }
 
     /**

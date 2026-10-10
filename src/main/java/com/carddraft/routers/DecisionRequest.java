@@ -11,7 +11,5 @@ import jakarta.validation.constraints.Pattern;
  */
 public record DecisionRequest(
         @NotBlank(message = "decision must be approve or reject")
-        @Pattern(regexp = "(?i)\\s*(approve|reject)\\s*",
-                message = "decision must be approve or reject")
-        String decision) {
-}
+        @Pattern(regexp = "(?i)\\s*(approve|reject)\\s*", message = "decision must be approve or reject")
+        String decision) {}

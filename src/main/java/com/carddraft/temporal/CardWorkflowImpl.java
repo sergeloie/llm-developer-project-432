@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.ReviewIssue;
+
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.failure.ApplicationFailure;
@@ -51,8 +52,7 @@ public class CardWorkflowImpl implements CardWorkflow {
 
     private static final String ATTEMPT_PREFIX = "attempt ";
 
-    private final CardActivities steps = Workflow.newActivityStub(
-            CardActivities.class, StepActivityOptions.options());
+    private final CardActivities steps = Workflow.newActivityStub(CardActivities.class, StepActivityOptions.options());
 
     private final CardActivities statusWrites = Workflow.newActivityStub(
             CardActivities.class,
@@ -74,8 +74,8 @@ public class CardWorkflowImpl implements CardWorkflow {
         try {
             if (request.retrievesFromDocuments()) {
                 publish(jobId, JobState.RETRIEVING, null);
-                RetrievedContext retrieved = steps.retrieveAndAssemble(
-                        jobId, request.productHint(), request.documentIds());
+                RetrievedContext retrieved =
+                        steps.retrieveAndAssemble(jobId, request.productHint(), request.documentIds());
 
                 // A document that is mostly attack is not generated from the survivors. The
                 // omissions would be nobody's choice, and a card with unchosen omissions reads
@@ -85,8 +85,7 @@ public class CardWorkflowImpl implements CardWorkflow {
                     publish(jobId, JobState.AWAITING_HUMAN, retrieved.escalationReason());
                     Workflow.await(() -> decision != null);
                 } else {
-                    RetrievalLoop loop = runRetrievalLoop(jobId, retrieved.contextText(),
-                            request.maxRounds());
+                    RetrievalLoop loop = runRetrievalLoop(jobId, retrieved.contextText(), request.maxRounds());
                     draftJson = loop.draftJson();
                     attempts = loop.attempts();
                     reviewerApproved = loop.reviewerApproved();
@@ -121,8 +120,7 @@ public class CardWorkflowImpl implements CardWorkflow {
         } catch (RuntimeException e) {
             status = JobState.FAILED.wireName();
             statusWrites.recordFailure(jobId, failureMessage(e));
-            throw ApplicationFailure.newNonRetryableFailureWithCause(
-                    "job " + jobId + " failed", "CardJobFailed", e);
+            throw ApplicationFailure.newNonRetryableFailureWithCause("job " + jobId + " failed", "CardJobFailed", e);
         }
 
         if (decision == JobDecision.APPROVE && !ProductCard.isDraftJson(draftJson)) {
@@ -150,9 +148,8 @@ public class CardWorkflowImpl implements CardWorkflow {
      * maxRounds alone, and letting it consume the citation allowance would escalate
      * to a human for a reason that has nothing to do with citations.
      */
-    private record RetrievalLoop(String draftJson, int attempts, boolean reviewerApproved,
-                                 String awaitingStatus, String awaitingDetail) {
-    }
+    private record RetrievalLoop(
+            String draftJson, int attempts, boolean reviewerApproved, String awaitingStatus, String awaitingDetail) {}
 
     private RetrievalLoop runRetrievalLoop(String jobId, String contextText, int maxRounds) {
         List<ReviewIssue> issues = List.of();
@@ -211,8 +208,7 @@ public class CardWorkflowImpl implements CardWorkflow {
             awaitingStatus = "awaiting human decision after review";
         }
         String awaitingDetail = escalated ? citations.messages().toString() : null;
-        return new RetrievalLoop(draftJson, attempts, reviewerApproved, awaitingStatus,
-                awaitingDetail);
+        return new RetrievalLoop(draftJson, attempts, reviewerApproved, awaitingStatus, awaitingDetail);
     }
 
     /**
@@ -228,8 +224,7 @@ public class CardWorkflowImpl implements CardWorkflow {
         return new CritiqueStep(verdict.approved(), verdict.issues());
     }
 
-    private record CritiqueStep(boolean approved, List<ReviewIssue> issues) {
-    }
+    private record CritiqueStep(boolean approved, List<ReviewIssue> issues) {}
 
     @Override
     public void approve() {

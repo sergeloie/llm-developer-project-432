@@ -1,13 +1,6 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +8,6 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import java.math.BigDecimal;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -23,17 +15,24 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-
-import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.repositories.ModelCallRepository;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * The repair loop, observed at the transport.
@@ -46,8 +45,7 @@ import com.carddraft.repositories.ModelCallRepository;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SpringAiLlmClientRepairTest {
 
-    private static final SupplierFacts FACTS =
-            new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
+    private static final SupplierFacts FACTS = new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
 
     @Mock
     ChatClient.Builder chatClientBuilder;
@@ -80,15 +78,23 @@ class SpringAiLlmClientRepairTest {
         // arithmetic is covered at non-zero rates in CostCalculatorTest, where a zero price would
         // exercise none of it.
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                "main-model",
+                "utility-model",
+                3,
+                java.time.Duration.ofMillis(1),
+                java.time.Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
 
         // A recording repository rather than a mock, so "the client wrote a row per call" can be
         // asserted by counting rows instead of by restating the expectation.
         calls = new RecordingCallRepository();
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls,
-                new SimpleMeterRegistry());
+        client = new SpringAiLlmClient(
+                chatClientBuilder, new ObjectMapper(), settings, calls, new SimpleMeterRegistry());
     }
 
     /** Collects what the client recorded, with no expectations of its own. */
@@ -179,13 +185,17 @@ class SpringAiLlmClientRepairTest {
                 """;
         given(callResponseSpec.chatResponse()).willReturn(chatResponse(original), chatResponse(repaired));
 
-        ProductCard broken = new ProductCard("T".repeat(75),
+        ProductCard broken = new ProductCard(
+                "T".repeat(75),
                 "An original description that must survive untouched.",
-                Map.of("Power", "800 W"), List.of("Quiet", "Compact"),
-                List.of("Colour"), 0.42, Map.of("Power", "C7"));
+                Map.of("Power", "800 W"),
+                List.of("Quiet", "Compact"),
+                List.of("Colour"),
+                0.42,
+                Map.of("Power", "C7"));
 
-        ProductCard fixed = client.repairCardField(broken, "title",
-                ResultContract.problemsWith(broken).get(0));
+        ProductCard fixed = client.repairCardField(
+                broken, "title", ResultContract.problemsWith(broken).get(0));
 
         assertThat(fixed.title()).isEqualTo("Blender 800");
         assertThat(fixed.description()).isEqualTo(broken.description());
@@ -217,7 +227,8 @@ class SpringAiLlmClientRepairTest {
         for (int i = 0; i < responses.length; i++) {
             stubs[i] = chatResponse(responses[i]);
         }
-        given(callResponseSpec.chatResponse()).willReturn(stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
+        given(callResponseSpec.chatResponse())
+                .willReturn(stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
     }
 
     private ChatResponse chatResponse(String text) {

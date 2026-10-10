@@ -53,16 +53,16 @@ class EmbeddingThresholdCalibrationTest {
         return Files.exists(GOLDEN) && modelIsReachable();
     }
 
-
     static boolean modelIsReachable() {
         try {
             client(new EmbeddingSettings(
-                    baseUrl(),
-                    modelName(),
-                    dimension(),
-                    System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
-                    System.getProperty("card.embedding.documentPrefix", "title: "),
-                    java.time.Duration.ofSeconds(120))).embedQuery("probe");
+                            baseUrl(),
+                            modelName(),
+                            dimension(),
+                            System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
+                            System.getProperty("card.embedding.documentPrefix", "title: "),
+                            java.time.Duration.ofSeconds(120)))
+                    .embedQuery("probe");
             return true;
         } catch (Exception e) {
             return false;
@@ -81,29 +81,33 @@ class EmbeddingThresholdCalibrationTest {
         List<Probe> probes = new ArrayList<>();
         for (var document : documents.entrySet()) {
             var characteristics = (Map<String, String>) document.getValue().getOrDefault("characteristics", Map.of());
-            var sourceProbes = (Map<String, Map<String, Object>>) document.getValue().get("source_probes");
+            var sourceProbes =
+                    (Map<String, Map<String, Object>>) document.getValue().get("source_probes");
             if (sourceProbes == null) {
                 continue;
             }
             for (var probe : sourceProbes.entrySet()) {
                 String answer = characteristics.get(probe.getKey());
                 if (answer != null) {
-                    probes.add(new Probe(document.getKey(), probe.getKey(),
-                            String.valueOf(probe.getValue().get("text_contains")), answer));
+                    probes.add(new Probe(
+                            document.getKey(),
+                            probe.getKey(),
+                            String.valueOf(probe.getValue().get("text_contains")),
+                            answer));
                 }
             }
         }
 
-        assertThat(probes).as("the reference set carries probes to calibrate against").isNotEmpty();
+        assertThat(probes)
+                .as("the reference set carries probes to calibrate against")
+                .isNotEmpty();
 
         double worst = 0;
         Probe worstProbe = null;
         for (Probe probe : probes) {
             double distance = cosineDistance(
-                    model.embedQuery(probe.query()),
-                    model.embedDocument(probe.answer(), probe.characteristic()));
-            System.out.printf("calibration %-24s %-28s %.3f%n",
-                    probe.document(), probe.characteristic(), distance);
+                    model.embedQuery(probe.query()), model.embedDocument(probe.answer(), probe.characteristic()));
+            System.out.printf("calibration %-24s %-28s %.3f%n", probe.document(), probe.characteristic(), distance);
             if (distance > worst) {
                 worst = distance;
                 worstProbe = probe;
@@ -111,7 +115,8 @@ class EmbeddingThresholdCalibrationTest {
         }
 
         assertThat(configured.maxVectorDistance())
-                .as("the threshold must admit the worst reference probe (%s / %s at %.3f)",
+                .as(
+                        "the threshold must admit the worst reference probe (%s / %s at %.3f)",
                         worstProbe.document(), worstProbe.characteristic(), worst)
                 .isGreaterThan(worst);
 
@@ -134,8 +139,7 @@ class EmbeddingThresholdCalibrationTest {
             return defaults;
         }
         return new SearchSettings(
-                Double.parseDouble(override),
-                defaults.perListLimit(), defaults.rrfK(), defaults.limit());
+                Double.parseDouble(override), defaults.perListLimit(), defaults.rrfK(), defaults.limit());
     }
 
     /**
@@ -164,8 +168,7 @@ class EmbeddingThresholdCalibrationTest {
         double prefixedGap = gap(withPrefixes, query, answer, unrelated);
         double unprefixedGap = gap(withoutPrefixes, query, answer, unrelated);
 
-        System.out.printf("calibration separation prefixed=%.3f unprefixed=%.3f%n",
-                prefixedGap, unprefixedGap);
+        System.out.printf("calibration separation prefixed=%.3f unprefixed=%.3f%n", prefixedGap, unprefixedGap);
 
         assertThat(prefixedGap)
                 .as("with the templates, an unrelated fragment must sit further from a question "
@@ -184,17 +187,18 @@ class EmbeddingThresholdCalibrationTest {
         return toUnrelated - toAnswer;
     }
 
-    private record Probe(String document, String characteristic, String query, String answer) {
-    }
+    private record Probe(String document, String characteristic, String query, String answer) {}
 
     private static EmbeddingModel bareModel() {
-        return client(new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "",
-                java.time.Duration.ofSeconds(120)));
+        return client(
+                new EmbeddingSettings(baseUrl(), modelName(), dimension(), "", "", java.time.Duration.ofSeconds(120)));
     }
 
     private static EmbeddingModel liveModel() {
         return client(new EmbeddingSettings(
-                baseUrl(), modelName(), dimension(),
+                baseUrl(),
+                modelName(),
+                dimension(),
                 System.getProperty("card.embedding.queryPrefix", "task: search result | query: "),
                 System.getProperty("card.embedding.documentPrefix", "title: "),
                 java.time.Duration.ofSeconds(120)));
@@ -214,7 +218,8 @@ class EmbeddingThresholdCalibrationTest {
                 .model(settings.model())
                 .timeout(settings.timeout())
                 .build();
-        return new LocalEmbeddingModel(OpenAiEmbeddingModel.builder().options(options).build(), settings);
+        return new LocalEmbeddingModel(
+                OpenAiEmbeddingModel.builder().options(options).build(), settings);
     }
 
     private static String apiKey() {
@@ -224,20 +229,19 @@ class EmbeddingThresholdCalibrationTest {
 
     private static String baseUrl() {
         String fromEnvironment = System.getenv("CARD_EMBEDDING_BASEURL");
-        return fromEnvironment == null || fromEnvironment.isBlank()
-                ? "http://127.0.0.1:1234" : fromEnvironment;
+        return fromEnvironment == null || fromEnvironment.isBlank() ? "http://127.0.0.1:1234" : fromEnvironment;
     }
 
     private static String modelName() {
         String fromEnvironment = System.getenv("CARD_EMBEDDING_MODEL");
         return fromEnvironment == null || fromEnvironment.isBlank()
-                ? "text-embedding-embeddinggemma-300m" : fromEnvironment;
+                ? "text-embedding-embeddinggemma-300m"
+                : fromEnvironment;
     }
 
     private static int dimension() {
         String fromEnvironment = System.getenv("CARD_EMBEDDING_DIMENSION");
-        return fromEnvironment == null || fromEnvironment.isBlank()
-                ? 768 : Integer.parseInt(fromEnvironment);
+        return fromEnvironment == null || fromEnvironment.isBlank() ? 768 : Integer.parseInt(fromEnvironment);
     }
 
     private static Map<String, Object> readGolden() throws Exception {

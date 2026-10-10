@@ -16,8 +16,7 @@ package com.carddraft.llm;
  */
 final class RetryClassifier {
 
-    private RetryClassifier() {
-    }
+    private RetryClassifier() {}
 
     static boolean isRetryable(Throwable error) {
         return switch (error) {

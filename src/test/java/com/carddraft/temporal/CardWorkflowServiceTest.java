@@ -1,13 +1,13 @@
 package com.carddraft.temporal;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
+
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * The transport, against an in-memory engine.
@@ -30,8 +30,8 @@ class CardWorkflowServiceTest {
         worker.registerWorkflowImplementationTypes(CardWorkflowImpl.class);
         worker.registerActivitiesImplementations(new CardWorkflowImplTest.RecordingActivities());
         environment.start();
-        workflows = new CardWorkflowService(environment.getWorkflowClient(),
-                new TemporalSettings("local", "default", TASK_QUEUE, 100, 200));
+        workflows = new CardWorkflowService(
+                environment.getWorkflowClient(), new TemporalSettings("local", "default", TASK_QUEUE, 100, 200));
     }
 
     @AfterEach

@@ -50,7 +50,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.search")
 public record SearchSettings(
-
         @DefaultValue("0.80") double maxVectorDistance,
 
         /**
@@ -73,9 +72,8 @@ public record SearchSettings(
                     "maxVectorDistance is a cosine distance and must be in (0, 2]; got " + maxVectorDistance);
         }
         if (perListLimit < limit) {
-            throw new IllegalArgumentException(
-                    "perListLimit (" + perListLimit + ") must be at least limit (" + limit
-                            + "), or the fusion cannot return a full page");
+            throw new IllegalArgumentException("perListLimit (" + perListLimit + ") must be at least limit (" + limit
+                    + "), or the fusion cannot return a full page");
         }
     }
 

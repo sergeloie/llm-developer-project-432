@@ -2,13 +2,13 @@ package com.carddraft.embeddings;
 
 import java.time.Duration;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * Embedding model settings.
@@ -28,9 +28,10 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.embedding")
 public record EmbeddingSettings(
-
         @DefaultValue("http://127.0.0.1:1234") @NotBlank String baseUrl,
-        @DefaultValue("text-embedding-embeddinggemma-300m") @NotBlank String model,
+
+        @DefaultValue("text-embedding-embeddinggemma-300m") @NotBlank
+        String model,
 
         /**
          * Must match the vector column's width. Verified on every response rather than trusted,
@@ -38,8 +39,9 @@ public record EmbeddingSettings(
          */
         @DefaultValue("768") @Min(1) int dimension,
 
-        @DefaultValue("task: search result | query: ") @NotBlank String queryPrefix,
+        @DefaultValue("task: search result | query: ") @NotBlank
+        String queryPrefix,
+
         @DefaultValue("title: ") @NotBlank String documentPrefix,
 
-        @DefaultValue("120s") @NotNull Duration timeout) {
-}
+        @DefaultValue("120s") @NotNull Duration timeout) {}

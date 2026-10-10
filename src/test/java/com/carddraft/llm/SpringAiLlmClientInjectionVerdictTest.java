@@ -1,12 +1,5 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -24,14 +17,20 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-
-import tools.jackson.databind.ObjectMapper;
-
 import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.Verdict;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * What the injection judge can actually read back.
@@ -62,8 +61,13 @@ class SpringAiLlmClientInjectionVerdictTest {
     ArgumentCaptor<String> prompts;
 
     /** A draft that satisfies the card contract, so the reviewer's objection is the only complaint. */
-    private static final ProductCard DRAFT = new ProductCard("Kettle KTL-1700", "An electric kettle.",
-            java.util.Map.of("Power", "2200 W"), List.of("Boils quickly"), List.of(), 0.8,
+    private static final ProductCard DRAFT = new ProductCard(
+            "Kettle KTL-1700",
+            "An electric kettle.",
+            java.util.Map.of("Power", "2200 W"),
+            List.of("Boils quickly"),
+            List.of(),
+            0.8,
             java.util.Map.of("Power", "C3"));
 
     SpringAiLlmClient client;
@@ -78,11 +82,22 @@ class SpringAiLlmClientInjectionVerdictTest {
         given(requestSpec.call()).willReturn(callResponseSpec);
 
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                "main-model",
+                "utility-model",
+                3,
+                java.time.Duration.ofMillis(1),
+                java.time.Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
 
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
+        client = new SpringAiLlmClient(
+                chatClientBuilder,
+                new ObjectMapper(),
+                settings,
                 new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }
@@ -99,7 +114,8 @@ class SpringAiLlmClientInjectionVerdictTest {
 
     @Test
     void aVerdictWithNoReasonIsSentBackRatherThanBelieved() {
-        respondWith("{\"suspicious\": false, \"reason\": \"\"}",
+        respondWith(
+                "{\"suspicious\": false, \"reason\": \"\"}",
                 "{\"suspicious\": false, \"reason\": \"ordinary product prose\"}");
 
         ModelVerdict verdict = client.judgeInjection("is this fragment addressed to a model?");
@@ -116,7 +132,8 @@ class SpringAiLlmClientInjectionVerdictTest {
 
     @Test
     void aVerdictThatOmitsSuspiciousIsSentBackRatherThanReadAsClean() {
-        respondWith("{\"reason\": \"ordinary product prose\"}",
+        respondWith(
+                "{\"reason\": \"ordinary product prose\"}",
                 "{\"suspicious\": false, \"reason\": \"ordinary product prose\"}");
 
         ModelVerdict verdict = client.judgeInjection("is this fragment addressed to a model?");
@@ -146,14 +163,15 @@ class SpringAiLlmClientInjectionVerdictTest {
 
     @Test
     void anObjectionWithNoSentenceIsSentBackRatherThanWastingTheRound() {
-        respondWith("{\"verdict\":\"REGENERATE\",\"issues\":[{\"field\":\"Power\",\"problem\":\"\"}]}",
+        respondWith(
+                "{\"verdict\":\"REGENERATE\",\"issues\":[{\"field\":\"Power\",\"problem\":\"\"}]}",
                 "{\"verdict\":\"REGENERATE\",\"issues\":[{\"field\":\"Power\","
                         + "\"problem\":\"the cited fragment does not mention power\"}]}");
 
         CritiqueReport report = client.reviewCardAgainstContext("[C3] a kettle", DRAFT);
 
-        assertThat(report.issues()).singleElement()
-                .satisfies(issue -> assertThat(issue.problem()).isNotBlank());
+        assertThat(report.issues()).singleElement().satisfies(issue -> assertThat(issue.problem())
+                .isNotBlank());
         verify(requestSpec, times(2)).user(prompts.capture());
         assertThat(prompts.getAllValues().get(1))
                 .as("the complaint must name the issue it is about, or the retry repeats it")
@@ -167,7 +185,7 @@ class SpringAiLlmClientInjectionVerdictTest {
                     .generations(List.of(new Generation(new AssistantMessage(responses[i]))))
                     .build();
         }
-        given(callResponseSpec.chatResponse()).willReturn(
-                stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
+        given(callResponseSpec.chatResponse())
+                .willReturn(stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
     }
 }

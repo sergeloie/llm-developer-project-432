@@ -35,8 +35,8 @@ public class DocumentService {
     private final Chunker chunker;
     private final DocumentsRepository documents;
 
-    public DocumentService(List<DocumentParser> parsers, TextNormaliser normaliser,
-                           Chunker chunker, DocumentsRepository documents) {
+    public DocumentService(
+            List<DocumentParser> parsers, TextNormaliser normaliser, Chunker chunker, DocumentsRepository documents) {
         this.parsers = parsers;
         this.normaliser = normaliser;
         this.chunker = chunker;
@@ -65,7 +65,8 @@ public class DocumentService {
         try {
             return documents.create(id, filename, hash, content.length, content);
         } catch (org.springframework.dao.DuplicateKeyException raced) {
-            return documents.findByContentHash(hash)
+            return documents
+                    .findByContentHash(hash)
                     .orElseThrow(() -> new IllegalStateException("document " + id + " vanished after insert", raced));
         }
     }
@@ -81,7 +82,8 @@ public class DocumentService {
      * with a stated reason — not a document that quietly produces no chunks and reports success.
      */
     public DocumentsRepository.DocumentRow process(String documentId) {
-        DocumentsRepository.DocumentRow document = documents.findById(documentId)
+        DocumentsRepository.DocumentRow document = documents
+                .findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("no document " + documentId));
 
         Optional<byte[]> stored = documents.contentOf(documentId);
@@ -100,19 +102,19 @@ public class DocumentService {
         } catch (DocumentRejectedException rejected) {
             return documents.markRejected(documentId, rejected.reason());
         } catch (RuntimeException corrupt) {
-            return documents.markRejected(documentId,
-                    "the file could not be parsed: " + corrupt.getMessage());
+            return documents.markRejected(documentId, "the file could not be parsed: " + corrupt.getMessage());
         }
         if (chunks.isEmpty()) {
-            return documents.markRejected(documentId,
-                    "the file was parsed but yielded no searchable fragments");
+            return documents.markRejected(documentId, "the file was parsed but yielded no searchable fragments");
         }
         try {
             documents.deleteChunks(documentId);
-            documents.insertChunks(documentId, chunks.stream()
-                    .map(c -> new DocumentsRepository.ChunkRow(0, c.documentId(), c.ordinal(),
-                            c.page(), c.section(), c.text(), c.table()))
-                    .toList());
+            documents.insertChunks(
+                    documentId,
+                    chunks.stream()
+                            .map(c -> new DocumentsRepository.ChunkRow(
+                                    0, c.documentId(), c.ordinal(), c.page(), c.section(), c.text(), c.table()))
+                            .toList());
             return documents.findById(documentId).orElseThrow();
         } catch (DocumentRejectedException rejected) {
             return documents.markRejected(documentId, rejected.reason());
@@ -163,8 +165,7 @@ public class DocumentService {
         return parsers.stream()
                 .filter(parser -> parser.supports(filename))
                 .findFirst()
-                .orElseThrow(() -> new DocumentRejectedException(
-                        "unsupported file type", filename));
+                .orElseThrow(() -> new DocumentRejectedException("unsupported file type", filename));
     }
 
     private String sha256(byte[] content) {

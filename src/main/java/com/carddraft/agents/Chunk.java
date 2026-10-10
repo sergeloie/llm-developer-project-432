@@ -12,6 +12,4 @@ package com.carddraft.agents;
  * @param section    the heading it falls under; also the embedding model's title slot
  * @param table      true when the chunk is a whole table row, which is never split
  */
-public record Chunk(String documentId, int ordinal, int page, String section,
-                    String text, boolean table) {
-}
+public record Chunk(String documentId, int ordinal, int page, String section, String text, boolean table) {}

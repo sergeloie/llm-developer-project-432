@@ -1,13 +1,13 @@
 package com.carddraft.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The schema has to converge from nothing and then stay put.
@@ -49,10 +49,9 @@ class MigrationIdempotencyTest {
 
     private String vectorExtensionVersion(PostgreSQLContainer database) {
         try (var connection = java.sql.DriverManager.getConnection(
-                database.getJdbcUrl(), database.getUsername(), database.getPassword());
-             var statement = connection.createStatement();
-             var result = statement.executeQuery(
-                     "SELECT extversion FROM pg_extension WHERE extname = 'vector'")) {
+                        database.getJdbcUrl(), database.getUsername(), database.getPassword());
+                var statement = connection.createStatement();
+                var result = statement.executeQuery("SELECT extversion FROM pg_extension WHERE extname = 'vector'")) {
             return result.next() ? result.getString(1) : null;
         } catch (java.sql.SQLException e) {
             throw new IllegalStateException("could not read the extension version", e);

@@ -8,6 +8,5 @@ package com.carddraft.temporal;
  * @param reviewerVerdict whether the review role approved the draft
  * @param humanDecision    what the person decided, or {@code null} if nobody decided
  */
-public record WorkflowResult(String jobId, String draftJson, int attempts,
-                              boolean reviewerVerdict, String humanDecision) {
-}
+public record WorkflowResult(
+        String jobId, String draftJson, int attempts, boolean reviewerVerdict, String humanDecision) {}

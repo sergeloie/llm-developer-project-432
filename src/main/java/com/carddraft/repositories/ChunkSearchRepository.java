@@ -60,8 +60,8 @@ public class ChunkSearchRepository {
      *              meaningful.
      * @param matchedBy which modes found it, so a caller can see why something ranked highly
      */
-    public record Hit(long chunkId, String documentId, int page, String section, String text,
-                      double score, String matchedBy) {
+    public record Hit(
+            long chunkId, String documentId, int page, String section, String text, double score, String matchedBy) {
 
         /**
          * The modes that found this chunk, as a list.
@@ -116,12 +116,12 @@ public class ChunkSearchRepository {
      * step that follows a parse.
      *
      * <p>No filter on the document's state, and the absence is deliberate. It used to select only
- * documents already marked {@code indexed}, on the reasoning that a chunk whose document never
- * finished should not be embedded. That reasoning inverted once {@code indexed} came to mean "every
- * chunk has a vector": gating the embedding on it asks for the thing being produced, so the sweep
- * could only ever find documents that were already finished. The gate a chunk actually needs is the
- * one that is not a choice — a row in this table exists because a parse wrote it, and a document the
- * parser refused has no rows.
+     * documents already marked {@code indexed}, on the reasoning that a chunk whose document never
+     * finished should not be embedded. That reasoning inverted once {@code indexed} came to mean "every
+     * chunk has a vector": gating the embedding on it asks for the thing being produced, so the sweep
+     * could only ever find documents that were already finished. The gate a chunk actually needs is the
+     * one that is not a choice — a row in this table exists because a parse wrote it, and a document the
+     * parser refused has no rows.
      */
     public List<ChunkToEmbed> chunksWithoutVectors(int limit) {
         return jdbc.sql("""
@@ -130,10 +130,7 @@ public class ChunkSearchRepository {
                          WHERE c.embedding IS NULL
                           ORDER BY c.document_id, c.ordinal
                           LIMIT :limit
-                        """)
-                .param(LIMIT_PARAM, limit)
-                .query(ChunkToEmbed.class)
-                .list();
+                        """).param(LIMIT_PARAM, limit).query(ChunkToEmbed.class).list();
     }
 
     /** The same, for one document, so an upload embeds what it just parsed and nothing else. */
@@ -179,7 +176,11 @@ public class ChunkSearchRepository {
                         """)
                 .param("vector", toVectorLiteral(queryVector))
                 .param("maxDistance", maxDistance)
-                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(
+                        DOCUMENTS_PARAM,
+                        filter.documentIds() == null
+                                ? null
+                                : filter.documentIds().toArray(new String[0]))
                 .param(SECTION_PARAM, filter.section())
                 .param(LIMIT_PARAM, limit)
                 .query(Hit.class)
@@ -202,7 +203,11 @@ public class ChunkSearchRepository {
                          LIMIT :limit
                         """)
                 .param("query", query)
-                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(
+                        DOCUMENTS_PARAM,
+                        filter.documentIds() == null
+                                ? null
+                                : filter.documentIds().toArray(new String[0]))
                 .param(SECTION_PARAM, filter.section())
                 .param(LIMIT_PARAM, limit)
                 .query(Hit.class)
@@ -221,8 +226,14 @@ public class ChunkSearchRepository {
      * Pulling both lists into Java and merging them there would move the ranking out of the
      * database, where the rest of retrieval already lives.
      */
-    public List<Hit> searchHybrid(List<Double> queryVector, String textQuery, Filter filter,
-                                  int limit, double maxDistance, int perListLimit, int rrfK) {
+    public List<Hit> searchHybrid(
+            List<Double> queryVector,
+            String textQuery,
+            Filter filter,
+            int limit,
+            double maxDistance,
+            int perListLimit,
+            int rrfK) {
         return jdbc.sql("""
                         WITH vector_hits AS (
                             SELECT c.id, c.document_id, c.page, c.section, c.text,
@@ -267,7 +278,11 @@ public class ChunkSearchRepository {
                 .param("vector", toVectorLiteral(queryVector))
                 .param("query", textQuery == null ? "" : textQuery)
                 .param("maxDistance", maxDistance)
-                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(
+                        DOCUMENTS_PARAM,
+                        filter.documentIds() == null
+                                ? null
+                                : filter.documentIds().toArray(new String[0]))
                 .param(SECTION_PARAM, filter.section())
                 .param("perList", perListLimit)
                 .param("k", rrfK)
@@ -276,11 +291,9 @@ public class ChunkSearchRepository {
                 .list();
     }
 
-    public record ChunkToEmbed(long id, String documentId, String section, String text) {
-    }
+    public record ChunkToEmbed(long id, String documentId, String section, String text) {}
 
-    public record ChunkVector(long chunkId, List<Double> values) {
-    }
+    public record ChunkVector(long chunkId, List<Double> values) {}
 
     /**
      * pgvector's text form for a vector.

@@ -1,7 +1,6 @@
 package com.carddraft.documents;
 
 import java.text.Normalizer;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,8 +35,7 @@ public class TextNormaliser {
     private static final Pattern HYPHENATED_BREAK =
             Pattern.compile("([\\p{L}])[-\u2010\u2011][ \\t]*\\n[ \\t]*([\\p{Ll}])");
 
-    private static final Pattern PLAIN_BREAK =
-            Pattern.compile("([\\p{L}])[ \\t]*\\n[ \\t]*([\\p{Ll}])");
+    private static final Pattern PLAIN_BREAK = Pattern.compile("([\\p{L}])[ \\t]*\\n[ \\t]*([\\p{Ll}])");
 
     private static final Pattern RUNS_OF_SPACES = Pattern.compile("[ \\t\\xA0]{2,}");
 

@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.springframework.stereotype.Component;
 
 import com.carddraft.agents.StructuralUnit;
@@ -35,7 +35,7 @@ public class DocxDocumentParser implements DocumentParser {
     @Override
     public List<StructuralUnit> parse(byte[] content) {
         try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(content));
-             XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+                XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
 
             String wholeText = extractor.getText();
             if (wholeText == null || wholeText.isBlank()) {

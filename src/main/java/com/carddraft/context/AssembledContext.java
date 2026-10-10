@@ -16,8 +16,7 @@ import java.util.Optional;
  * <p>Which is also why it is stored rather than carried in the workflow's memory: a worker restart
  * replays from history and the workflow cannot re-derive this.
  */
-public record AssembledContext(String jobId, List<ContextChunk> chunks, int droppedAsDuplicate,
-                               int droppedOverBudget) {
+public record AssembledContext(String jobId, List<ContextChunk> chunks, int droppedAsDuplicate, int droppedOverBudget) {
 
     public AssembledContext {
         chunks = chunks == null ? List.of() : List.copyOf(chunks);
@@ -43,7 +42,9 @@ public record AssembledContext(String jobId, List<ContextChunk> chunks, int drop
      * citation verification produces.
      */
     public Optional<ContextChunk> find(String reference) {
-        return chunks.stream().filter(chunk -> chunk.reference().equals(reference)).findFirst();
+        return chunks.stream()
+                .filter(chunk -> chunk.reference().equals(reference))
+                .findFirst();
     }
 
     /**

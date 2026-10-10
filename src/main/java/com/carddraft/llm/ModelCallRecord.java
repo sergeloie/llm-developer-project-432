@@ -19,14 +19,21 @@ import java.time.Instant;
  *                decimal and both exact; a float is wrong in the last places, which is invisible
  *                per call and visible in a total.
  */
-public record ModelCallRecord(String jobId, String tier, String model, String operation,
-                              int inputTokens, int outputTokens, BigDecimal cost,
-                              Duration duration, Instant calledAt) {
+public record ModelCallRecord(
+        String jobId,
+        String tier,
+        String model,
+        String operation,
+        int inputTokens,
+        int outputTokens,
+        BigDecimal cost,
+        Duration duration,
+        Instant calledAt) {
 
     public ModelCallRecord {
         if (inputTokens < 0 || outputTokens < 0) {
-            throw new IllegalArgumentException("token counts cannot be negative; got "
-                    + inputTokens + " in, " + outputTokens + " out");
+            throw new IllegalArgumentException(
+                    "token counts cannot be negative; got " + inputTokens + " in, " + outputTokens + " out");
         }
         if (cost == null || cost.signum() < 0) {
             throw new IllegalArgumentException("a cost is never negative and never absent; got " + cost);

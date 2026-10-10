@@ -1,10 +1,10 @@
 package com.carddraft.documents;
 
-import jakarta.validation.constraints.Min;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
 
 /**
  * Chunking sizes, in characters rather than tokens.
@@ -17,7 +17,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.chunking")
 public record ChunkingSettings(
-
         @DefaultValue("1200") @Min(100) int chunkSize,
 
         /**

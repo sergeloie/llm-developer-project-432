@@ -3,8 +3,8 @@ package com.carddraft.trust;
 import org.springframework.stereotype.Component;
 
 import com.carddraft.agents.ModelVerdict;
-import com.carddraft.llm.LlmClient;
 import com.carddraft.context.ContextChunk;
+import com.carddraft.llm.LlmClient;
 
 /**
  * Asks the utility model the narrow question about a fragment the rules already flagged.
@@ -47,8 +47,11 @@ public class InjectionModel {
             // own retry policy, and a third attempt would mean a security decision costing three
             // generations.
             org.slf4j.LoggerFactory.getLogger(InjectionModel.class)
-                    .warn("injection_judge_unavailable reference={} rules={} error={}",
-                            fragment.reference(), rules.rules(), e.toString());
+                    .warn(
+                            "injection_judge_unavailable reference={} rules={} error={}",
+                            fragment.reference(),
+                            rules.rules(),
+                            e.toString());
             return false;
         }
     }

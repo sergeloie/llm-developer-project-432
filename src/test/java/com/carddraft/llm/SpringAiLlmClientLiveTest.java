@@ -1,7 +1,5 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.List;
 
 import org.junit.jupiter.api.Tag;
@@ -13,10 +11,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The named gap: no other test proves a real model returns something the parser can read.
@@ -32,12 +32,12 @@ import com.carddraft.agents.Verdict;
 @Tag("live-model")
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
-
 @TestPropertySource(properties = "test.context-id=live")
-@TestPropertySource(properties = {
-        "spring.ai.openai.base-url=${CARD_LLM_BASE_URL:http://127.0.0.1:1234}",
-        "spring.ai.openai.api-key=${CARD_LLM_API_KEY:lm-studio}"
-})
+@TestPropertySource(
+        properties = {
+            "spring.ai.openai.base-url=${CARD_LLM_BASE_URL:http://127.0.0.1:1234}",
+            "spring.ai.openai.api-key=${CARD_LLM_API_KEY:lm-studio}"
+        })
 class SpringAiLlmClientLiveTest {
 
     @Container
@@ -56,8 +56,7 @@ class SpringAiLlmClientLiveTest {
     @Autowired
     LlmClient llmClient;
 
-    private static final String SUPPLIER_TEXT =
-            "Блендер погружной МиксерПро 800. Мощность 800 Вт, питание 220 В. "
+    private static final String SUPPLIER_TEXT = "Блендер погружной МиксерПро 800. Мощность 800 Вт, питание 220 В. "
             + "6 скоростей плюс турбо. Металлическая ножка. Гарантия 24 месяца.";
 
     @Test
@@ -73,15 +72,16 @@ class SpringAiLlmClientLiveTest {
 
     @Test
     void reviewsARealDraftAgainstRealFacts() {
-        SupplierFacts facts = new SupplierFacts("Блендер МиксерПро 800",
-                java.util.Map.of("Мощность", "800 Вт"), List.of("Цвет"));
+        SupplierFacts facts =
+                new SupplierFacts("Блендер МиксерПро 800", java.util.Map.of("Мощность", "800 Вт"), List.of("Цвет"));
         ProductCard draft = new ProductCard(
                 "Блендер погружной МиксерПро 800 с мощностью 800 Вт и чашей из нержавеющей стали",
                 "Погружной блендер для ежедневного приготовления.",
                 java.util.Map.of("Мощность", "800 Вт"),
                 List.of("Шесть скоростей", "Турбо-режим"),
-                List.of("Цвет"), 0.85, java.util.Map.of());
-
+                List.of("Цвет"),
+                0.85,
+                java.util.Map.of());
 
         CritiqueReport report = llmClient.reviewDraft(facts, draft);
 

@@ -27,7 +27,6 @@ public record SubmitJobRequest(String supplierText, List<String> documentIds, St
      */
     @AssertTrue(message = "supply supplierText, documentIds, or both - a job needs something to work from")
     public boolean isWorkable() {
-        return (supplierText != null && !supplierText.isBlank())
-                || (documentIds != null && !documentIds.isEmpty());
+        return (supplierText != null && !supplierText.isBlank()) || (documentIds != null && !documentIds.isEmpty());
     }
 }

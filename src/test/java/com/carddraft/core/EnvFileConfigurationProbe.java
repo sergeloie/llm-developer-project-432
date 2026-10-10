@@ -25,11 +25,10 @@ import org.springframework.core.env.StandardEnvironment;
  */
 public final class EnvFileConfigurationProbe {
 
-    private static final List<String> PROBED_KEYS = List.of(
-            "card.db.url", "card.db.username", "card.db.pool-size", "card.db.connection-timeout");
+    private static final List<String> PROBED_KEYS =
+            List.of("card.db.url", "card.db.username", "card.db.pool-size", "card.db.connection-timeout");
 
-    private EnvFileConfigurationProbe() {
-    }
+    private EnvFileConfigurationProbe() {}
 
     public static void main(String[] args) {
         StandardEnvironment environment = new StandardEnvironment();
@@ -37,11 +36,11 @@ public final class EnvFileConfigurationProbe {
 
         Binder binder = Binder.get(environment);
         for (String key : PROBED_KEYS) {
-            System.out.println("BOUND " + key + "=" + binder.bind(key, String.class).orElse("<absent>"));
+            System.out.println(
+                    "BOUND " + key + "=" + binder.bind(key, String.class).orElse("<absent>"));
         }
 
-        CardDatabaseSettings settings = binder
-                .bindOrCreate("card.db", Bindable.of(CardDatabaseSettings.class));
+        CardDatabaseSettings settings = binder.bindOrCreate("card.db", Bindable.of(CardDatabaseSettings.class));
         System.out.println("SETTINGS url=" + settings.url());
         System.out.println("SETTINGS username=" + settings.username());
         System.out.println("SETTINGS poolSize=" + settings.poolSize());

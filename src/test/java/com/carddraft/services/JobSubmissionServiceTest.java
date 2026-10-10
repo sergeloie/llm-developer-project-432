@@ -1,14 +1,5 @@
 package com.carddraft.services;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -25,6 +16,15 @@ import com.carddraft.temporal.JobDecision;
 import com.carddraft.temporal.WorkflowRequest;
 
 import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * The job orchestration, proven without HTTP.
@@ -45,8 +45,8 @@ class JobSubmissionServiceTest {
     private final DocumentService documents = mock(DocumentService.class);
     private final JobContextRepository contexts = mock(JobContextRepository.class);
     private final GenerationSettings settings = new GenerationSettings(3, 0.7);
-    private final JobSubmissionService service = new JobSubmissionService(
-            jobs, workflows, documents, settings, contexts, new ObjectMapper());
+    private final JobSubmissionService service =
+            new JobSubmissionService(jobs, workflows, documents, settings, contexts, new ObjectMapper());
 
     @Test
     void submitStartsAWorkflowOnceAndReturnsTheCreatedJob() {
@@ -54,21 +54,19 @@ class JobSubmissionServiceTest {
         given(jobs.createOrFindByIdempotencyKey(eq("key"), eq("pending"), anyString()))
                 .willReturn(new JobsRepository.JobCreation(created, true));
 
-        JobSubmissionService.SubmitOutcome outcome =
-                service.submit("key", "a blender", List.of(), null);
+        JobSubmissionService.SubmitOutcome outcome = service.submit("key", "a blender", List.of(), null);
 
         assertThat(outcome).isInstanceOf(JobSubmissionService.SubmitOutcome.Accepted.class);
-        assertThat(((JobSubmissionService.SubmitOutcome.Accepted) outcome).job().id()).isEqualTo("job-1");
-        verify(workflows).start("job-1",
-                new WorkflowRequest("job-1", "a blender", 3, "", List.of()));
+        assertThat(((JobSubmissionService.SubmitOutcome.Accepted) outcome).job().id())
+                .isEqualTo("job-1");
+        verify(workflows).start("job-1", new WorkflowRequest("job-1", "a blender", 3, "", List.of()));
     }
 
     @Test
     void submitRefusesADocumentThatIsNotIndexed() {
         given(documents.find("doc-1")).willReturn(Optional.of(document("doc-1", "parsing")));
 
-        JobSubmissionService.SubmitOutcome outcome =
-                service.submit(null, null, List.of("doc-1"), null);
+        JobSubmissionService.SubmitOutcome outcome = service.submit(null, null, List.of("doc-1"), null);
 
         assertThat(outcome).isInstanceOf(JobSubmissionService.SubmitOutcome.DocumentsNotIndexed.class);
         assertThat(((JobSubmissionService.SubmitOutcome.DocumentsNotIndexed) outcome).states())
@@ -80,8 +78,7 @@ class JobSubmissionServiceTest {
     void submitReportsAnIdentifierNobodyHasAsUnknown() {
         given(documents.find("ghost")).willReturn(Optional.empty());
 
-        JobSubmissionService.SubmitOutcome outcome =
-                service.submit(null, "a blender", List.of("ghost"), null);
+        JobSubmissionService.SubmitOutcome outcome = service.submit(null, "a blender", List.of("ghost"), null);
 
         assertThat(((JobSubmissionService.SubmitOutcome.DocumentsNotIndexed) outcome).states())
                 .containsEntry("ghost", "unknown");
@@ -206,8 +203,7 @@ class JobSubmissionServiceTest {
         ContextChunk found = new ContextChunk("C1", 5L, "doc-1", 3, "Spec", "800 W");
         ContextChunk noPage = new ContextChunk("C2", 6L, "doc-2", 0, null, "text");
         given(jobs.findById("job-1")).willReturn(Optional.of(job("job-1", "approved", 1, CARD_JSON)));
-        given(contexts.load("job-1"))
-                .willReturn(new AssembledContext("job-1", List.of(found, noPage), 0, 0));
+        given(contexts.load("job-1")).willReturn(new AssembledContext("job-1", List.of(found, noPage), 0, 0));
 
         JobSubmissionService.JobSources sources = service.sources("job-1").orElseThrow();
 

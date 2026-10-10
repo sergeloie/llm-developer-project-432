@@ -37,7 +37,6 @@ public class TemporalConfiguration {
      * provides its own engine. A developer starts one with {@code docker compose up}, or with
      * {@code temporal server start-dev} on the same port.
      */
-
     @Bean(destroyMethod = "")
     WorkflowServiceStubs workflowServiceStubs(TemporalSettings settings) {
         return WorkflowServiceStubs.newServiceStubs(WorkflowServiceStubsOptions.newBuilder()
@@ -52,9 +51,11 @@ public class TemporalConfiguration {
      */
     @Bean
     WorkflowClient workflowClient(WorkflowServiceStubs service, TemporalSettings settings) {
-        return WorkflowClient.newInstance(service, WorkflowClientOptions.newBuilder()
-                .setNamespace(settings.namespace())
-                .build());
+        return WorkflowClient.newInstance(
+                service,
+                WorkflowClientOptions.newBuilder()
+                        .setNamespace(settings.namespace())
+                        .build());
     }
 
     /**
@@ -67,14 +68,19 @@ public class TemporalConfiguration {
      * operational reason for a second process is gone. Splitting it later is a deployment change,
      * not a code change: nothing here knows it is in the same JVM.
      */
-@Bean(destroyMethod = "shutdown")
-    WorkerFactory workerFactory(WorkflowClient client, TemporalSettings settings, CardActivities activities,
-                               DocumentActivities documentActivities) {
-        WorkerFactory factory = WorkerFactory.newInstance(client,
+    @Bean(destroyMethod = "shutdown")
+    WorkerFactory workerFactory(
+            WorkflowClient client,
+            TemporalSettings settings,
+            CardActivities activities,
+            DocumentActivities documentActivities) {
+        WorkerFactory factory = WorkerFactory.newInstance(
+                client,
                 WorkerFactoryOptions.newBuilder()
                         .setMaxWorkflowThreadCount(settings.maxWorkflowThreads())
                         .build());
-        Worker worker = factory.newWorker(settings.taskQueue(),
+        Worker worker = factory.newWorker(
+                settings.taskQueue(),
                 WorkerOptions.newBuilder()
                         .setMaxConcurrentActivityExecutionSize(settings.maxActivityThreads())
                         .build());

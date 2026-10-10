@@ -67,8 +67,7 @@ public class PdfDocumentParser implements DocumentParser {
         }
         if (units.isEmpty()) {
             throw new DocumentRejectedException(
-                    "every line on every page looked like a header or footer, so nothing was left",
-                    null);
+                    "every line on every page looked like a header or footer, so nothing was left", null);
         }
         return units;
     }

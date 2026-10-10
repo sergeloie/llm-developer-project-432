@@ -4,24 +4,25 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
-import tools.jackson.databind.ObjectMapper;
+import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.ReviewIssue;
-import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextAssembler;
-import com.carddraft.repositories.JobContextRepository;
 import com.carddraft.llm.JobLogContext;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.repositories.ChunkSearchRepository;
+import com.carddraft.repositories.JobContextRepository;
+import com.carddraft.repositories.JobsRepository;
 import com.carddraft.search.SearchService;
 import com.carddraft.trust.Finding;
-import com.carddraft.trust.TrustSettings;
 import com.carddraft.trust.TrustService;
-import com.carddraft.repositories.JobsRepository;
+import com.carddraft.trust.TrustSettings;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The steps, as ordinary Java.
@@ -41,8 +42,7 @@ import com.carddraft.repositories.JobsRepository;
 @Component
 public class CardActivitiesImpl implements CardActivities {
 
-    private static final org.slf4j.Logger log =
-            org.slf4j.LoggerFactory.getLogger(CardActivitiesImpl.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CardActivitiesImpl.class);
 
     private final LlmClient llmClient;
     private final JobsRepository jobs;
@@ -54,10 +54,16 @@ public class CardActivitiesImpl implements CardActivities {
     private final TrustSettings trustSettings;
     private final ObjectMapper mapper;
 
-    public CardActivitiesImpl(LlmClient llmClient, JobsRepository jobs, ContextAssembler assembler,
-                              SearchService search, JobContextRepository contexts,
-                              CitationVerifier verifier, TrustService trust,
-                              TrustSettings trustSettings, ObjectMapper mapper) {
+    public CardActivitiesImpl(
+            LlmClient llmClient,
+            JobsRepository jobs,
+            ContextAssembler assembler,
+            SearchService search,
+            JobContextRepository contexts,
+            CitationVerifier verifier,
+            TrustService trust,
+            TrustSettings trustSettings,
+            ObjectMapper mapper) {
         this.llmClient = llmClient;
         this.jobs = jobs;
         this.assembler = assembler;
@@ -76,23 +82,24 @@ public class CardActivitiesImpl implements CardActivities {
 
     @Override
     public String generateDraft(String jobId, String factsJson, List<ReviewIssue> issues) {
-        return JobLogContext.withJob(jobId, () -> toJson(
-                llmClient.draftCard(fromJson(factsJson, SupplierFacts.class), issues)));
+        return JobLogContext.withJob(
+                jobId, () -> toJson(llmClient.draftCard(fromJson(factsJson, SupplierFacts.class), issues)));
     }
 
     @Override
     public ReviewOutcome reviewDraft(String jobId, String factsJson, String draftJson) {
         return JobLogContext.withJob(jobId, () -> {
             CritiqueReport report = llmClient.reviewDraft(
-                    fromJson(factsJson, SupplierFacts.class),
-                    fromJson(draftJson, ProductCard.class));
-            return new ReviewOutcome(report != null && report.verdict() == Verdict.APPROVE, report == null ? List.of() : report.issues());
+                    fromJson(factsJson, SupplierFacts.class), fromJson(draftJson, ProductCard.class));
+            return new ReviewOutcome(
+                    report != null && report.verdict() == Verdict.APPROVE,
+                    report == null ? List.of() : report.issues());
         });
     }
 
     /**
      * Searches, screens, assembles, and retains.
- *
+     *
      * <p>Screening sits between retrieval and assembly, which is the only place it can sit. A value
      * has to be masked before the prompt is built and before the context is written down, and a
      * suspicious fragment has to be gone before the model can read it — neither is possible once the
@@ -106,32 +113,32 @@ public class CardActivitiesImpl implements CardActivities {
     public RetrievedContext retrieveAndAssemble(String jobId, String productHint, List<String> documentIds) {
         return JobLogContext.withJob(jobId, () -> {
             String query = productHint == null || productHint.isBlank() ? filenamesOf(documentIds) : productHint;
-        var hits = search.search(query, new ChunkSearchRepository.Filter(documentIds, null),
-                SearchService.Mode.HYBRID);
+            var hits = search.search(
+                    query, new ChunkSearchRepository.Filter(documentIds, null), SearchService.Mode.HYBRID);
 
-        AssembledContext assembled = assembler.assemble(jobId, hits);
-        TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
-        screened.excluded().forEach(reference -> log.info("llm_fragment_excluded job={} reference={}",
-                jobId, reference));
+            AssembledContext assembled = assembler.assemble(jobId, hits);
+            TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
+            screened.excluded()
+                    .forEach(reference -> log.info("llm_fragment_excluded job={} reference={}", jobId, reference));
 
-        AssembledContext retained = new AssembledContext(jobId, screened.chunks(),
-                assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
-        contexts.save(retained);
+            AssembledContext retained = new AssembledContext(
+                    jobId, screened.chunks(), assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
+            contexts.save(retained);
 
-        // Nothing safe to generate from is its own outcome, distinct from "few were dropped".
-        // An empty context would send the model off with no sources, and the card that comes
-        // back cites nothing it was shown — so the job waits for a person with the reason
-        // rather than failing a generation that never had anything to work from.
-        if (screened.chunks().isEmpty()) {
-            String reason = "all " + assembled.chunks().size()
-                    + " retrieved fragments were excluded as suspicious, so there is nothing "
-                    + "safe to generate from";
-            log.warn("llm_context_empty job={} excluded={}", jobId, screened.excluded());
-            return new RetrievedContext("", screened.excluded(), screened.masked(), true, reason);
-        }
+            // Nothing safe to generate from is its own outcome, distinct from "few were dropped".
+            // An empty context would send the model off with no sources, and the card that comes
+            // back cites nothing it was shown — so the job waits for a person with the reason
+            // rather than failing a generation that never had anything to work from.
+            if (screened.chunks().isEmpty()) {
+                String reason = "all " + assembled.chunks().size()
+                        + " retrieved fragments were excluded as suspicious, so there is nothing "
+                        + "safe to generate from";
+                log.warn("llm_context_empty job={} excluded={}", jobId, screened.excluded());
+                return new RetrievedContext("", screened.excluded(), screened.masked(), true, reason);
+            }
 
-        return new RetrievedContext(screened.render(), screened.excluded(), screened.masked(),
-                screened.escalated(), screened.reason());
+            return new RetrievedContext(
+                    screened.render(), screened.excluded(), screened.masked(), screened.escalated(), screened.reason());
         });
     }
 
@@ -181,9 +188,10 @@ public class CardActivitiesImpl implements CardActivities {
     @Override
     public ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson) {
         return JobLogContext.withJob(jobId, () -> {
-            CritiqueReport report = llmClient.reviewCardAgainstContext(
-                    contextText, fromJson(draftJson, ProductCard.class));
-            return new ReviewOutcome(report != null && report.verdict() == Verdict.APPROVE,
+            CritiqueReport report =
+                    llmClient.reviewCardAgainstContext(contextText, fromJson(draftJson, ProductCard.class));
+            return new ReviewOutcome(
+                    report != null && report.verdict() == Verdict.APPROVE,
                     report == null ? List.of() : report.issues());
         });
     }
@@ -193,12 +201,11 @@ public class CardActivitiesImpl implements CardActivities {
         ProductCard card = fromJson(draftJson, ProductCard.class);
         AssembledContext context = contexts.load(jobId);
 
-        CitationVerifier.Verdict verdict = verifier.verifyAgainst(context,
-                card.characteristics().keySet(), card.sources(),
-                contexts::existsReferenceInAnyContext);
+        CitationVerifier.Verdict verdict = verifier.verifyAgainst(
+                context, card.characteristics().keySet(), card.sources(), contexts::existsReferenceInAnyContext);
 
-        return new CitationCheck(verdict.isClean(), verdict.messages(),
-                verdict.fabricated().size(), 0);
+        return new CitationCheck(
+                verdict.isClean(), verdict.messages(), verdict.fabricated().size(), 0);
     }
 
     @Override
@@ -225,7 +232,8 @@ public class CardActivitiesImpl implements CardActivities {
         try {
             return mapper.writeValueAsString(value);
         } catch (tools.jackson.core.JacksonException e) {
-            throw new IllegalStateException("could not serialise " + value.getClass().getSimpleName(), e);
+            throw new IllegalStateException(
+                    "could not serialise " + value.getClass().getSimpleName(), e);
         }
     }
 

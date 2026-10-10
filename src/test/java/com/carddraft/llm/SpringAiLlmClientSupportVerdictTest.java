@@ -1,12 +1,5 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -24,11 +17,17 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.carddraft.agents.SupportJudgement;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
-import com.carddraft.agents.SupportJudgement;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * What the support judge can actually read back.
@@ -71,19 +70,29 @@ class SpringAiLlmClientSupportVerdictTest {
         given(requestSpec.call()).willReturn(callResponseSpec);
 
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                "main-model",
+                "utility-model",
+                3,
+                java.time.Duration.ofMillis(1),
+                java.time.Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
 
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
+        client = new SpringAiLlmClient(
+                chatClientBuilder,
+                new ObjectMapper(),
+                settings,
                 new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }
 
     @Test
     void theVerdictTheUtilityModelIsAskedForCanBeReadBack() {
-        respondWith("{\"supported\":{\"Power\":true},"
-                + "\"reasoning\":{\"Power\":\"the fragment states 800 W\"}}");
+        respondWith("{\"supported\":{\"Power\":true}," + "\"reasoning\":{\"Power\":\"the fragment states 800 W\"}}");
 
         SupportJudgement judgement = client.judgeSupport("is the claim supported by the fragment it cites?");
 
@@ -96,7 +105,8 @@ class SpringAiLlmClientSupportVerdictTest {
 
     @Test
     void anUnsupportedClaimWithNoSentenceIsSentBackRatherThanBelieved() {
-        respondWith("{\"supported\":{\"Power\":false},\"reasoning\":{}}",
+        respondWith(
+                "{\"supported\":{\"Power\":false},\"reasoning\":{}}",
                 "{\"supported\":{\"Power\":false},"
                         + "\"reasoning\":{\"Power\":\"C1 does not mention power at all\"}}");
 
@@ -134,7 +144,7 @@ class SpringAiLlmClientSupportVerdictTest {
                     .generations(List.of(new Generation(new AssistantMessage(responses[i]))))
                     .build();
         }
-        given(callResponseSpec.chatResponse()).willReturn(
-                stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
+        given(callResponseSpec.chatResponse())
+                .willReturn(stubs[0], java.util.Arrays.copyOfRange(stubs, 1, stubs.length));
     }
 }

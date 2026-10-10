@@ -17,8 +17,8 @@ import java.util.List;
  * content came from: the retrieval branch can be sent back for a fabricated citation, and without
  * a context to check against that would mean checking nothing.
  */
-public record WorkflowRequest(String jobId, String supplierText, int maxRounds,
-                              String productHint, List<String> documentIds) {
+public record WorkflowRequest(
+        String jobId, String supplierText, int maxRounds, String productHint, List<String> documentIds) {
 
     public WorkflowRequest {
         productHint = productHint == null ? "" : productHint;

@@ -32,14 +32,13 @@ public class EmbeddingApplicationService {
     private final ChunkSearchRepository chunks;
     private final IndexingSettings settings;
 
-    public EmbeddingApplicationService(EmbeddingModel model, ChunkSearchRepository chunks,
-                                       IndexingSettings settings) {
+    public EmbeddingApplicationService(EmbeddingModel model, ChunkSearchRepository chunks, IndexingSettings settings) {
         this.model = model;
         this.chunks = chunks;
         this.settings = settings;
     }
 
-/**
+    /**
      * Embeds up to {@code batchSize} chunks, writes their vectors, and reports how many remain.
      *
      * <p>Returning the remainder rather than looping is what lets the backfill command report
@@ -93,8 +92,7 @@ public class EmbeddingApplicationService {
             embedded += pending.size();
             embedNextBatch(pending);
         }
-        log.warn("document {} still has chunks without vectors after {} batches",
-                documentId, maxBatches);
+        log.warn("document {} still has chunks without vectors after {} batches", documentId, maxBatches);
         return embedded;
     }
 
@@ -110,8 +108,7 @@ public class EmbeddingApplicationService {
     public int embedAll(int maxBatches) {
         int embedded = 0;
         for (int batch = 0; batch < maxBatches; batch++) {
-            List<ChunkSearchRepository.ChunkToEmbed> pending =
-                    chunks.chunksWithoutVectors(settings.batchSize());
+            List<ChunkSearchRepository.ChunkToEmbed> pending = chunks.chunksWithoutVectors(settings.batchSize());
             if (pending.isEmpty()) {
                 return embedded;
             }
@@ -125,5 +122,4 @@ public class EmbeddingApplicationService {
     public int pendingCount() {
         return chunks.countWithoutVectors();
     }
-
 }

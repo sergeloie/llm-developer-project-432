@@ -43,8 +43,8 @@ public class DocumentsController {
     private final DocumentWorkflowService parses;
     private final ChunkingSettings settings;
 
-    public DocumentsController(DocumentService documentService, DocumentWorkflowService parses,
-                               ChunkingSettings settings) {
+    public DocumentsController(
+            DocumentService documentService, DocumentWorkflowService parses, ChunkingSettings settings) {
         this.documentService = documentService;
         this.parses = parses;
         this.settings = settings;
@@ -53,18 +53,17 @@ public class DocumentsController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         if (file.getSize() > settings.maxUploadBytes()) {
-            throw new ApiRefusalException(HttpStatus.PAYLOAD_TOO_LARGE,
-                    "the file is larger than the "
-                            + (settings.maxUploadBytes() / (1024 * 1024)) + " MB limit");
+            throw new ApiRefusalException(
+                    HttpStatus.PAYLOAD_TOO_LARGE,
+                    "the file is larger than the " + (settings.maxUploadBytes() / (1024 * 1024)) + " MB limit");
         }
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         if (!documentService.supports(filename)) {
-            throw new IllegalArgumentException("unsupported file type: " + filename
-                    + ". Supported: " + String.join(",", documentService.supportedFormats()));
+            throw new IllegalArgumentException("unsupported file type: " + filename + ". Supported: "
+                    + String.join(",", documentService.supportedFormats()));
         }
         try {
-            DocumentsRepository.DocumentRow document =
-                    documentService.register(filename, file.getBytes());
+            DocumentsRepository.DocumentRow document = documentService.register(filename, file.getBytes());
             parses.start(document.id());
             return ResponseEntity.accepted().body(describe(document));
         } catch (IOException e) {
@@ -74,7 +73,8 @@ public class DocumentsController {
 
     @GetMapping("/{documentId}")
     public ResponseEntity<Map<String, Object>> state(@PathVariable String documentId) {
-        return documentService.find(documentId)
+        return documentService
+                .find(documentId)
                 .map(document -> ResponseEntity.ok(describe(document)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

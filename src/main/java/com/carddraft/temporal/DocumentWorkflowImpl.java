@@ -18,8 +18,8 @@ import io.temporal.workflow.Workflow;
  */
 public class DocumentWorkflowImpl implements DocumentWorkflow {
 
-    private final DocumentActivities steps = Workflow.newActivityStub(
-            DocumentActivities.class, StepActivityOptions.options());
+    private final DocumentActivities steps =
+            Workflow.newActivityStub(DocumentActivities.class, StepActivityOptions.options());
 
     @Override
     public DocumentActivities.DocumentResult run(String documentId) {

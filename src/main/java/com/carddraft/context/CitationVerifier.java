@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
-     * Checks that every claim's citation names something the model was actually shown.
+ * Checks that every claim's citation names something the model was actually shown.
  *
  * <p>Two conditions, and the second is the one that matters.
  *
@@ -82,11 +82,11 @@ public class CitationVerifier {
                     .filter(finding -> finding.status() != Status.SUPPORTED)
                     .map(finding -> switch (finding.status()) {
                         case NOT_IN_CONTEXT ->
-                                "'" + finding.characteristic() + "' cites " + finding.reference()
-                                        + ", which exists but was not in the context this model was given";
+                            "'" + finding.characteristic() + "' cites " + finding.reference()
+                                    + ", which exists but was not in the context this model was given";
                         case UNKNOWN_REFERENCE ->
-                                "'" + finding.characteristic() + "' cites " + finding.reference()
-                                        + ", which is not a fragment of this submission";
+                            "'" + finding.characteristic() + "' cites " + finding.reference()
+                                    + ", which is not a fragment of this submission";
                         default -> "'" + finding.characteristic() + "' cites nothing";
                     })
                     .toList();
@@ -104,11 +104,9 @@ public class CitationVerifier {
      * @param characteristics every characteristic the card promises to support
      * @param sources characteristic name to the reference the model gave it, straight off the card
      */
-    public Verdict verify(AssembledContext context, Set<String> characteristics,
-                          Map<String, String> sources) {
+    public Verdict verify(AssembledContext context, Set<String> characteristics, Map<String, String> sources) {
         List<Finding> findings = new ArrayList<>();
-        Set<String> declared = characteristics == null
-                ? Set.of() : new LinkedHashSet<>(characteristics);
+        Set<String> declared = characteristics == null ? Set.of() : new LinkedHashSet<>(characteristics);
         Map<String, String> cited = sources == null ? Map.of() : sources;
 
         for (String characteristic : declared) {
@@ -117,13 +115,14 @@ public class CitationVerifier {
                 findings.add(new Finding(characteristic, reference, Status.MISSING));
                 continue;
             }
-            findings.add(new Finding(characteristic, reference,
-                    context.find(reference).isPresent()
-                            ? Status.SUPPORTED
-                            : Status.UNKNOWN_REFERENCE));
+            findings.add(new Finding(
+                    characteristic,
+                    reference,
+                    context.find(reference).isPresent() ? Status.SUPPORTED : Status.UNKNOWN_REFERENCE));
         }
 
-        List<Finding> fabricated = findings.stream().filter(Finding::isFabricated).toList();
+        List<Finding> fabricated =
+                findings.stream().filter(Finding::isFabricated).toList();
         return new Verdict(findings, fabricated);
     }
 
@@ -158,21 +157,22 @@ public class CitationVerifier {
      * provenance failure, and a citation to no fragment at all is a hallucination, and the two lead
      * to different conversations with whoever maintains the documents.
      */
-    public Verdict verifyAgainst(AssembledContext context, Set<String> characteristics,
-                                 Map<String, String> sources,
-                                 java.util.function.Predicate<String> existsInCorpus) {
+    public Verdict verifyAgainst(
+            AssembledContext context,
+            Set<String> characteristics,
+            Map<String, String> sources,
+            java.util.function.Predicate<String> existsInCorpus) {
         Verdict basic = verify(context, characteristics, sources);
         List<Finding> findings = new ArrayList<>();
         for (Finding finding : basic.findings()) {
-            if (finding.status() == Status.UNKNOWN_REFERENCE
-                    && existsInCorpus.test(finding.reference())) {
-                findings.add(new Finding(finding.characteristic(), finding.reference(),
-                        Status.NOT_IN_CONTEXT));
+            if (finding.status() == Status.UNKNOWN_REFERENCE && existsInCorpus.test(finding.reference())) {
+                findings.add(new Finding(finding.characteristic(), finding.reference(), Status.NOT_IN_CONTEXT));
             } else {
                 findings.add(finding);
             }
         }
-        List<Finding> fabricated = findings.stream().filter(Finding::isFabricated).toList();
+        List<Finding> fabricated =
+                findings.stream().filter(Finding::isFabricated).toList();
         return new Verdict(findings, fabricated);
     }
 }

@@ -1,8 +1,5 @@
 package com.carddraft.temporal;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,10 +10,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.carddraft.agents.ReviewIssue;
+
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * The workflow, in an in-memory engine.
@@ -57,11 +58,9 @@ class CardWorkflowImplTest {
         activities.approveReview();
         String workflowId = start("job-states", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
-        assertThat(activities.statuses)
-                .containsSubsequence("extracting", "generating", "reviewing", "awaiting_human");
+        assertThat(activities.statuses).containsSubsequence("extracting", "generating", "reviewing", "awaiting_human");
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
 
@@ -76,15 +75,13 @@ class CardWorkflowImplTest {
         activities.approveReview();
         String workflowId = start("job-waiting", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
         long callsWhileWaiting = activities.statuses.size();
         Duration waited = Duration.ofSeconds(2);
-        await().pollDelay(waited).atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                assertThat(activities.statuses)
-                        .as("a process standing on a condition must not keep executing steps")
-                        .hasSize((int) callsWhileWaiting));
+        await().pollDelay(waited).atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(activities.statuses)
+                .as("a process standing on a condition must not keep executing steps")
+                .hasSize((int) callsWhileWaiting));
         assertThat(activities.statuses).doesNotContain("approved", "rejected");
     }
 
@@ -93,16 +90,16 @@ class CardWorkflowImplTest {
         activities.alwaysRegenerate("title is longer than 60 characters");
         String workflowId = start("job-budget", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
         assertThat(activities.generateCalls).hasValue(3);
-        assertThat(activities.issuesSeen.get(0)).as("the first round has no feedback").isEmpty();
+        assertThat(activities.issuesSeen.get(0))
+                .as("the first round has no feedback")
+                .isEmpty();
         assertThat(activities.issuesSeen.get(1))
                 .as("feedback from the reviewer reaches the generator")
                 .singleElement()
-                .satisfies(issue -> assertThat(issue.problem())
-                        .isEqualTo("title is longer than 60 characters"));
+                .satisfies(issue -> assertThat(issue.problem()).isEqualTo("title is longer than 60 characters"));
     }
 
     @Test
@@ -110,8 +107,7 @@ class CardWorkflowImplTest {
         activities.alwaysRegenerate("no good");
         String workflowId = start("job-rejected", 1);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).reject();
 
@@ -130,8 +126,7 @@ class CardWorkflowImplTest {
         activities.failExtraction = true;
         start("job-failed", 3);
 
-        await().atMost(Duration.ofSeconds(15))
-                .until(() -> !activities.failures.isEmpty());
+        await().atMost(Duration.ofSeconds(15)).until(() -> !activities.failures.isEmpty());
 
         assertThat(activities.failures)
                 .as("a terminal failure must carry its reason, or GET /jobs/{id} cannot report it")
@@ -144,8 +139,7 @@ class CardWorkflowImplTest {
         activities.alwaysRegenerate("no good");
         String workflowId = start("job-attempts", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
         assertThat(activities.attemptOrdinals)
                 .as("the workflow passes the ordinal it counted, so a redelivered write is idempotent")
@@ -158,8 +152,7 @@ class CardWorkflowImplTest {
         // human with an empty draft. An approval that arrives anyway must not become a success.
         String workflowId = start("job-no-draft", 0);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
 
         resultOf(workflowId);
@@ -177,17 +170,15 @@ class CardWorkflowImplTest {
         activities.approveReview();
         String workflowId = start("job-outcome", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
         resultOf(workflowId);
 
         assertThat(activities.outcomes)
                 .as("a decision that writes a state without the draft leaves a caller nothing to read")
                 .singleElement()
-                .satisfies(outcome -> assertThat(outcome)
-                        .startsWith("approved:")
-                        .contains("draft 1"));
+                .satisfies(
+                        outcome -> assertThat(outcome).startsWith("approved:").contains("draft 1"));
     }
 
     @Test
@@ -195,13 +186,12 @@ class CardWorkflowImplTest {
         activities.approveReview();
         String workflowId = start("job-rejected-outcome", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
         client.newWorkflowStub(CardWorkflow.class, workflowId).reject();
         resultOf(workflowId);
 
-        assertThat(activities.outcomes).singleElement()
-                .satisfies(outcome -> assertThat(outcome).startsWith("rejected:"));
+        assertThat(activities.outcomes).singleElement().satisfies(outcome -> assertThat(outcome)
+                .startsWith("rejected:"));
     }
 
     private String start(String workflowId, int maxRounds) {
@@ -221,8 +211,7 @@ class CardWorkflowImplTest {
 
     private WorkflowResult resultOf(String workflowId) {
         try {
-            return io.temporal.client.WorkflowStub
-                    .fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId))
+            return io.temporal.client.WorkflowStub.fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId))
                     .getResult(10, java.util.concurrent.TimeUnit.SECONDS, WorkflowResult.class);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new AssertionError("workflow " + workflowId + " did not finish in time", e);
@@ -282,20 +271,18 @@ class CardWorkflowImplTest {
         // The retrieval branch, which this test does not exercise. Answering here rather than
         // throwing keeps the facts-branch assertions about the facts branch.
         @Override
-        public synchronized RetrievedContext retrieveAndAssemble(String jobId, String productHint,
-                                                                 List<String> documentIds) {
+        public synchronized RetrievedContext retrieveAndAssemble(
+                String jobId, String productHint, List<String> documentIds) {
             return RetrievedContext.clean("[C1] context");
         }
 
         @Override
-        public synchronized String generateFromContext(String jobId, String contextText,
-                                                       List<ReviewIssue> issues) {
+        public synchronized String generateFromContext(String jobId, String contextText, List<ReviewIssue> issues) {
             return "{\"title\":\"context draft\"}";
         }
 
         @Override
-        public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText,
-                                                                   String draftJson) {
+        public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson) {
             return new ReviewOutcome(true, List.of());
         }
 

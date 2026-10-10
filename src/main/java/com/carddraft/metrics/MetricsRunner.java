@@ -5,7 +5,6 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +18,6 @@ import com.carddraft.agents.SupportJudgement;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.CitationVerifier;
 import com.carddraft.context.ContextChunk;
-import com.carddraft.llm.JobLogContext;
 import com.carddraft.repositories.ModelCallRepository;
 
 /**
@@ -59,9 +57,12 @@ public class MetricsRunner implements ApplicationRunner {
     private final MetricsProperties properties;
     private final ModelCallRepository calls;
 
-    public MetricsRunner(CardGenerator cards, SupportJudge judge,
-                         MetricsReportWriter writer, MetricsProperties properties,
-                         ModelCallRepository calls) {
+    public MetricsRunner(
+            CardGenerator cards,
+            SupportJudge judge,
+            MetricsReportWriter writer,
+            MetricsProperties properties,
+            ModelCallRepository calls) {
         this.cards = cards;
         this.judge = judge;
         this.writer = writer;
@@ -126,25 +127,25 @@ public class MetricsRunner implements ApplicationRunner {
             card = generated.card();
         } catch (RuntimeException e) {
             log.warn("metrics_document_failed document={} stage=generate error={}", document, e.toString());
-            return DocumentMetrics.failed(document,
-                    "no usable card could be generated: " + e.getMessage(), costOf(document));
+            return DocumentMetrics.failed(
+                    document, "no usable card could be generated: " + e.getMessage(), costOf(document));
         }
 
         if (context == null || context.isEmpty() || card == null) {
-            return DocumentMetrics.failed(document, "no card could be generated from this document",
-                    costOf(document));
+            return DocumentMetrics.failed(document, "no card could be generated from this document", costOf(document));
         }
 
         List<String> missed = new ArrayList<>();
         int matched = 0;
         for (Map.Entry<String, String> characteristic : expected.entrySet()) {
-            if (ValueNormaliser.matches(card.characteristics().get(characteristic.getKey()),
-                    characteristic.getValue())) {
+            if (ValueNormaliser.matches(
+                    card.characteristics().get(characteristic.getKey()), characteristic.getValue())) {
                 matched++;
             } else {
                 missed.add(characteristic.getKey() + " = "
                         + (card.characteristics().get(characteristic.getKey()) == null
-                                ? "<absent>" : card.characteristics().get(characteristic.getKey()))
+                                ? "<absent>"
+                                : card.characteristics().get(characteristic.getKey()))
                         + ", expected " + characteristic.getValue());
             }
         }
@@ -161,9 +162,16 @@ public class MetricsRunner implements ApplicationRunner {
                 ? 0
                 : (double) countPreciseCitations(card, context) / card.sources().size();
 
-        return new DocumentMetrics(document, match, precision, judgement.score(card.characteristics().size()), expected.size(),
-                missed, judgement.unsupportedAmong(List.copyOf(card.characteristics().keySet())),
-                judgement.measured() ? null : judgement.unavailableReason(), costOf(document));
+        return new DocumentMetrics(
+                document,
+                match,
+                precision,
+                judgement.score(card.characteristics().size()),
+                expected.size(),
+                missed,
+                judgement.unsupportedAmong(List.copyOf(card.characteristics().keySet())),
+                judgement.measured() ? null : judgement.unavailableReason(),
+                costOf(document));
     }
 
     /**
@@ -240,6 +248,6 @@ public class MetricsRunner implements ApplicationRunner {
     /** Whether to measure the whole reference set or its declared default. */
     @org.springframework.boot.context.properties.ConfigurationProperties("card.metrics")
     public record MetricsProperties(
-            @org.springframework.boot.context.properties.bind.DefaultValue("false") boolean fullSet) {
-    }
+            @org.springframework.boot.context.properties.bind.DefaultValue("false")
+            boolean fullSet) {}
 }

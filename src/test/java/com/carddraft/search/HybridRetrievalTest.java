@@ -10,9 +10,9 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -116,7 +116,9 @@ class HybridRetrievalTest {
 
                 @Override
                 public List<List<Double>> embedDocuments(List<Document> documents) {
-                    return documents.stream().map(d -> embedDocument(d.text(), d.title())).toList();
+                    return documents.stream()
+                            .map(d -> embedDocument(d.text(), d.title()))
+                            .toList();
                 }
 
                 @Override
@@ -125,7 +127,6 @@ class HybridRetrievalTest {
                 }
             };
         }
-
     }
 
     static final String PASSPORT_SECTION = "Technical specifications";
@@ -148,11 +149,10 @@ class HybridRetrievalTest {
     void aFragmentFoundByBothModesOutranksOneFoundByEither() {
         seed();
 
-        List<Hit> fused = repository.searchHybrid(
-                ScriptedModel.PASSPORT_QUERY, "passport", Filter.all(), 10, 0.9, 5, 60);
+        List<Hit> fused =
+                repository.searchHybrid(ScriptedModel.PASSPORT_QUERY, "passport", Filter.all(), 10, 0.9, 5, 60);
 
-        assertThat(fused).extracting(Hit::text)
-                .containsExactly("passport fragment", "kettle fragment");
+        assertThat(fused).extracting(Hit::text).containsExactly("passport fragment", "kettle fragment");
 
         assertThat(fused.get(0).matchedByModes())
                 .as("the winner is the one both modes agreed on")
@@ -174,19 +174,19 @@ class HybridRetrievalTest {
         seed();
         long photoId = insertChunk("doc-unrelated", 1, 2, "Photo requirements", "passport photograph");
 
-        repository.writeVectors(List.of(new ChunkSearchRepository.ChunkVector(
-                photoId, ScriptedModel.axis(2))));
+        repository.writeVectors(List.of(new ChunkSearchRepository.ChunkVector(photoId, ScriptedModel.axis(2))));
 
         assertThat(repository.searchByVector(ScriptedModel.PASSPORT_QUERY, Filter.all(), 10, 0.5))
                 .as("vector search rejects it on distance")
                 .extracting(Hit::text)
                 .doesNotContain("passport photograph");
 
-        List<Hit> fused = repository.searchHybrid(
-                ScriptedModel.PASSPORT_QUERY, "passport", Filter.all(), 10, 0.5, 5, 60);
+        List<Hit> fused =
+                repository.searchHybrid(ScriptedModel.PASSPORT_QUERY, "passport", Filter.all(), 10, 0.5, 5, 60);
 
         assertThat(fused).extracting(Hit::text).contains("passport photograph");
-        assertThat(fused).filteredOn(hit -> hit.text().equals("passport photograph"))
+        assertThat(fused)
+                .filteredOn(hit -> hit.text().equals("passport photograph"))
                 .singleElement()
                 .extracting(Hit::matchedByModes)
                 .as("and it is labelled, so a caller can see it matched on words only")
@@ -222,16 +222,16 @@ class HybridRetrievalTest {
         assertThat(kettleOnly).extracting(Hit::text).containsExactly("kettle fragment");
     }
 
-/**
- * A filter has to reach the fusion as well as the single-mode queries.
- *
- * <p>Missing that is the easy mistake: the filters are written out again inside each CTE, so a
- * fusion that forgot one would quietly reintroduce documents the caller excluded.
- *
+    /**
+     * A filter has to reach the fusion as well as the single-mode queries.
+     *
+     * <p>Missing that is the easy mistake: the filters are written out again inside each CTE, so a
+     * fusion that forgot one would quietly reintroduce documents the caller excluded.
+     *
      * <p>Section labels are ASCII here on purpose. What is under test is that the predicate reaches
- * every subquery, and non-ASCII literals in a test about SQL plumbing add an encoding failure mode
- * that has nothing to do with the plumbing. Cyrillic sections are exercised where they belong, in
- * the parsing tests against the real documents.
+     * every subquery, and non-ASCII literals in a test about SQL plumbing add an encoding failure mode
+     * that has nothing to do with the plumbing. Cyrillic sections are exercised where they belong, in
+     * the parsing tests against the real documents.
      */
     @Test
     void aSectionFilterNarrowsBothTheSearchAndItsFusion() {
@@ -240,13 +240,18 @@ class HybridRetrievalTest {
         Filter passportSection = new Filter(null, PASSPORT_SECTION);
 
         assertThat(jdbc.sql("SELECT count(*) FROM chunks WHERE search_text @@ websearch_to_tsquery('simple', :q)")
-                        .param("q", "passport").query(Integer.class).single())
-                .as("only the passport fragment contains the word at all").isEqualTo(1);
+                        .param("q", "passport")
+                        .query(Integer.class)
+                        .single())
+                .as("only the passport fragment contains the word at all")
+                .isEqualTo(1);
 
         assertThat(repository.searchByText("passport", Filter.all(), 10))
-                .as("unfiltered, one fragment mentions it").hasSize(1);
+                .as("unfiltered, one fragment mentions it")
+                .hasSize(1);
         assertThat(repository.searchByText("passport", passportSection, 10))
-                .as("and the section filter keeps that one").hasSize(1);
+                .as("and the section filter keeps that one")
+                .hasSize(1);
         assertThat(repository.searchByText("passport", new Filter(List.of("doc-kettle"), null), 10))
                 .as("a filter that excludes the document finds nothing")
                 .isEmpty();
@@ -289,20 +294,19 @@ class HybridRetrievalTest {
     void vectorsSurviveARoundTripThroughTheColumn() {
         seed();
 
-        repository.writeVectors(List.of(new ChunkSearchRepository.ChunkVector(
-                chunkId("passport fragment"), ScriptedModel.axis(0))));
+        repository.writeVectors(
+                List.of(new ChunkSearchRepository.ChunkVector(chunkId("passport fragment"), ScriptedModel.axis(0))));
 
         assertThat(repository.searchByVector(ScriptedModel.axis(0), Filter.all(), 10, 0.01))
                 .extracting(Hit::text)
                 .containsExactly("passport fragment");
     }
 
-@Test
+    @Test
     void aVectorOfTheWrongWidthIsRefusedRatherThanTruncated() {
         seed();
         long id = chunkId("passport fragment");
-        ChunkSearchRepository.ChunkVector tooNarrow =
-                new ChunkSearchRepository.ChunkVector(id, List.of(1.0, 0.0, 0.0));
+        ChunkSearchRepository.ChunkVector tooNarrow = new ChunkSearchRepository.ChunkVector(id, List.of(1.0, 0.0, 0.0));
 
         assertThat(catchThrowable(() -> repository.writeVectors(List.of(tooNarrow))))
                 .isInstanceOf(DataIntegrityViolationException.class)
@@ -324,10 +328,7 @@ class HybridRetrievalTest {
             jdbc.sql("""
                             INSERT INTO documents (id, filename, content_sha256, size_bytes, state)
                             VALUES (:id, :id, :hash, 100, 'indexed')
-                            """)
-                    .param("id", id)
-                    .param("hash", "sha-" + id)
-                    .update();
+                            """).param("id", id).param("hash", "sha-" + id).update();
         }
 
         embed("doc-passport", 0, 1, PASSPORT_SECTION, "passport fragment", ScriptedModel.axis(0));

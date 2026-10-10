@@ -1,7 +1,5 @@
 package com.carddraft.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +9,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The {@code .env} file a stranger copies next to the checkout has to configure the service.
@@ -72,8 +72,8 @@ class EnvFileConfigurationTest {
     }
 
     private String runProbe(Map<String, String> environment) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder(javaExecutable(),
-                "@" + argumentFile().toAbsolutePath());
+        ProcessBuilder builder =
+                new ProcessBuilder(javaExecutable(), "@" + argumentFile().toAbsolutePath());
         builder.directory(workingDirectory.toFile());
         builder.redirectErrorStream(true);
 
@@ -102,7 +102,9 @@ class EnvFileConfigurationTest {
      */
     private Path argumentFile() throws IOException {
         Path arguments = argumentDirectory.resolve("probe.args");
-        Files.writeString(arguments, """
+        Files.writeString(
+                arguments,
+                """
                 -cp "%s"
                 %s
                 """.formatted(classpathForArgumentFile(), EnvFileConfigurationProbe.class.getName()),

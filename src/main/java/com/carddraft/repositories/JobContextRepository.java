@@ -55,15 +55,13 @@ public class JobContextRepository {
     }
 
     public AssembledContext load(String jobId) {
-        List<ContextChunk> chunks = jdbc.sql("""
+        List<ContextChunk> chunks =
+                jdbc.sql("""
                         SELECT reference, chunk_id, document_id, page, section, text
                           FROM job_context_chunks
                          WHERE job_id = :jobId
                          ORDER BY position
-                        """)
-                .param(JOB_ID, jobId)
-                .query(ContextChunk.class)
-                .list();
+                        """).param(JOB_ID, jobId).query(ContextChunk.class).list();
 
         return new AssembledContext(jobId, chunks, 0, 0);
     }

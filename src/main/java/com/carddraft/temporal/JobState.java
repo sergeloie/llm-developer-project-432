@@ -9,7 +9,6 @@ package com.carddraft.temporal;
  * team to ignore alerts, and then the real outage is ignored too.
  */
 public enum JobState {
-
     PENDING("pending"),
     EXTRACTING("extracting"),
     RETRIEVING("retrieving"),

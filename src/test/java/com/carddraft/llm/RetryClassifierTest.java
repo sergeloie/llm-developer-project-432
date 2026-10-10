@@ -1,7 +1,5 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.net.SocketTimeoutException;
 
 import org.junit.jupiter.api.Test;
@@ -9,6 +7,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.openai.errors.OpenAIIoException;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What is worth attempting again, and what is not.
@@ -34,17 +34,23 @@ class RetryClassifierTest {
 
     @Test
     void retriesTransportFailures() {
-        assertThat(RetryClassifier.isRetryable(new OpenAIIoException("connection reset"))).isTrue();
-        assertThat(RetryClassifier.isRetryable(new SocketTimeoutException("read timed out"))).isTrue();
-        assertThat(RetryClassifier.isRetryable(new java.io.IOException("broken pipe"))).isTrue();
+        assertThat(RetryClassifier.isRetryable(new OpenAIIoException("connection reset")))
+                .isTrue();
+        assertThat(RetryClassifier.isRetryable(new SocketTimeoutException("read timed out")))
+                .isTrue();
+        assertThat(RetryClassifier.isRetryable(new java.io.IOException("broken pipe")))
+                .isTrue();
     }
 
     @Test
     void doesNotRetryFailuresThatAnotherAttemptCannotFix() {
-        assertThat(RetryClassifier.isRetryable(new IllegalStateException("a bug in our code"))).isFalse();
+        assertThat(RetryClassifier.isRetryable(new IllegalStateException("a bug in our code")))
+                .isFalse();
         assertThat(RetryClassifier.isRetryable(new ModelResponseFormatException("no JSON in the response")))
-                .as("the same prompt will produce the same unparseable response").isFalse();
+                .as("the same prompt will produce the same unparseable response")
+                .isFalse();
         assertThat(RetryClassifier.isRetryable(new EmptyModelResponseException("m", "stop", "extractFacts")))
-                .as("a model that returned nothing will return nothing again").isFalse();
+                .as("a model that returned nothing will return nothing again")
+                .isFalse();
     }
 }

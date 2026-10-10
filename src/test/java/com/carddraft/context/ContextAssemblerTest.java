@@ -36,8 +36,7 @@ class ContextAssemblerTest {
 
         assertThat(context.references()).containsExactly("C1", "C2", "C3");
         assertThat(context.chunks()).extracting(ContextChunk::chunkId).containsExactly(10L, 11L, 12L);
-        assertThat(context.chunks()).extracting(ContextChunk::section)
-                .containsExactly("Power", "Volume", "Weight");
+        assertThat(context.chunks()).extracting(ContextChunk::section).containsExactly("Power", "Volume", "Weight");
     }
 
     /**
@@ -68,9 +67,8 @@ class ContextAssemblerTest {
      */
     @Test
     void whitespaceDifferencesDoNotDefeatDeduplication() {
-        List<Hit> hits = List.of(
-                hit(10, "doc-a", "Power", "Power 800 W"),
-                hit(11, "doc-b", "Power", "  power   800  W \n"));
+        List<Hit> hits =
+                List.of(hit(10, "doc-a", "Power", "Power 800 W"), hit(11, "doc-b", "Power", "  power   800  W \n"));
 
         AssembledContext context = assembler.assemble("job-1", hits);
 
@@ -80,9 +78,8 @@ class ContextAssemblerTest {
 
     @Test
     void paraphrasesAreNotTreatedAsDuplicates() {
-        List<Hit> hits = List.of(
-                hit(10, "doc-a", "Power", "Power 800 W"),
-                hit(11, "doc-b", "Power", "Motor output 800 watts"));
+        List<Hit> hits =
+                List.of(hit(10, "doc-a", "Power", "Power 800 W"), hit(11, "doc-b", "Power", "Motor output 800 watts"));
 
         assertThat(assembler.assemble("job-1", hits).chunks()).hasSize(2);
     }
@@ -97,9 +94,7 @@ class ContextAssemblerTest {
     @Test
     void emptyFragmentsCollapseRatherThanFloodingTheBudget() {
         List<Hit> hits = List.of(
-                hit(10, "doc-a", null, ""),
-                hit(11, "doc-b", null, "   "),
-                hit(12, "doc-c", null, "Weight 5.9 kg"));
+                hit(10, "doc-a", null, ""), hit(11, "doc-b", null, "   "), hit(12, "doc-c", null, "Weight 5.9 kg"));
 
         AssembledContext context = assembler.assemble("job-1", hits);
 
@@ -137,10 +132,8 @@ class ContextAssemblerTest {
     @Test
     void theCharacterLimitSkipsAnOversizedFragmentAndKeepsWhatFits() {
         ContextAssembler limited = new ContextAssembler(new ContextSettings(12, 20));
-        List<Hit> hits = List.of(
-                hit(1, "d", "s", "x".repeat(50)),
-                hit(2, "d", "s", "short one"),
-                hit(3, "d", "s", "short two"));
+        List<Hit> hits =
+                List.of(hit(1, "d", "s", "x".repeat(50)), hit(2, "d", "s", "short one"), hit(3, "d", "s", "short two"));
 
         AssembledContext context = limited.assemble("job-1", hits);
 
@@ -150,15 +143,12 @@ class ContextAssemblerTest {
 
     @Test
     void everyRenderedLineCarriesTheLabelSoAQuoteCanBeTraced() {
-        AssembledContext context = assembler.assemble("job-1", List.of(
-                hit(10, "doc-a", "Power", "Power 800 W"),
-                hit(11, "doc-b", null, "Weight 5.9 kg")));
+        AssembledContext context = assembler.assemble(
+                "job-1", List.of(hit(10, "doc-a", "Power", "Power 800 W"), hit(11, "doc-b", null, "Weight 5.9 kg")));
 
         String rendered = context.render();
 
-        assertThat(rendered)
-                .contains("[C1] Power — Power 800 W")
-                .contains("[C2] Weight 5.9 kg");
+        assertThat(rendered).contains("[C1] Power — Power 800 W").contains("[C2] Weight 5.9 kg");
     }
 
     @Test
@@ -166,7 +156,8 @@ class ContextAssemblerTest {
         AssembledContext context = assembler.assemble("job-1", List.of(hit(10, "doc-a", "s", "text")));
 
         assertThat(context.find("C1")).isPresent();
-        assertThat(context.find("C2")).as("the contiguity is what makes membership a complete check")
+        assertThat(context.find("C2"))
+                .as("the contiguity is what makes membership a complete check")
                 .isEmpty();
         assertThat(context.find("C0")).isEmpty();
         assertThat(context.find("")).isEmpty();
@@ -202,7 +193,8 @@ class ContextAssemblerTest {
 
         assertThat(context.jobId()).isEqualTo("job-77");
         assertThat(context.chunks().get(0).target())
-                .extracting(ContextChunk.CitationTarget::documentId,
+                .extracting(
+                        ContextChunk.CitationTarget::documentId,
                         ContextChunk.CitationTarget::page,
                         ContextChunk.CitationTarget::section)
                 .containsExactly("d", 1, "s");
@@ -212,8 +204,8 @@ class ContextAssemblerTest {
     void verifierAgreesWithTheContextItWasGiven() {
         AssembledContext context = assembler.assemble("job-1", List.of(hit(10, "d", "s", "text")));
 
-        CitationVerifier.Verdict verdict = new CitationVerifier()
-                .verify(context, Set.of("Power"), Map.of("Power", "C1"));
+        CitationVerifier.Verdict verdict =
+                new CitationVerifier().verify(context, Set.of("Power"), Map.of("Power", "C1"));
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings()).hasSize(1);

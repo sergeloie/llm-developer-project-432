@@ -18,8 +18,7 @@ package com.carddraft.llm;
  */
 public final class ModelResponses {
 
-    private ModelResponses() {
-    }
+    private ModelResponses() {}
 
     /**
      * @throws ModelResponseFormatException when no JSON object can be recovered, with a message
@@ -36,16 +35,15 @@ public final class ModelResponses {
             candidate = fenced.strip();
         }
 
-        for (int start = candidate.indexOf('{'); start >= 0;
-                start = candidate.indexOf('{', start + 1)) {
+        for (int start = candidate.indexOf('{'); start >= 0; start = candidate.indexOf('{', start + 1)) {
             String balanced = balancedFrom(candidate, start);
             if (balanced != null) {
                 return balanced;
             }
         }
 
-        throw new ModelResponseFormatException(operation
-                + ": no JSON object found in the response. First 200 characters: " + abbreviate(raw));
+        throw new ModelResponseFormatException(
+                operation + ": no JSON object found in the response. First 200 characters: " + abbreviate(raw));
     }
 
     /**

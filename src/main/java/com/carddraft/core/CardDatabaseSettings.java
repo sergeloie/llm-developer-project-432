@@ -2,13 +2,13 @@ package com.carddraft.core;
 
 import java.time.Duration;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * Database settings, bound once at startup.
@@ -21,8 +21,9 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.db")
 public record CardDatabaseSettings(
+        @DefaultValue("jdbc:postgresql://127.0.0.1:5432/card") @NotBlank
+        String url,
 
-        @DefaultValue("jdbc:postgresql://127.0.0.1:5432/card") @NotBlank String url,
         @DefaultValue("card") @NotBlank String username,
         @DefaultValue("card") @NotBlank String password,
         @DefaultValue("10") @Min(1) int poolSize,
@@ -43,5 +44,4 @@ public record CardDatabaseSettings(
          * need the application to come up <em>without</em> a database set this to a negative
          * value, which tells the pool not to verify at all.
          */
-        @DefaultValue("1") long initializationFailTimeoutMillis) {
-}
+        @DefaultValue("1") long initializationFailTimeoutMillis) {}

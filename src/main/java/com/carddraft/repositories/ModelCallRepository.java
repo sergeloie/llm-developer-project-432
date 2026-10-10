@@ -23,8 +23,7 @@ import com.carddraft.llm.ModelCallRecord;
 @Repository
 public class ModelCallRepository {
 
-    private static final org.slf4j.Logger log =
-            org.slf4j.LoggerFactory.getLogger(ModelCallRepository.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ModelCallRepository.class);
 
     private static final String JOB_ID = "jobId";
 
@@ -72,8 +71,11 @@ public class ModelCallRepository {
             // and a missing row is visible in a total, while a duplicated generation is not visible
             // anywhere. The message is logged at error for the same reason it is worth logging:
             // it is the only trace that a number went missing.
-            log.error("llm_call_record_failed operation={} model={} error={}",
-                    call.operation(), call.model(), rootMessage(e));
+            log.error(
+                    "llm_call_record_failed operation={} model={} error={}",
+                    call.operation(),
+                    call.model(),
+                    rootMessage(e));
         }
     }
 
@@ -94,11 +96,7 @@ public class ModelCallRepository {
                           FROM model_calls
                          WHERE job_id = :jobId
                          ORDER BY called_at, id
-                        """)
-                .param(JOB_ID, jobId)
-                .query(CallRow.class)
-                .list()
-                .stream()
+                        """).param(JOB_ID, jobId).query(CallRow.class).list().stream()
                 .map(CallRow::toRecord)
                 .toList();
     }
@@ -120,8 +118,7 @@ public class ModelCallRepository {
     }
 
     /** One row of the breakdown. */
-    public record TierSpend(String tier, long calls, long inputTokens, long outputTokens, BigDecimal cost) {
-    }
+    public record TierSpend(String tier, long calls, long inputTokens, long outputTokens, BigDecimal cost) {}
 
     /**
      * Spend grouped by tier.
@@ -139,9 +136,7 @@ public class ModelCallRepository {
                           FROM model_calls
                          GROUP BY tier
                          ORDER BY tier
-                        """)
-                .query(TierSpend.class)
-                .list();
+                        """).query(TierSpend.class).list();
     }
 
     /**
@@ -151,12 +146,25 @@ public class ModelCallRepository {
      * numeric, duration an integer, and the mapping belongs here rather than inside
      * {@link ModelCallRecord}, which should not know how a duration is stored.
      */
-    record CallRow(String jobId, String tier, String model, String operation,
-                   int inputTokens, int outputTokens, BigDecimal cost,
-                   int durationMs, Instant calledAt) {
+    record CallRow(
+            String jobId,
+            String tier,
+            String model,
+            String operation,
+            int inputTokens,
+            int outputTokens,
+            BigDecimal cost,
+            int durationMs,
+            Instant calledAt) {
 
         ModelCallRecord toRecord() {
-            return new ModelCallRecord(jobId, tier, model, operation, inputTokens, outputTokens,
+            return new ModelCallRecord(
+                    jobId,
+                    tier,
+                    model,
+                    operation,
+                    inputTokens,
+                    outputTokens,
                     cost == null ? BigDecimal.ZERO.setScale(CostCalculator.SCALE) : cost,
                     Duration.ofMillis(durationMs),
                     calledAt);

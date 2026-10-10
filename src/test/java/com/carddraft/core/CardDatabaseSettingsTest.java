@@ -1,19 +1,18 @@
 package com.carddraft.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 class CardDatabaseSettingsTest {
 
-    private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withUserConfiguration(TestConfiguration.class);
+    private final ApplicationContextRunner runner =
+            new ApplicationContextRunner().withUserConfiguration(TestConfiguration.class);
 
     @EnableConfigurationProperties(CardDatabaseSettings.class)
-    static class TestConfiguration {
-    }
+    static class TestConfiguration {}
 
     @Test
     void bindsTypedSettingsFromConfiguration() {
@@ -24,7 +23,8 @@ class CardDatabaseSettingsTest {
                         "card.db.pool-size=7")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(CardDatabaseSettings.class).poolSize()).isEqualTo(7);
+                    assertThat(context.getBean(CardDatabaseSettings.class).poolSize())
+                            .isEqualTo(7);
                 });
     }
 

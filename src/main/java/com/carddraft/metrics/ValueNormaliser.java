@@ -19,8 +19,7 @@ import java.util.Locale;
  */
 public final class ValueNormaliser {
 
-    private ValueNormaliser() {
-    }
+    private ValueNormaliser() {}
 
     public static String normalise(String value) {
         if (value == null) {
@@ -73,8 +72,7 @@ public final class ValueNormaliser {
     /** Punctuation that carries no value at the end of a value: quotes, trailing stops, brackets. */
     private static boolean isDecorator(char c) {
         return switch (c) {
-            case '.', ',', ';', ':', '!', '?', '"', '\'', '(', ')', '[', ']', '{', '}', '—', '–', '-'
-                    -> true;
+            case '.', ',', ';', ':', '!', '?', '"', '\'', '(', ')', '[', ']', '{', '}', '—', '–', '-' -> true;
             default -> false;
         };
     }

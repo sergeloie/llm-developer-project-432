@@ -9,11 +9,7 @@ import java.util.Map;
  * <p>A human verifies this in a minute because every value can be traced, and what is absent is
  * listed rather than filled in. Sources and confidence arrive with the result contract.
  */
-public record CardDraft(
-        String title,
-        String description,
-        Map<String, String> characteristics,
-        List<String> benefits) {
+public record CardDraft(String title, String description, Map<String, String> characteristics, List<String> benefits) {
 
     public CardDraft {
         characteristics = characteristics == null ? Map.of() : Map.copyOf(characteristics);

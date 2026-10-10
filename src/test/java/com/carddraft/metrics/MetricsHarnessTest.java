@@ -111,26 +111,38 @@ class MetricsHarnessTest {
     @Test
     void citationPrecisionRequiresTheFragmentToContainTheCitedValue() {
         CardGenerator cards = mock(CardGenerator.class);
-        given(cards.generate(anyString())).willReturn(new CardGenerator.Generated(
-                new com.carddraft.context.AssembledContext("probe", List.of(
-                        new ContextChunk("C1", 1L, "doc", 1, "Power", "Power 800 W"),
-                        new ContextChunk("C2", 2L, "doc", 1, "Weight", "Weight 5.9 kg")), 0, 0),
-                new ProductCard("Kettle", "A 1.7 litre kettle.",
-                        Map.of("Power", "800 W", "Volume", "1.5 l"),
-                        List.of("fast"), List.of(), 0.9,
-                        Map.of("Power", "C1", "Volume", "C2"))));
+        given(cards.generate(anyString()))
+                .willReturn(new CardGenerator.Generated(
+                        new com.carddraft.context.AssembledContext(
+                                "probe",
+                                List.of(
+                                        new ContextChunk("C1", 1L, "doc", 1, "Power", "Power 800 W"),
+                                        new ContextChunk("C2", 2L, "doc", 1, "Weight", "Weight 5.9 kg")),
+                                0,
+                                0),
+                        new ProductCard(
+                                "Kettle",
+                                "A 1.7 litre kettle.",
+                                Map.of("Power", "800 W", "Volume", "1.5 l"),
+                                List.of("fast"),
+                                List.of(),
+                                0.9,
+                                Map.of("Power", "C1", "Volume", "C2"))));
 
         SupportJudge judge = mock(SupportJudge.class);
-        given(judge.judge(any(), any())).willReturn(new SupportJudgement(
-                Map.of("Power", true, "Volume", true),
-                Map.of("Power", "C1 states it", "Volume", "C2 states it")));
+        given(judge.judge(any(), any()))
+                .willReturn(new SupportJudgement(
+                        Map.of("Power", true, "Volume", true),
+                        Map.of("Power", "C1 states it", "Volume", "C2 states it")));
 
-        MetricsRunner runner = new MetricsRunner(cards, judge,
-                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+        MetricsRunner runner = new MetricsRunner(
+                cards,
+                judge,
+                new MetricsReportWriter(),
+                new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
-        DocumentMetrics metrics = runner.measure("probe.pdf",
-                Map.of("Power", "800 W", "Volume", "1.5 l"));
+        DocumentMetrics metrics = runner.measure("probe.pdf", Map.of("Power", "800 W", "Volume", "1.5 l"));
 
         assertThat(metrics.characteristicMatch()).isEqualTo(1.0);
         assertThat(metrics.citationPrecision())
@@ -164,8 +176,8 @@ class MetricsHarnessTest {
      */
     @Test
     void aClaimTheJudgeOmittedCountsAsUnsupported() {
-        SupportJudgement judgement = new SupportJudgement(Map.of("Power", true),
-                Map.of("Power", "the fragment says 800 W"));
+        SupportJudgement judgement =
+                new SupportJudgement(Map.of("Power", true), Map.of("Power", "the fragment says 800 W"));
 
         assertThat(judgement.score(2))
                 .as("the denominator is what was asked about, not what the judge chose to answer - "
@@ -186,8 +198,8 @@ class MetricsHarnessTest {
 
     @Test
     void aFullySupportedCardScoresOne() {
-        SupportJudgement judgement = new SupportJudgement(Map.of("Power", true, "Volume", true),
-                Map.of("Power", "C1 states it", "Volume", "C2 states it"));
+        SupportJudgement judgement = new SupportJudgement(
+                Map.of("Power", true, "Volume", true), Map.of("Power", "C1 states it", "Volume", "C2 states it"));
 
         assertThat(judgement.score()).isEqualTo(1.0);
         assertThat(judgement.unsupported()).isEmpty();
@@ -206,12 +218,12 @@ class MetricsHarnessTest {
     @Test
     void aJudgeThatCannotBeAskedIsRecordedRatherThanThrown() {
         com.carddraft.llm.LlmClient client = mock(com.carddraft.llm.LlmClient.class);
-        when(client.judgeSupport(anyString())).thenThrow(
-                new com.carddraft.llm.ModelResponseFormatException(
+        when(client.judgeSupport(anyString()))
+                .thenThrow(new com.carddraft.llm.ModelResponseFormatException(
                         "judgeSupport: still invalid after 2 repair attempts. Problems: cannot be read"));
 
-        SupportJudgement judgement = new SupportJudge(client, new tools.jackson.databind.ObjectMapper())
-                .judge(card(), cited());
+        SupportJudgement judgement =
+                new SupportJudge(client, new tools.jackson.databind.ObjectMapper()).judge(card(), cited());
 
         assertThat(judgement.measured())
                 .as("a judge that never answered has not measured anything")
@@ -222,19 +234,32 @@ class MetricsHarnessTest {
     @Test
     void theRunFinishesAndSaysSupportWasNotMeasuredRatherThanPrintingZero() {
         com.carddraft.llm.LlmClient client = mock(com.carddraft.llm.LlmClient.class);
-        when(client.judgeSupport(anyString())).thenThrow(
-                new com.carddraft.llm.ModelResponseFormatException("unreadable"));
+        when(client.judgeSupport(anyString()))
+                .thenThrow(new com.carddraft.llm.ModelResponseFormatException("unreadable"));
 
         CardGenerator cards = mock(CardGenerator.class);
-        given(cards.generate(anyString())).willReturn(new CardGenerator.Generated(
-                new com.carddraft.context.AssembledContext(
-                        "probe", List.of(new ContextChunk("C1", 1L, "probe", 1, "Power", "Power 800 W")), 0, 0),
-                card()));
+        given(cards.generate(anyString()))
+                .willReturn(new CardGenerator.Generated(
+                        new com.carddraft.context.AssembledContext(
+                                "probe", List.of(new ContextChunk("C1", 1L, "probe", 1, "Power", "Power 800 W")), 0, 0),
+                        card()));
 
-        MetricsReport report = new MetricsReport("run-1", "default",
-                List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(),
-                        "the judge could not be asked", java.math.BigDecimal.ZERO)),
-                1.0, 1.0, 0.0);
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default",
+                List.of(new DocumentMetrics(
+                        "a.pdf",
+                        1.0,
+                        1.0,
+                        0,
+                        2,
+                        List.of(),
+                        List.of(),
+                        "the judge could not be asked",
+                        java.math.BigDecimal.ZERO)),
+                1.0,
+                1.0,
+                0.0);
 
         String text = new MetricsReportWriter().render(report);
 
@@ -258,8 +283,11 @@ class MetricsHarnessTest {
                 new DocumentMetrics("judged.pdf", 1.0, 1.0, 1.0, 2, List.of(), List.of()),
                 new DocumentMetrics("unjudged.pdf", 1.0, 1.0, 0, 2, List.of(), List.of(), "no judge"));
 
-        MetricsRunner runner = new MetricsRunner(mock(CardGenerator.class), mock(SupportJudge.class),
-                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+        MetricsRunner runner = new MetricsRunner(
+                mock(CardGenerator.class),
+                mock(SupportJudge.class),
+                new MetricsReportWriter(),
+                new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
         assertThat(runner.average(results, Metric.SOURCE_SUPPORT))
@@ -274,11 +302,15 @@ class MetricsHarnessTest {
 
     @Test
     void theReportNamesItsWeakestMetricAndWhereItCameFrom() {
-        MetricsReport report = new MetricsReport("run-1", "default (2 documents)",
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default (2 documents)",
                 List.of(
                         new DocumentMetrics("a.pdf", 1.0, 1.0, 0.9, 4, List.of(), List.of()),
                         new DocumentMetrics("b.pdf", 0.25, 0.5, 0.8, 4, List.of("power"), List.of())),
-                0.625, 0.75, 0.85);
+                0.625,
+                0.75,
+                0.85);
 
         assertThat(report.weakestSummary())
                 .contains("weakest metric: characteristic match")
@@ -301,17 +333,22 @@ class MetricsHarnessTest {
         assertThat(Metric.CHARACTERISTIC_MATCH.valueOf(metrics)).isEqualTo(1.0);
         assertThat(Metric.CITATION_PRECISION.valueOf(metrics)).isEqualTo(0.5);
         assertThat(Metric.SOURCE_SUPPORT.valueOf(metrics)).isEqualTo(0.25);
-        assertThat(metrics.asMap()).containsOnlyKeys(
-                Metric.CHARACTERISTIC_MATCH.key(),
-                Metric.CITATION_PRECISION.key(),
-                Metric.SOURCE_SUPPORT.key());
+        assertThat(metrics.asMap())
+                .containsOnlyKeys(
+                        Metric.CHARACTERISTIC_MATCH.key(),
+                        Metric.CITATION_PRECISION.key(),
+                        Metric.SOURCE_SUPPORT.key());
     }
 
     @Test
     void theReportPrintsTheEnumsOwnNames() {
-        MetricsReport report = new MetricsReport("run-1", "default",
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default",
                 List.of(new DocumentMetrics("a.pdf", 1.0, 0.5, 0.25, 2, List.of(), List.of())),
-                1.0, 0.5, 0.25);
+                1.0,
+                0.5,
+                0.25);
 
         String text = new MetricsReportWriter().render(report);
 
@@ -350,9 +387,13 @@ class MetricsHarnessTest {
 
     @Test
     void theReportSaysWhichNumberIsAnEstimate(@TempDir Path directory) throws Exception {
-        MetricsReport report = new MetricsReport("run-1", "default",
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default",
                 List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0.9, 3, List.of(), List.of())),
-                1.0, 1.0, 0.9);
+                1.0,
+                1.0,
+                0.9);
 
         Path written = new MetricsReportWriter().write(report, directory.resolve("out/metrics.md"));
         String text = Files.readString(written, StandardCharsets.UTF_8);
@@ -367,11 +408,14 @@ class MetricsHarnessTest {
 
     @Test
     void theReportListsWhatWasMissedSoALowScoreCanBeRead() {
-        MetricsReport report = new MetricsReport("run-1", "default",
-                List.of(new DocumentMetrics("a.pdf", 0.5, 1.0, 1.0, 2,
-                        List.of("power = 900 W, expected 800 W"),
-                        List.of("volume"))),
-                0.5, 1.0, 1.0);
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default",
+                List.of(new DocumentMetrics(
+                        "a.pdf", 0.5, 1.0, 1.0, 2, List.of("power = 900 W, expected 800 W"), List.of("volume"))),
+                0.5,
+                1.0,
+                1.0);
 
         String text = new MetricsReportWriter().render(report);
 
@@ -384,10 +428,14 @@ class MetricsHarnessTest {
 
     @Test
     void theReportShowsWhatEachDocumentCost() {
-        MetricsReport report = new MetricsReport("run-1", "default",
-                List.of(new DocumentMetrics("a.pdf", 1.0, 1.0, 0.9, 3, List.of(), List.of(),
-                        null, new java.math.BigDecimal("0.0045"))),
-                1.0, 1.0, 0.9);
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "default",
+                List.of(new DocumentMetrics(
+                        "a.pdf", 1.0, 1.0, 0.9, 3, List.of(), List.of(), null, new java.math.BigDecimal("0.0045"))),
+                1.0,
+                1.0,
+                0.9);
 
         String text = new MetricsReportWriter().render(report);
 
@@ -405,8 +453,12 @@ class MetricsHarnessTest {
         ReferenceSet reference = ReferenceSet.load(Path.of(DATA, "golden_cards.json"));
 
         assertThat(reference.documents())
-                .contains("blender_passport.pdf", "blender_kp.docx", "kettle_spec.xlsx",
-                        "kettle_manual.pdf", "boiler_scan.pdf");
+                .contains(
+                        "blender_passport.pdf",
+                        "blender_kp.docx",
+                        "kettle_spec.xlsx",
+                        "kettle_manual.pdf",
+                        "boiler_scan.pdf");
         assertThat(reference.defaults())
                 .as("the set declares its own cheap subset, and the harness uses that")
                 .containsExactly("blender_passport.pdf", "kettle_manual.pdf");
@@ -453,12 +505,16 @@ class MetricsHarnessTest {
     @Test
     void aDocumentThatCannotBeGeneratedIsRecordedRatherThanEndingTheRun() {
         CardGenerator cards = mock(CardGenerator.class);
-        when(cards.generate(anyString())).thenThrow(new com.carddraft.llm.ModelResponseFormatException(
-                "still invalid after 2 repair attempts. Problems: sources names "
-                        + "'Корпус не обжигает' but there is no such characteristic"));
+        when(cards.generate(anyString()))
+                .thenThrow(new com.carddraft.llm.ModelResponseFormatException(
+                        "still invalid after 2 repair attempts. Problems: sources names "
+                                + "'Корпус не обжигает' but there is no such characteristic"));
 
-        MetricsRunner runner = new MetricsRunner(cards, judge(),
-                new MetricsReportWriter(), new MetricsRunner.MetricsProperties(false),
+        MetricsRunner runner = new MetricsRunner(
+                cards,
+                judge(),
+                new MetricsReportWriter(),
+                new MetricsRunner.MetricsProperties(false),
                 mock(com.carddraft.repositories.ModelCallRepository.class));
 
         assertThat(runner.measure("kettle_manual.pdf", Map.of("Power", "2200 W")))
@@ -481,9 +537,13 @@ class MetricsHarnessTest {
 
     @Test
     void aDocumentThatGeneratedNothingIsListedOnceRatherThanUnderTwoHeadings() {
-        MetricsReport report = new MetricsReport("run-1", "full (1 document)",
+        MetricsReport report = new MetricsReport(
+                "run-1",
+                "full (1 document)",
                 List.of(DocumentMetrics.failed("kettle_manual.pdf", "no usable card could be generated")),
-                0, 0, 0);
+                0,
+                0,
+                0);
 
         String text = new MetricsReportWriter().render(report);
 
@@ -491,20 +551,21 @@ class MetricsHarnessTest {
         assertThat(text)
                 .as("the failure reason appears once, under the heading that owns it")
                 .containsOnlyOnce("no usable card could be generated");
-        assertThat(text)
-                .as("and not also as an unmatched characteristic")
-                .doesNotContain("not matched");
+        assertThat(text).as("and not also as an unmatched characteristic").doesNotContain("not matched");
     }
 
     private static SupportJudge judge() {
-        return new SupportJudge(mock(com.carddraft.llm.LlmClient.class),
-                new tools.jackson.databind.ObjectMapper());
+        return new SupportJudge(mock(com.carddraft.llm.LlmClient.class), new tools.jackson.databind.ObjectMapper());
     }
 
     private static ProductCard card() {
-        return new ProductCard("Kettle", "A 1.7 litre kettle.",
+        return new ProductCard(
+                "Kettle",
+                "A 1.7 litre kettle.",
                 Map.of("Power", "800 W", "Volume", "1.5 л"),
-                List.of("fast"), List.of(), 0.9,
+                List.of("fast"),
+                List.of(),
+                0.9,
                 Map.of("Power", "C1", "Volume", "C2"));
     }
 

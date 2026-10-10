@@ -95,10 +95,8 @@ class LocalEmbeddingModelTest {
     void aQueryIsEncodedWithTheQueryPrefix() {
         RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        assertThat(model(wire).embedQuery("what is the boiling point"))
-                .containsExactly(0.1, 0.2, 0.3);
-        assertThat(wire.batches()).containsExactly(
-                List.of("task: search result | query: what is the boiling point"));
+        assertThat(model(wire).embedQuery("what is the boiling point")).containsExactly(0.1, 0.2, 0.3);
+        assertThat(wire.batches()).containsExactly(List.of("task: search result | query: what is the boiling point"));
     }
 
     /**
@@ -113,8 +111,7 @@ class LocalEmbeddingModelTest {
 
         model(wire).embedDocument("Water boils at 100 C", "Boiling point");
 
-        assertThat(wire.batches()).containsExactly(
-                List.of("title: Boiling point | text: Water boils at 100 C"));
+        assertThat(wire.batches()).containsExactly(List.of("title: Boiling point | text: Water boils at 100 C"));
     }
 
     /**
@@ -143,10 +140,11 @@ class LocalEmbeddingModelTest {
     void vectorsArePlacedByTheIndexTheServerGivesThem() {
         RecordingWire wire = new RecordingWire().respondingWith(shuffled());
 
-        List<List<Double>> vectors = model(wire).embedDocuments(List.of(
-                new EmbeddingModel.Document("first", null),
-                new EmbeddingModel.Document("second", null),
-                new EmbeddingModel.Document("third", null)));
+        List<List<Double>> vectors = model(wire)
+                .embedDocuments(List.of(
+                        new EmbeddingModel.Document("first", null),
+                        new EmbeddingModel.Document("second", null),
+                        new EmbeddingModel.Document("third", null)));
 
         assertThat(vectors).extracting(v -> v.get(0)).containsExactly(0.1, 0.2, 0.3);
     }
@@ -181,9 +179,9 @@ class LocalEmbeddingModelTest {
     void aResponseMissingAnIndexIsRejected() {
         RecordingWire wire = new RecordingWire().respondingWith(response(0, 0.1, 0.2, 0.3));
 
-        assertThatThrownBy(() -> model(wire).embedDocuments(List.of(
-                new EmbeddingModel.Document("a", null),
-                new EmbeddingModel.Document("b", null))))
+        assertThatThrownBy(() -> model(wire)
+                        .embedDocuments(List.of(
+                                new EmbeddingModel.Document("a", null), new EmbeddingModel.Document("b", null))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("omitted index 1");
     }
@@ -191,8 +189,8 @@ class LocalEmbeddingModelTest {
     /** An empty vector in place of an input must not pass as an embedded chunk. */
     @Test
     void anEmptyVectorIsRejected() {
-        RecordingWire wire = new RecordingWire().respondingWith(
-                new EmbeddingResponse(List.of(new Embedding(new float[0], 0))));
+        RecordingWire wire =
+                new RecordingWire().respondingWith(new EmbeddingResponse(List.of(new Embedding(new float[0], 0))));
 
         assertThatThrownBy(() -> model(wire).embedQuery("anything"))
                 .isInstanceOf(IllegalStateException.class)

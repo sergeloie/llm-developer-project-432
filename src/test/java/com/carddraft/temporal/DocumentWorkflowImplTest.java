@@ -1,8 +1,5 @@
 package com.carddraft.temporal;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +15,9 @@ import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The document parse, in an in-memory engine.
@@ -88,8 +88,7 @@ class DocumentWorkflowImplTest {
         activities.fail = true;
         start("parse-failing");
 
-        assertThatThrownBy(() -> resultOf("parse-failing"))
-                .isInstanceOf(WorkflowFailedException.class);
+        assertThatThrownBy(() -> resultOf("parse-failing")).isInstanceOf(WorkflowFailedException.class);
         assertThat(activities.calls)
                 .as("three attempts, which is what the activity advertises")
                 .hasValue(3);
@@ -160,8 +159,7 @@ class DocumentWorkflowImplTest {
 
     private DocumentActivities.DocumentResult resultOf(String workflowId) {
         try {
-            return WorkflowStub
-                    .fromTyped(client.newWorkflowStub(DocumentWorkflow.class, workflowId))
+            return WorkflowStub.fromTyped(client.newWorkflowStub(DocumentWorkflow.class, workflowId))
                     .getResult(20, TimeUnit.SECONDS, DocumentActivities.DocumentResult.class);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new AssertionError("the parse " + workflowId + " did not finish in time", e);
@@ -179,6 +177,7 @@ class DocumentWorkflowImplTest {
         final List<String> identifiersSeen = new ArrayList<>();
         /** The step names, in order, so the sequence can be asserted rather than just the count. */
         final List<String> steps = new ArrayList<>();
+
         final AtomicInteger calls = new AtomicInteger();
 
         volatile boolean refuse = false;

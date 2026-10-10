@@ -6,12 +6,10 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
-import tools.jackson.databind.ObjectMapper;
-
 import com.carddraft.agents.ProductCard;
-import com.carddraft.documents.DocumentService;
 import com.carddraft.context.AssembledContext;
 import com.carddraft.context.ContextAssembler;
+import com.carddraft.documents.DocumentService;
 import com.carddraft.llm.LlmClient;
 import com.carddraft.repositories.ChunkSearchRepository;
 import com.carddraft.repositories.DocumentsRepository;
@@ -23,6 +21,8 @@ import com.carddraft.trust.EscalatedException;
 import com.carddraft.trust.Finding;
 import com.carddraft.trust.TrustService;
 import com.carddraft.trust.TrustSettings;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Produces one card per document, through the whole path the service actually takes.
@@ -45,8 +45,7 @@ import com.carddraft.trust.TrustSettings;
 @Component
 public class CardGenerator {
 
-    private static final org.slf4j.Logger log =
-            org.slf4j.LoggerFactory.getLogger(CardGenerator.class);
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CardGenerator.class);
 
     private final DocumentService documents;
     private final EmbeddingApplicationService embedding;
@@ -60,8 +59,7 @@ public class CardGenerator {
     private final ObjectMapper mapper;
 
     /** One document's generation: the text the model was shown, and the card it produced. */
-    public record Generated(AssembledContext context, ProductCard card) {
-    }
+    public record Generated(AssembledContext context, ProductCard card) {}
 
     /**
      * The job a document's generation is recorded under.
@@ -74,10 +72,17 @@ public class CardGenerator {
         return "metrics-" + filename;
     }
 
-    public CardGenerator(DocumentService documents, EmbeddingApplicationService embedding,
-                         SearchService search, ContextAssembler assembler, LlmClient llm,
-                         TrustService trust, TrustSettings trustSettings,
-                         JobContextRepository contexts, JobsRepository jobs, ObjectMapper mapper) {
+    public CardGenerator(
+            DocumentService documents,
+            EmbeddingApplicationService embedding,
+            SearchService search,
+            ContextAssembler assembler,
+            LlmClient llm,
+            TrustService trust,
+            TrustSettings trustSettings,
+            JobContextRepository contexts,
+            JobsRepository jobs,
+            ObjectMapper mapper) {
         this.documents = documents;
         this.embedding = embedding;
         this.search = search;
@@ -125,9 +130,8 @@ public class CardGenerator {
         embedding.embedDocument(processed.id(), 64);
         documents.settle(processed.id());
 
-        var hits = search.search(filename,
-                new ChunkSearchRepository.Filter(List.of(processed.id()), null),
-                SearchService.Mode.HYBRID);
+        var hits = search.search(
+                filename, new ChunkSearchRepository.Filter(List.of(processed.id()), null), SearchService.Mode.HYBRID);
 
         AssembledContext assembled = assembler.assemble(jobId, hits);
         TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
@@ -141,8 +145,8 @@ public class CardGenerator {
                     + "safe to generate from");
         }
 
-        AssembledContext retained = new AssembledContext(jobId, screened.chunks(),
-                assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
+        AssembledContext retained = new AssembledContext(
+                jobId, screened.chunks(), assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
         contexts.save(retained);
 
         ProductCard raw = llm.draftCardFromContext(screened.render(), List.of());
@@ -186,7 +190,8 @@ public class CardGenerator {
         try {
             return mapper.writeValueAsString(value);
         } catch (tools.jackson.core.JacksonException e) {
-            throw new IllegalStateException("could not serialise " + value.getClass().getSimpleName(), e);
+            throw new IllegalStateException(
+                    "could not serialise " + value.getClass().getSimpleName(), e);
         }
     }
 

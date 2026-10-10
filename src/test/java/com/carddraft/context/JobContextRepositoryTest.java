@@ -32,7 +32,9 @@ class JobContextRepositoryTest {
 
     @Container
     static final PostgreSQLContainer DATABASE = new PostgreSQLContainer("pgvector/pgvector:pg17")
-            .withDatabaseName("card").withUsername("card").withPassword("card");
+            .withDatabaseName("card")
+            .withUsername("card")
+            .withPassword("card");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
@@ -56,11 +58,10 @@ class JobContextRepositoryTest {
         AssembledContext loaded = contexts.load("job-1");
 
         assertThat(loaded.references()).containsExactly("C1", "C2", "C3");
-        assertThat(loaded.chunks()).extracting(ContextChunk::chunkId)
-                .containsExactly(101L, 102L, 103L);
-        assertThat(loaded.chunks()).extracting(ContextChunk::documentId)
-                .containsExactly("doc-a", "doc-b", "doc-a");
-        assertThat(loaded.chunks()).extracting(ContextChunk::section)
+        assertThat(loaded.chunks()).extracting(ContextChunk::chunkId).containsExactly(101L, 102L, 103L);
+        assertThat(loaded.chunks()).extracting(ContextChunk::documentId).containsExactly("doc-a", "doc-b", "doc-a");
+        assertThat(loaded.chunks())
+                .extracting(ContextChunk::section)
                 .as("sections are stored as they were, including an absent one")
                 .containsExactly("Power", "", "Care");
     }
@@ -81,9 +82,10 @@ class JobContextRepositoryTest {
         CitationVerifier verifier = new CitationVerifier();
 
         assertThat(verifier.verify(reloaded, java.util.Set.of("Power"), java.util.Map.of("Power", "C1"))
-                .isClean()).isTrue();
+                        .isClean())
+                .isTrue();
         assertThat(verifier.verify(reloaded, java.util.Set.of("Power"), java.util.Map.of("Power", "C4"))
-                .isClean())
+                        .isClean())
                 .as("a label that was never allocated is fabricated, even after a round trip")
                 .isFalse();
     }
@@ -100,8 +102,8 @@ class JobContextRepositoryTest {
         seed();
         contexts.save(assembled());
 
-        AssembledContext second = new AssembledContext("job-1",
-                List.of(new ContextChunk("C1", 102L, "doc-b", 1, "Care", "Descale monthly")), 0, 0);
+        AssembledContext second = new AssembledContext(
+                "job-1", List.of(new ContextChunk("C1", 102L, "doc-b", 1, "Care", "Descale monthly")), 0, 0);
         contexts.save(second);
 
         AssembledContext loaded = contexts.load("job-1");
@@ -121,8 +123,8 @@ class JobContextRepositoryTest {
     void oneJobsContextDoesNotLeakIntoAnothers() {
         seed();
         contexts.save(assembled());
-        contexts.save(new AssembledContext("job-2",
-                List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
+        contexts.save(new AssembledContext(
+                "job-2", List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
 
         assertThat(contexts.load("job-1").chunks()).hasSize(3);
         assertThat(contexts.load("job-2").chunks()).hasSize(1);
@@ -148,8 +150,8 @@ class JobContextRepositoryTest {
     void aStoredLabelResolvesWithinItsOwnJobAndNowhereElse() {
         seed();
         contexts.save(assembled());
-        contexts.save(new AssembledContext("job-2",
-                List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
+        contexts.save(new AssembledContext(
+                "job-2", List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
 
         assertThat(contexts.chunkIdForReference("job-1", "C2")).contains(102L);
         assertThat(contexts.chunkIdForReference("job-1", "C9"))
@@ -172,8 +174,8 @@ class JobContextRepositoryTest {
     void aLabelAnotherJobWasShownReadsAsExistingElsewhere() {
         seed();
         contexts.save(assembled());
-        contexts.save(new AssembledContext("job-2",
-                List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
+        contexts.save(new AssembledContext(
+                "job-2", List.of(new ContextChunk("C1", 103L, "doc-a", 3, "Care", "other")), 0, 0));
 
         assertThat(contexts.existsReferenceInAnyContext("C2"))
                 .as("allocated to job-1")
@@ -194,10 +196,14 @@ class JobContextRepositoryTest {
     }
 
     private AssembledContext assembled() {
-        return new AssembledContext("job-1", List.of(
-                new ContextChunk("C1", 101L, "doc-a", 1, "Power", "Power 800 W"),
-                new ContextChunk("C2", 102L, "doc-b", 1, "", "Weight 5.9 kg"),
-                new ContextChunk("C3", 103L, "doc-a", 3, "Care", "Descale monthly")), 0, 0);
+        return new AssembledContext(
+                "job-1",
+                List.of(
+                        new ContextChunk("C1", 101L, "doc-a", 1, "Power", "Power 800 W"),
+                        new ContextChunk("C2", 102L, "doc-b", 1, "", "Weight 5.9 kg"),
+                        new ContextChunk("C3", 103L, "doc-a", 3, "Care", "Descale monthly")),
+                0,
+                0);
     }
 
     private void seed() {
@@ -208,10 +214,7 @@ class JobContextRepositoryTest {
             jdbc.sql("""
                             INSERT INTO documents (id, filename, content_sha256, size_bytes, state)
                             VALUES (:id, :id, :hash, 10, 'indexed')
-                            """)
-                    .param("id", id)
-                    .param("hash", "sha-" + id)
-                    .update();
+                            """).param("id", id).param("hash", "sha-" + id).update();
         }
         int ordinal = 0;
         for (Hit hit : List.of(

@@ -1,11 +1,11 @@
 package com.carddraft.trust;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The injection detector the application builds is the one the settings describe.
@@ -28,8 +28,7 @@ class InjectionDetectorWiringTest {
      */
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(TrustSettings.class)
-    static class TrustSettingsBinding {
-    }
+    static class TrustSettingsBinding {}
 
     private ApplicationContextRunner contextWithOpaqueLength(String length) {
         return new ApplicationContextRunner()

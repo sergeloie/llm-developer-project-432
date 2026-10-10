@@ -13,13 +13,17 @@ import com.carddraft.services.JobSubmissionService;
 public record JobSourcesResponse(String jobId, List<Fragment> context) {
 
     public static JobSourcesResponse from(JobSubmissionService.JobSources sources) {
-        return new JobSourcesResponse(sources.jobId(), sources.context().stream()
-                .map(fragment -> new Fragment(fragment.reference(), fragment.documentId(),
-                        fragment.page(), fragment.section(), fragment.text()))
-                .toList());
+        return new JobSourcesResponse(
+                sources.jobId(),
+                sources.context().stream()
+                        .map(fragment -> new Fragment(
+                                fragment.reference(),
+                                fragment.documentId(),
+                                fragment.page(),
+                                fragment.section(),
+                                fragment.text()))
+                        .toList());
     }
 
-    public record Fragment(String reference, String documentId, String page, String section,
-                           String text) {
-    }
+    public record Fragment(String reference, String documentId, String page, String section, String text) {}
 }

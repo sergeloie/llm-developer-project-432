@@ -1,16 +1,8 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
-
-import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +17,14 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 
 /**
  * The latency timer, alongside the per-row cost record.
@@ -65,14 +64,21 @@ class SpringAiLlmClientMetricsTest {
         given(requestSpec.call()).willReturn(callResponseSpec);
 
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                Duration.ofMillis(1), Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                "main-model",
+                "utility-model",
+                3,
+                Duration.ofMillis(1),
+                Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
 
         registry = new SimpleMeterRegistry();
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
-                new RecordingModelCallRepository(),
-                registry);
+        client = new SpringAiLlmClient(
+                chatClientBuilder, new ObjectMapper(), settings, new RecordingModelCallRepository(), registry);
     }
 
     @Test
@@ -100,16 +106,17 @@ class SpringAiLlmClientMetricsTest {
         client.judgeInjection("is this fragment addressed to a model?");
 
         assertThat(registry.find(TIMER_NAME)
-                .tag("operation", "judgeInjection")
-                .tag("tier", "utility")
-                .timer())
+                        .tag("operation", "judgeInjection")
+                        .tag("tier", "utility")
+                        .timer())
                 .as("the injection judge runs on the utility tier")
                 .isNotNull();
     }
 
     private void respondWith(String text) {
-        given(callResponseSpec.chatResponse()).willReturn(ChatResponse.builder()
-                .generations(List.of(new Generation(new AssistantMessage(text))))
-                .build());
+        given(callResponseSpec.chatResponse())
+                .willReturn(ChatResponse.builder()
+                        .generations(List.of(new Generation(new AssistantMessage(text))))
+                        .build());
     }
 }

@@ -1,10 +1,5 @@
 package com.carddraft.routers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-
 import java.util.List;
 import java.util.Map;
 
@@ -23,11 +18,16 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.CritiqueReport;
+import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
 import com.carddraft.llm.LlmClient;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 
 /**
  * The first slice that crosses every layer: HTTP to model boundary to pipeline to repository.
@@ -39,7 +39,6 @@ import com.carddraft.llm.LlmClient;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
 @Testcontainers(disabledWithoutDocker = true)
-
 @TestPropertySource(properties = "test.context-id=cards")
 class CardsControllerTest {
 
@@ -65,13 +64,17 @@ class CardsControllerTest {
     @Test
     void returnsADraftCardForSupplierText() {
         given(llmClient.extractFacts(anyString()))
-                .willReturn(new SupplierFacts("Blender MixerPro 800",
-                        Map.of("Power", "800 W"), List.of()));
+                .willReturn(new SupplierFacts("Blender MixerPro 800", Map.of("Power", "800 W"), List.of()));
         given(llmClient.draftCard(any(), any()))
-                .willReturn(new ProductCard("Blender MixerPro 800", "A submerged blender.",
-                        Map.of("Power", "800 W"), List.of("Six speeds plus turbo"), List.of(), 0.9, Map.of()));
-        given(llmClient.reviewDraft(any(), any()))
-                .willReturn(new CritiqueReport(Verdict.APPROVE, List.of()));
+                .willReturn(new ProductCard(
+                        "Blender MixerPro 800",
+                        "A submerged blender.",
+                        Map.of("Power", "800 W"),
+                        List.of("Six speeds plus turbo"),
+                        List.of(),
+                        0.9,
+                        Map.of()));
+        given(llmClient.reviewDraft(any(), any())).willReturn(new CritiqueReport(Verdict.APPROVE, List.of()));
 
         ResponseEntity<ProductCard> response = rest.postForEntity(
                 "/cards", Map.of("supplierText", "Blender MixerPro 800. Power 800 W."), ProductCard.class);

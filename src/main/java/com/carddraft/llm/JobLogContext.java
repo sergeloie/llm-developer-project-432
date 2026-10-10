@@ -27,8 +27,7 @@ public final class JobLogContext {
     private static final String MDC_KEY = "job.id";
     private static final ThreadLocal<String> CURRENT = new ThreadLocal<>();
 
-    private JobLogContext() {
-    }
+    private JobLogContext() {}
 
     /**
      * Binds a job to this thread for the duration of the try block.

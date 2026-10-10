@@ -49,12 +49,19 @@ public class SearchService {
             throw new IllegalArgumentException("a retrieval query needs some text; an empty one matches everything");
         }
         return switch (mode) {
-            case VECTOR -> chunks.searchByVector(
-                    embeddingModel.embedQuery(question), filter, settings.limit(), settings.maxVectorDistance());
+            case VECTOR ->
+                chunks.searchByVector(
+                        embeddingModel.embedQuery(question), filter, settings.limit(), settings.maxVectorDistance());
             case WORD -> chunks.searchByText(question, filter, settings.limit());
-            case HYBRID -> chunks.searchHybrid(
-                    embeddingModel.embedQuery(question), question, filter, settings.limit(),
-                    settings.maxVectorDistance(), settings.perListLimit(), settings.rrfK());
+            case HYBRID ->
+                chunks.searchHybrid(
+                        embeddingModel.embedQuery(question),
+                        question,
+                        filter,
+                        settings.limit(),
+                        settings.maxVectorDistance(),
+                        settings.perListLimit(),
+                        settings.rrfK());
         };
     }
 

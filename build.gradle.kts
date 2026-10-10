@@ -1,7 +1,11 @@
+import com.diffplug.gradle.spotless.SpotlessExtension
+
 plugins {
     java
+    checkstyle
     id("org.springframework.boot") version "4.0.8"
     id("io.spring.dependency-management") version "1.1.7"
+    id("com.diffplug.spotless") version "8.10.2"
 }
 
 group = "com.carddraft"
@@ -16,6 +20,13 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+checkstyle {
+    toolVersion = "14.3.0"
+    configFile = file("config/checkstyle/openjdk_checks.xml")
+    configProperties["org.checkstyle.openjdk.suppressionfilter.config"] =
+        rootProject.file("config/checkstyle/suppressions.xml").absolutePath
 }
 
 val springAiBom = "org.springframework.ai:spring-ai-bom:2.0.1"
@@ -99,9 +110,38 @@ tasks.register<JavaExec>("metrics") {
     }
     // The compose stack the harness reads and writes must be up; the ports are not the defaults
     // on this machine, so they are passed through rather than assumed.
-listOf("CARD_DB_URL", "CARD_DB_USER", "CARD_DB_PASSWORD",
-           "CARD_LLM_BASE_URL", "CARD_EMBEDDING_BASEURL",
-           "CARD_TEMPORAL_TARGET").forEach { name ->
+    listOf(
+        "CARD_DB_URL",
+        "CARD_DB_USER",
+        "CARD_DB_PASSWORD",
+        "CARD_LLM_BASE_URL",
+        "CARD_EMBEDDING_BASEURL",
+        "CARD_TEMPORAL_TARGET",
+    ).forEach { name ->
         System.getenv(name)?.let { environment(name, it) }
+    }
+}
+
+// === Guardrail: spotless (root) ===
+// Formats build scripts (*.gradle.kts) with ktlint. Java sources are formatted
+// per-module below. Spotless is authoritative: the Checkstyle configuration in
+// config/checkstyle/openjdk_checks.xml is written to accept Palantir output.
+extensions.configure<SpotlessExtension> {
+    kotlinGradle {
+        ktlint("1.4.0")
+    }
+}
+
+// === Guardrail: spotless (java) ===
+allprojects {
+    plugins.withType<JavaPlugin> {
+        extensions.configure<SpotlessExtension> {
+            java {
+                palantirJavaFormat()
+                // Static imports go to the LAST group, matching the Checkstyle
+                // ImportOrder rule (option=bottom) in config/checkstyle/openjdk_checks.xml.
+                importOrder("java", "javax", "org", "com", "", "\\#")
+            }
+        }
     }
 }

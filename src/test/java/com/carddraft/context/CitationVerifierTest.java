@@ -38,7 +38,8 @@ class CitationVerifierTest {
         Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C2"));
 
         assertThat(verdict.isClean()).isTrue();
-        assertThat(verdict.findings()).singleElement()
+        assertThat(verdict.findings())
+                .singleElement()
                 .extracting(CitationVerifier.Finding::status)
                 .isEqualTo(Status.SUPPORTED);
     }
@@ -54,27 +55,32 @@ class CitationVerifierTest {
      */
     @Test
     void aCitationInTheDisplayedFormResolvesToTheReferenceItWasShownAs() {
-    Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Weight"),
-            Map.of("Power", "[C2]", "Weight", "[C1]"));
+        Verdict verdict =
+                verifier.verify(contextOf(3), Set.of("Power", "Weight"), Map.of("Power", "[C2]", "Weight", "[C1]"));
 
-    assertThat(verdict.isClean()).isTrue();
-    assertThat(verdict.findings()).extracting(CitationVerifier.Finding::reference)
-            .as("and the finding reports the reference, so a reader is not left decoding brackets")
-            .containsExactlyInAnyOrder("C1", "C2");
-}
+        assertThat(verdict.isClean()).isTrue();
+        assertThat(verdict.findings())
+                .extracting(CitationVerifier.Finding::reference)
+                .as("and the finding reports the reference, so a reader is not left decoding brackets")
+                .containsExactlyInAnyOrder("C1", "C2");
+    }
 
-@Test
+    @Test
     void forgivingOneNotationDoesNotMakeTheCheckForgiving() {
-    Verdict verdict = verifier.verify(contextOf(2), Set.of("Power", "Weight", "Model"), Map.of(
-            "Power", "[c1]",
-            "Weight", "[]",
-            "Model", "[ C1 ]"));
+        Verdict verdict = verifier.verify(
+                contextOf(2),
+                Set.of("Power", "Weight", "Model"),
+                Map.of(
+                        "Power", "[c1]",
+                        "Weight", "[]",
+                        "Model", "[ C1 ]"));
 
-    assertThat(verdict.fabricated()).extracting(CitationVerifier.Finding::characteristic)
-            .as("unwrapping the display form is not the same as forgiving a near miss: the case, "
-                    + "an empty reference and a padded one are each still what the model wrote")
-            .containsExactlyInAnyOrder("Power", "Weight", "Model");
-}
+        assertThat(verdict.fabricated())
+                .extracting(CitationVerifier.Finding::characteristic)
+                .as("unwrapping the display form is not the same as forgiving a near miss: the case, "
+                        + "an empty reference and a padded one are each still what the model wrote")
+                .containsExactlyInAnyOrder("Power", "Weight", "Model");
+    }
 
     /**
      * The failure that matters.
@@ -84,15 +90,14 @@ class CitationVerifierTest {
      */
     @Test
     void aCitationBeyondTheContextIsFabricated() {
-    Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C7"));
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C7"));
 
-    assertThat(verdict.isClean()).isFalse();
-    assertThat(verdict.fabricated()).singleElement()
-            .extracting(CitationVerifier.Finding::reference, CitationVerifier.Finding::status)
-            .containsExactly("C7", Status.UNKNOWN_REFERENCE);
-    assertThat(verdict.messages()).singleElement()
-            .asString()
-                .contains("'Power' cites C7");
+        assertThat(verdict.isClean()).isFalse();
+        assertThat(verdict.fabricated())
+                .singleElement()
+                .extracting(CitationVerifier.Finding::reference, CitationVerifier.Finding::status)
+                .containsExactly("C7", Status.UNKNOWN_REFERENCE);
+        assertThat(verdict.messages()).singleElement().asString().contains("'Power' cites C7");
     }
 
     /**
@@ -107,23 +112,24 @@ class CitationVerifierTest {
     void aCitationToARealFragmentOutsideTheContextIsStillAFabrication() {
         AssembledContext context = contextOf(3);
 
-        Verdict verdict = verifier.verifyAgainst(context, Set.of("Power"), Map.of("Power", "C9"),
-                reference -> Set.of("C9").contains(reference));
+        Verdict verdict =
+                verifier.verifyAgainst(context, Set.of("Power"), Map.of("Power", "C9"), reference -> Set.of("C9")
+                        .contains(reference));
 
         assertThat(verdict.isClean()).isFalse();
-        assertThat(verdict.fabricated()).singleElement()
+        assertThat(verdict.fabricated())
+                .singleElement()
                 .extracting(CitationVerifier.Finding::status)
                 .isEqualTo(Status.NOT_IN_CONTEXT);
-        assertThat(verdict.messages()).singleElement()
-                .asString()
-                .contains("exists but was not in the context");
+        assertThat(verdict.messages()).singleElement().asString().contains("exists but was not in the context");
     }
 
     @Test
     void aClaimWithNoSourceAtAllIsNotSupported() {
         Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "  "));
 
-        assertThat(verdict.findings()).singleElement()
+        assertThat(verdict.findings())
+                .singleElement()
                 .extracting(CitationVerifier.Finding::status)
                 .isEqualTo(Status.MISSING);
         assertThat(verdict.fabricated())
@@ -139,14 +145,18 @@ class CitationVerifierTest {
      */
     @Test
     void aSingleFabricatedCitationFailsTheWholeCardAndNamesEveryOffender() {
-        Verdict verdict = verifier.verify(contextOf(4), Set.of("Power", "Volume", "Weight"), Map.of(
-                "Power", "C1",
-                "Volume", "C2",
-                "Weight", "C12"));
+        Verdict verdict = verifier.verify(
+                contextOf(4),
+                Set.of("Power", "Volume", "Weight"),
+                Map.of(
+                        "Power", "C1",
+                        "Volume", "C2",
+                        "Weight", "C12"));
 
         assertThat(verdict.isClean()).isFalse();
         assertThat(verdict.fabricated()).hasSize(1);
-        assertThat(verdict.findings()).as("every claim is reported, supported ones too")
+        assertThat(verdict.findings())
+                .as("every claim is reported, supported ones too")
                 .hasSize(3);
         assertThat(verdict.messages()).hasSize(1);
     }
@@ -188,8 +198,7 @@ class CitationVerifierTest {
                     .isTrue();
         }
 
-        for (String rejected : List.of("[C3", "C3]", "c3", "[c3]", "[ C3 ]", "[]",
-                " C3 ", " C3", "C3 ")) {
+        for (String rejected : List.of("[C3", "C3]", "c3", "[c3]", "[ C3 ]", "[]", " C3 ", " C3", "C3 ")) {
             var card = cardWithSource(rejected);
             assertThat(ResultContract.sourcesProblems(card))
                     .as("the contract rejects " + rejected)
@@ -201,8 +210,13 @@ class CitationVerifierTest {
     }
 
     private static com.carddraft.agents.ProductCard cardWithSource(String reference) {
-        return new com.carddraft.agents.ProductCard("Blender", "A blender.",
-                Map.of("Power", "800 W"), List.of("Fast"), List.of(), 0.9,
+        return new com.carddraft.agents.ProductCard(
+                "Blender",
+                "A blender.",
+                Map.of("Power", "800 W"),
+                List.of("Fast"),
+                List.of(),
+                0.9,
                 Map.of("Power", reference));
     }
 
@@ -219,8 +233,7 @@ class CitationVerifierTest {
      */
     @Test
     void anEmptyContextSupportsNothing() {
-        Verdict verdict = verifier.verify(AssembledContext.empty("job-1"), Set.of("Power"),
-                Map.of("Power", "C1"));
+        Verdict verdict = verifier.verify(AssembledContext.empty("job-1"), Set.of("Power"), Map.of("Power", "C1"));
 
         assertThat(verdict.isClean()).isFalse();
         assertThat(verdict.fabricated()).hasSize(1);
@@ -253,18 +266,23 @@ class CitationVerifierTest {
         AssembledContext stored = new AssembledContext("job-1", contextOf(3).chunks(), 0, 0);
 
         assertThat(stored.references()).containsExactly("C1", "C2", "C3");
-        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C3")).isClean())
+        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C3"))
+                        .isClean())
                 .isTrue();
-        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C4")).isClean())
+        assertThat(verifier.verify(stored, Set.of("Volume"), Map.of("Volume", "C4"))
+                        .isClean())
                 .isFalse();
     }
 
     @Test
     void messagesNameEveryFabricatedClaimForTheReworkPrompt() {
-        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume", "Weight"), Map.of(
-                "Power", "C1",
-                "Volume", "C8",
-                "Weight", "C9"));
+        Verdict verdict = verifier.verify(
+                contextOf(3),
+                Set.of("Power", "Volume", "Weight"),
+                Map.of(
+                        "Power", "C1",
+                        "Volume", "C8",
+                        "Weight", "C9"));
 
         assertThat(verdict.messages())
                 .hasSize(2)
@@ -299,8 +317,7 @@ class CitationVerifierTest {
      */
     @Test
     void aCharacteristicWithNoSourceEntryFailsWithAMissingFinding() {
-        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"),
-                Map.of("Power", "C1"));
+        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"), Map.of("Power", "C1"));
 
         assertThat(verdict.isClean()).isFalse();
         assertThat(verdict.findings())
@@ -318,8 +335,8 @@ class CitationVerifierTest {
      */
     @Test
     void aFullyCoveredCardIsClean() {
-        Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Volume"),
-                Map.of("Power", "C1", "Volume", "C2"));
+        Verdict verdict =
+                verifier.verify(contextOf(3), Set.of("Power", "Volume"), Map.of("Power", "C1", "Volume", "C2"));
 
         assertThat(verdict.isClean()).isTrue();
         assertThat(verdict.findings())

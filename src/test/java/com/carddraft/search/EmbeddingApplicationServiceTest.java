@@ -1,7 +1,5 @@
 package com.carddraft.search;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import com.carddraft.embeddings.EmbeddingModel;
 import com.carddraft.repositories.ChunkSearchRepository;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What the two counts say, which is the only thing anybody reads them for.
@@ -67,8 +67,7 @@ class EmbeddingApplicationServiceTest {
     }
 
     private EmbeddingApplicationService serviceOver(FakeChunks chunks, int batchSize) {
-        return new EmbeddingApplicationService(new FixedWidthModel(), chunks,
-                new IndexingSettings(batchSize, 1000));
+        return new EmbeddingApplicationService(new FixedWidthModel(), chunks, new IndexingSettings(batchSize, 1000));
     }
 
     /** A model that answers whatever width it is asked for, without a server. */
@@ -165,6 +164,5 @@ class EmbeddingApplicationServiceTest {
         private int remaining() {
             return outstanding.values().stream().mapToInt(Integer::intValue).sum();
         }
-
     }
 }

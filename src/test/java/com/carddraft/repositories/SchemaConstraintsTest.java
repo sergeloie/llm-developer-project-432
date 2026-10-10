@@ -1,7 +1,5 @@
 package com.carddraft.repositories;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +10,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The invariants the repository code assumes, held by the database rather than by convention.
@@ -39,8 +39,8 @@ class SchemaConstraintsTest {
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
-        jdbc = JdbcClient.create(new DriverManagerDataSource(
-                DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword()));
+        jdbc = JdbcClient.create(
+                new DriverManagerDataSource(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword()));
     }
 
     @BeforeEach
@@ -105,10 +105,8 @@ class SchemaConstraintsTest {
 
     @Test
     void aNegativeTokenCountIsRejectedByTheDatabase() {
-        assertThatThrownBy(() -> insertModelCall(-1, 0, 0))
-                .isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> insertModelCall(0, -1, 0))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertModelCall(-1, 0, 0)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertModelCall(0, -1, 0)).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -131,17 +129,13 @@ class SchemaConstraintsTest {
                         INSERT INTO chunks (document_id, ordinal, page, section, text)
                         VALUES ('doc-a', 0, 1, 'S', 't')
                         RETURNING id
-                        """)
-                .query(Long.class)
-                .single();
+                        """).query(Long.class).single();
 
         assertThatThrownBy(() -> jdbc.sql("""
                         INSERT INTO job_context_chunks
                             (job_id, position, reference, chunk_id, document_id, text)
                         VALUES ('job-1', 0, 'C1', :chunkId, 'ghost', 't')
-                        """)
-                .param("chunkId", chunkId)
-                .update())
+                        """).param("chunkId", chunkId).update())
                 .as("the retained context may not name a document that does not exist")
                 .isInstanceOf(DataIntegrityViolationException.class);
     }

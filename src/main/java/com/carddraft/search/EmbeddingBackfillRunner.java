@@ -28,9 +28,10 @@ public class EmbeddingBackfillRunner implements ApplicationRunner {
     private final com.carddraft.repositories.DocumentsRepository documents;
     private final IndexingSettings indexing;
 
-    public EmbeddingBackfillRunner(EmbeddingApplicationService embedding,
-                                   com.carddraft.repositories.DocumentsRepository documents,
-                                   IndexingSettings indexing) {
+    public EmbeddingBackfillRunner(
+            EmbeddingApplicationService embedding,
+            com.carddraft.repositories.DocumentsRepository documents,
+            IndexingSettings indexing) {
         this.embedding = embedding;
         this.documents = documents;
         this.indexing = indexing;
@@ -51,7 +52,10 @@ public class EmbeddingBackfillRunner implements ApplicationRunner {
         // sweep would fill in its vectors and leave it still claiming to be mid-parse — which reads
         // as a hang rather than as the success it now is.
         int settled = documents.settleIndexedDocuments();
-        log.info("backfill: embedded {} chunks, {} still pending, {} documents now searchable",
-                embedded, embedding.pendingCount(), settled);
+        log.info(
+                "backfill: embedded {} chunks, {} still pending, {} documents now searchable",
+                embedded,
+                embedding.pendingCount(),
+                settled);
     }
 }

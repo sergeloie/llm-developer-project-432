@@ -1,17 +1,9 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,17 +15,23 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-
-import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.repositories.ModelCallRepository;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * Two-phase sources generation, observed at the transport.
@@ -46,8 +44,7 @@ import com.carddraft.repositories.ModelCallRepository;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SpringAiLlmClientTwoPhaseSourcesTest {
 
-    private static final SupplierFacts FACTS =
-            new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
+    private static final SupplierFacts FACTS = new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
 
     @Mock
     ChatClient.Builder chatClientBuilder;
@@ -78,13 +75,21 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
 
         // Free rates, zero cost for test
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                "main-model",
+                "utility-model",
+                3,
+                java.time.Duration.ofMillis(1),
+                java.time.Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO);
 
         calls = new RecordingCallRepository();
-        client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings, calls,
-                new SimpleMeterRegistry());
+        client = new SpringAiLlmClient(
+                chatClientBuilder, new ObjectMapper(), settings, calls, new SimpleMeterRegistry());
     }
 
     /** Collects what the client recorded, with no expectations of its own. */
@@ -115,7 +120,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
                    "Capacity":"The capacity is 1.5 liters"
                  }}
                 """;
-        
+
         // Given: second response has valid sources with characteristic names as keys (full card)
         String secondResponse = """
                 {"title":"Blender 800","description":"A powerful blender.",
@@ -127,7 +132,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
                    "Capacity":"C2"
                  }}
                 """;
-        
+
         respondWith(firstResponse, secondResponse);
 
         // When: calling draftCardFromContext
@@ -143,12 +148,12 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
 
         // Then: two model calls were made
         verify(requestSpec, times(2)).user(prompts.capture());
-        
+
         // Then: first call was the normal generator prompt
         String firstPrompt = prompts.getAllValues().get(0);
         assertThat(firstPrompt).contains("generator");
         assertThat(firstPrompt).contains("fragments below");
-        
+
         // Then: second call was the repair prompt for sources field
         String secondPrompt = prompts.getAllValues().get(1);
         assertThat(secondPrompt).contains("correcting one field");
@@ -167,7 +172,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
                  "confidence":0.9,
                  "sources":{"Power":"This blender has a power of 800 W"}}
                 """;
-        
+
         // Given: second response fixes the sources
         String secondResponse = """
                 {"title":"Blender 800","description":"A powerful blender.",
@@ -176,7 +181,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
                  "confidence":0.9,
                  "sources":{"Power":"C1"}}
                 """;
-        
+
         respondWith(firstResponse, secondResponse);
 
         // When: calling draftCardFromContext
@@ -185,7 +190,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
 
         // Then: two model calls were made (generation plus the pointwise sources repair)
         verify(requestSpec, times(2)).user(prompts.capture());
-        
+
         // Then: the result has correct sources from second call
         assertThat(card.title()).isEqualTo("Blender 800");
         assertThat(card.sources()).containsEntry("Power", "C1");
@@ -251,18 +256,16 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
         } else {
             // For multiple responses, track call count and return appropriate response
             final int[] callCount = {0};
-            given(callResponseSpec.chatResponse())
-                    .willAnswer(invocation -> {
-                        int count = callCount[0]++;
-                        return chatResponse(responses[Math.min(count, responses.length - 1)]);
-                    });
+            given(callResponseSpec.chatResponse()).willAnswer(invocation -> {
+                int count = callCount[0]++;
+                return chatResponse(responses[Math.min(count, responses.length - 1)]);
+            });
         }
     }
 
     private ChatResponse chatResponse(String content) {
         return new ChatResponse(List.of(new Generation(
-                new AssistantMessage(content),
-                null // No metadata needed for this test
-        )));
+                new AssistantMessage(content), null // No metadata needed for this test
+                )));
     }
 }

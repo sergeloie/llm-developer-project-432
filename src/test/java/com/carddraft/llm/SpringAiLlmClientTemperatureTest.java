@@ -1,12 +1,5 @@
 package com.carddraft.llm;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.verify;
-
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
@@ -27,11 +20,17 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.carddraft.agents.SupplierFacts;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
-import com.carddraft.agents.SupplierFacts;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 
 /**
  * The temperature reaches the model.
@@ -44,8 +43,7 @@ import com.carddraft.agents.SupplierFacts;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SpringAiLlmClientTemperatureTest {
 
-    private static final SupplierFacts FACTS =
-            new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
+    private static final SupplierFacts FACTS = new SupplierFacts("Blender", Map.of("Power", "800 W"), List.of());
 
     @Mock
     ChatClient.Builder chatClientBuilder;
@@ -70,13 +68,14 @@ class SpringAiLlmClientTemperatureTest {
         given(requestSpec.options(any(ChatOptions.Builder.class))).willReturn(requestSpec);
         given(requestSpec.call()).willReturn(callResponseSpec);
 
-        given(callResponseSpec.chatResponse()).willReturn(ChatResponse.builder()
-                .generations(List.of(new Generation(new AssistantMessage("""
+        given(callResponseSpec.chatResponse())
+                .willReturn(ChatResponse.builder()
+                        .generations(List.of(new Generation(new AssistantMessage("""
                         {"title":"Blender 800","description":"A blender.",
                          "characteristics":{"Power":"800 W"},"benefits":["Quiet"],
                          "missingFields":[],"confidence":0.9,"sources":{}}
                         """))))
-                .build());
+                        .build());
     }
 
     @Test
@@ -88,16 +87,28 @@ class SpringAiLlmClientTemperatureTest {
         verify(requestSpec, atLeastOnce()).options(options.capture());
         assertThat(options.getAllValues())
                 .as("every request carries the configured temperature")
-                .allSatisfy(builder -> assertThat(builder.build().getTemperature()).isEqualTo(0.7));
+                .allSatisfy(
+                        builder -> assertThat(builder.build().getTemperature()).isEqualTo(0.7));
     }
 
     private SpringAiLlmClient clientWithTemperature(BigDecimal temperature) {
         LlmSettings settings = new LlmSettings(
-                "main-model", "utility-model", 3,
-                Duration.ofMillis(1), Duration.ofMillis(2), 2,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, temperature);
+                "main-model",
+                "utility-model",
+                3,
+                Duration.ofMillis(1),
+                Duration.ofMillis(2),
+                2,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                temperature);
 
-        return new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
+        return new SpringAiLlmClient(
+                chatClientBuilder,
+                new ObjectMapper(),
+                settings,
                 new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }

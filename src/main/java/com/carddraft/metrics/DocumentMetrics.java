@@ -33,34 +33,61 @@ import java.util.Map;
  *                            records by job. Zero for a local model at zero prices — and that zero
  *                            is measured, not assumed: the rows exist whether the prices do or not.
  */
-public record DocumentMetrics(String document,
-                               double characteristicMatch,
-                               double citationPrecision,
-                               double sourceSupport,
-                               int characteristicTotal,
-                               List<String> missedCharacteristics,
-                               List<String> unsupportedClaims,
-                               String supportUnavailableReason,
-                               BigDecimal generationCost) {
+public record DocumentMetrics(
+        String document,
+        double characteristicMatch,
+        double citationPrecision,
+        double sourceSupport,
+        int characteristicTotal,
+        List<String> missedCharacteristics,
+        List<String> unsupportedClaims,
+        String supportUnavailableReason,
+        BigDecimal generationCost) {
 
     public DocumentMetrics {
         missedCharacteristics = missedCharacteristics == null ? List.of() : List.copyOf(missedCharacteristics);
         unsupportedClaims = unsupportedClaims == null ? List.of() : List.copyOf(unsupportedClaims);
     }
 
-    public DocumentMetrics(String document, double characteristicMatch, double citationPrecision,
-                            double sourceSupport, int characteristicTotal,
-                            List<String> missedCharacteristics, List<String> unsupportedClaims) {
-        this(document, characteristicMatch, citationPrecision, sourceSupport, characteristicTotal,
-                missedCharacteristics, unsupportedClaims, null, BigDecimal.ZERO);
+    public DocumentMetrics(
+            String document,
+            double characteristicMatch,
+            double citationPrecision,
+            double sourceSupport,
+            int characteristicTotal,
+            List<String> missedCharacteristics,
+            List<String> unsupportedClaims) {
+        this(
+                document,
+                characteristicMatch,
+                citationPrecision,
+                sourceSupport,
+                characteristicTotal,
+                missedCharacteristics,
+                unsupportedClaims,
+                null,
+                BigDecimal.ZERO);
     }
 
-    public DocumentMetrics(String document, double characteristicMatch, double citationPrecision,
-                            double sourceSupport, int characteristicTotal,
-                            List<String> missedCharacteristics, List<String> unsupportedClaims,
-                            String supportUnavailableReason) {
-        this(document, characteristicMatch, citationPrecision, sourceSupport, characteristicTotal,
-                missedCharacteristics, unsupportedClaims, supportUnavailableReason, BigDecimal.ZERO);
+    public DocumentMetrics(
+            String document,
+            double characteristicMatch,
+            double citationPrecision,
+            double sourceSupport,
+            int characteristicTotal,
+            List<String> missedCharacteristics,
+            List<String> unsupportedClaims,
+            String supportUnavailableReason) {
+        this(
+                document,
+                characteristicMatch,
+                citationPrecision,
+                sourceSupport,
+                characteristicTotal,
+                missedCharacteristics,
+                unsupportedClaims,
+                supportUnavailableReason,
+                BigDecimal.ZERO);
     }
 
     /** Whether the support number is a measurement rather than the absence of one. */

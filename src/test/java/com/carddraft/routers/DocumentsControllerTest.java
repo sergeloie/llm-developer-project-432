@@ -1,10 +1,5 @@
 package com.carddraft.routers;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -12,6 +7,11 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.carddraft.documents.ChunkingSettings;
 import com.carddraft.documents.DocumentService;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * The upload refusal names the formats the service actually accepts.
@@ -40,13 +40,12 @@ class DocumentsControllerTest {
 
     @Test
     void aFileTheServiceRejectsNeverReachesRegistration() throws Exception {
-        assertThatThrownBy(() -> controller.upload(file("supplier.exe")))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> controller.upload(file("supplier.exe"))).isInstanceOf(IllegalArgumentException.class);
 
         verify(documents).supports("supplier.exe");
     }
 
     private static MockMultipartFile file(String name) {
-        return new MockMultipartFile("file", name, null, new byte[]{1, 2, 3});
+        return new MockMultipartFile("file", name, null, new byte[] {1, 2, 3});
     }
 }

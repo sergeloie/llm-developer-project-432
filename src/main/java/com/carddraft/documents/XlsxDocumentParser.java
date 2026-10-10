@@ -57,8 +57,7 @@ public class XlsxDocumentParser implements DocumentParser {
         }
 
         if (units.isEmpty()) {
-            throw new DocumentRejectedException(
-                    "the workbook has column headers but no data rows", null);
+            throw new DocumentRejectedException("the workbook has column headers but no data rows", null);
         }
         return units;
     }
@@ -72,8 +71,8 @@ public class XlsxDocumentParser implements DocumentParser {
         List<String> headers = cellValues(header, formatter);
         if (headers.isEmpty() || headers.stream().allMatch(String::isBlank)) {
             throw new DocumentRejectedException(
-                    "sheet '" + sheet.getSheetName() + "' has an empty first row, "
-                            + "so the columns cannot be named", null);
+                    "sheet '" + sheet.getSheetName() + "' has an empty first row, " + "so the columns cannot be named",
+                    null);
         }
 
         for (int rowIndex = header.getRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -100,8 +99,11 @@ public class XlsxDocumentParser implements DocumentParser {
             if (value.isEmpty()) {
                 continue;
             }
-            sentence.append(' ').append(headers.get(column).strip().toLowerCase())
-                    .append(' ').append(value).append(';');
+            sentence.append(' ')
+                    .append(headers.get(column).strip().toLowerCase())
+                    .append(' ')
+                    .append(value)
+                    .append(';');
         }
         String text = normaliser.normalise(sentence.toString());
         return text.endsWith(";") ? text.substring(0, text.length() - 1) : text;

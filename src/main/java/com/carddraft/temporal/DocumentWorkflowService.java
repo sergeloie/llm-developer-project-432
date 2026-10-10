@@ -65,8 +65,7 @@ public class DocumentWorkflowService {
 
     public boolean exists(String documentId) {
         try {
-            stubFor(documentId).getResultAsync(0, TimeUnit.MILLISECONDS,
-                    DocumentActivities.DocumentResult.class);
+            stubFor(documentId).getResultAsync(0, TimeUnit.MILLISECONDS, DocumentActivities.DocumentResult.class);
             return true;
         } catch (WorkflowNotFoundException notStarted) {
             return false;
@@ -74,8 +73,7 @@ public class DocumentWorkflowService {
     }
 
     private WorkflowStub stubFor(String documentId) {
-        return WorkflowStub.fromTyped(
-                client.newWorkflowStub(DocumentWorkflow.class, workflowIdFor(documentId)));
+        return WorkflowStub.fromTyped(client.newWorkflowStub(DocumentWorkflow.class, workflowIdFor(documentId)));
     }
 
     private static String workflowIdFor(String documentId) {

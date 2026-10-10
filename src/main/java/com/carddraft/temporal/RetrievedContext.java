@@ -10,8 +10,8 @@ import java.util.List;
  * person with a reason, and the workflow can only make that decision if the reason crosses
  * the step boundary with the context. A bare string would leave the escalation behind.
  */
-public record RetrievedContext(String contextText, List<String> excluded, List<String> masked,
-                               boolean escalated, String escalationReason) {
+public record RetrievedContext(
+        String contextText, List<String> excluded, List<String> masked, boolean escalated, String escalationReason) {
 
     public RetrievedContext {
         excluded = excluded == null ? List.of() : List.copyOf(excluded);

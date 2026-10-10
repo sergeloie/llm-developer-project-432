@@ -55,9 +55,9 @@ public record Finding(Kind kind, String masked, String excerpt, int position) {
             }
             return findings.stream()
                     .collect(java.util.stream.Collectors.groupingBy(
-                            f -> f.kind().name(), java.util.LinkedHashMap::new,
-                            java.util.stream.Collectors.counting()))
-                    .entrySet().stream()
+                            f -> f.kind().name(), java.util.LinkedHashMap::new, java.util.stream.Collectors.counting()))
+                    .entrySet()
+                    .stream()
                     .map(entry -> entry.getValue() + " x " + entry.getKey())
                     .reduce((a, b) -> a + ", " + b)
                     .orElse("nothing found");

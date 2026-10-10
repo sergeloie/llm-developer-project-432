@@ -33,8 +33,7 @@ public class CardsController {
         this.pipeline = pipeline;
     }
 
-    public record GenerateCardRequest(String supplierText) {
-    }
+    public record GenerateCardRequest(String supplierText) {}
 
     @PostMapping
     @ResponseStatus(HttpStatus.OK)

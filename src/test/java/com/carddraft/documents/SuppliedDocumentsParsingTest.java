@@ -1,8 +1,5 @@
 package com.carddraft.documents;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +11,9 @@ import org.junit.jupiter.api.condition.EnabledIf;
 
 import com.carddraft.agents.Chunk;
 import com.carddraft.agents.StructuralUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The parsers against the supplied documents, which are the fixtures.
@@ -55,7 +55,8 @@ class SuppliedDocumentsParsingTest {
 
         assertThat(units).isNotEmpty();
         assertThat(units).allSatisfy(unit -> assertThat(unit.page()).isGreaterThanOrEqualTo(1));
-        assertThat(units).extracting(StructuralUnit::text)
+        assertThat(units)
+                .extracting(StructuralUnit::text)
                 .filteredOn(text -> !text.isBlank())
                 .isNotEmpty();
     }
@@ -64,7 +65,8 @@ class SuppliedDocumentsParsingTest {
     void thePassportMentionsItsArticleNumberSomewhere() {
         List<StructuralUnit> units = pdf.parse(read("blender_passport.pdf"));
 
-        assertThat(units).extracting(StructuralUnit::text)
+        assertThat(units)
+                .extracting(StructuralUnit::text)
                 .as("a passport states its own article number; if parsing lost it, retrieval "
                         + "would have nothing to match an article query against")
                 .anyMatch(text -> text.contains("BLD-") || text.contains("800"));
@@ -85,7 +87,8 @@ class SuppliedDocumentsParsingTest {
         List<StructuralUnit> units = pdf.parse(read("kettle_manual.pdf"));
 
         assertThat(units).isNotEmpty();
-        assertThat(units).extracting(StructuralUnit::text)
+        assertThat(units)
+                .extracting(StructuralUnit::text)
                 .as("the injection text is document content; screening it is a later step, and "
                         + "hiding it here would mean the defence was never exercised")
                 .anyMatch(text -> text.toLowerCase().contains("инструкц"));
@@ -96,10 +99,14 @@ class SuppliedDocumentsParsingTest {
         List<StructuralUnit> units = docx.parse(read("blender_kp.docx"));
 
         assertThat(units).isNotEmpty();
-        assertThat(units).extracting(StructuralUnit::section)
+        assertThat(units)
+                .extracting(StructuralUnit::section)
                 .as("a heading delimits a section, and the section is what a citation points at")
-                .containsAnyElementsOf(
-                        units.stream().map(StructuralUnit::section).distinct().filter(s -> !"General".equals(s)).toList());
+                .containsAnyElementsOf(units.stream()
+                        .map(StructuralUnit::section)
+                        .distinct()
+                        .filter(s -> !"General".equals(s))
+                        .toList());
     }
 
     @Test
@@ -118,11 +125,11 @@ class SuppliedDocumentsParsingTest {
         assertThat(units).allSatisfy(unit -> assertThat(unit.table())
                 .as("a specification row must be marked so the chunker never splits it")
                 .isTrue());
-        assertThat(units).extracting(StructuralUnit::text)
+        assertThat(units)
+                .extracting(StructuralUnit::text)
                 .as("'article: parameter value; parameter value' is what a search can match")
                 .allMatch(text -> text.contains(":"));
-        assertThat(units).extracting(StructuralUnit::text)
-                .anyMatch(text -> text.startsWith("KTL-"));
+        assertThat(units).extracting(StructuralUnit::text).anyMatch(text -> text.startsWith("KTL-"));
     }
 
     @Test
@@ -132,7 +139,8 @@ class SuppliedDocumentsParsingTest {
         List<Chunk> chunks = chunker.chunk("doc-1", units);
 
         assertThat(chunks).hasSameSizeAs(units);
-        assertThat(chunks).extracting(Chunk::text)
+        assertThat(chunks)
+                .extracting(Chunk::text)
                 .as("each chunk text must be exactly one whole row")
                 .allMatch(text -> text.contains(":"));
     }
@@ -140,12 +148,15 @@ class SuppliedDocumentsParsingTest {
     @Test
     void aLongPassageIsSlicedWithOverlapSoBoundaryStatementsSurvive() {
         String paragraph = java.util.stream.IntStream.range(0, 1200)
-                .mapToObj(i -> "w" + i).reduce((a, b) -> a + " " + b).orElseThrow();
+                .mapToObj(i -> "w" + i)
+                .reduce((a, b) -> a + " " + b)
+                .orElseThrow();
 
-        List<Chunk> chunks = chunker.chunk("doc-1",
-                StructuralUnit.prose(1, "Characteristics", paragraph));
+        List<Chunk> chunks = chunker.chunk("doc-1", StructuralUnit.prose(1, "Characteristics", paragraph));
 
-        assertThat(chunks.size()).as("1200 words needs several slices at 1200 characters").isGreaterThan(1);
+        assertThat(chunks.size())
+                .as("1200 words needs several slices at 1200 characters")
+                .isGreaterThan(1);
         assertThat(chunks).allSatisfy(chunk -> assertThat(chunk.text().length()).isLessThanOrEqualTo(1200));
         assertThat(chunks.get(0).text()).isNotEqualTo(chunks.get(1).text());
         String firstTail = chunks.get(0).text();
@@ -197,9 +208,8 @@ class SuppliedDocumentsParsingTest {
 
         List<String> kept = normaliser.dropFurniture(threePages);
 
-        assertThat(kept)
-                .as("the repeated header must be gone from every page")
-                .allSatisfy(page -> assertThat(page).doesNotContain("Header of the document"));
+        assertThat(kept).as("the repeated header must be gone from every page").allSatisfy(page -> assertThat(page)
+                .doesNotContain("Header of the document"));
         assertThat(kept)
                 .as("the body of every page must survive")
                 .filteredOn(page -> !page.isBlank())

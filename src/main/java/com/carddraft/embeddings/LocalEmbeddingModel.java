@@ -49,7 +49,8 @@ public class LocalEmbeddingModel implements EmbeddingModel {
 
     @Override
     public List<List<Double>> embedDocuments(List<Document> documents) {
-        return embedBatch(documents.stream().map(d -> documentSide(d.text(), d.title())).toList());
+        return embedBatch(
+                documents.stream().map(d -> documentSide(d.text(), d.title())).toList());
     }
 
     @Override
@@ -92,8 +93,8 @@ public class LocalEmbeddingModel implements EmbeddingModel {
         for (Embedding embedding : response.getResults()) {
             Integer index = embedding.getIndex();
             if (index == null || index < 0 || index >= vectors.size()) {
-                throw new IllegalStateException("the embedding response carried index " + index
-                        + " for a request of " + inputs.size() + " inputs");
+                throw new IllegalStateException("the embedding response carried index " + index + " for a request of "
+                        + inputs.size() + " inputs");
             }
             float[] output = embedding.getOutput();
             vectors.set(index, output == null ? List.of() : toVector(output));

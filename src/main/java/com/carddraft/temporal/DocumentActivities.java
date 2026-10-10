@@ -35,6 +35,5 @@ public interface DocumentActivities {
      *
      * @param chunkCount zero when the document was refused, and the reason says why
      */
-    record DocumentResult(String documentId, String state, int chunkCount, String reason) {
-    }
+    record DocumentResult(String documentId, String state, int chunkCount, String reason) {}
 }

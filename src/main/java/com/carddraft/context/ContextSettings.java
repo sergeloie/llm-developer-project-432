@@ -1,9 +1,10 @@
 package com.carddraft.context;
 
-import jakarta.validation.constraints.Min;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
 
 /**
  * The context budget.
@@ -21,8 +22,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.context")
 public record ContextSettings(
-
         @DefaultValue("12") @Min(1) int maxChunks,
 
-        @DefaultValue("12000") @Min(1) int maxCharacters) {
-}
+        @DefaultValue("12000") @Min(1) int maxCharacters) {}

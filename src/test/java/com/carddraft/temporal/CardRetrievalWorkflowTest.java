@@ -1,8 +1,5 @@
 package com.carddraft.temporal;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,15 +11,18 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.carddraft.agents.ReviewIssue;
+import com.carddraft.context.AssembledContext;
+import com.carddraft.context.CitationVerifier;
+import com.carddraft.context.ContextChunk;
+
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 
-import com.carddraft.agents.ReviewIssue;
-import com.carddraft.context.AssembledContext;
-import com.carddraft.context.CitationVerifier;
-import com.carddraft.context.ContextChunk;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * The retrieval branch: retrieve, generate from fragments, and refuse a card that cites something
@@ -75,11 +75,9 @@ class CardRetrievalWorkflowTest {
         activities.cite("C1");
         String workflowId = start("job-clean", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision".equals(statusOf(workflowId)));
+        await().atMost(Duration.ofSeconds(10)).until(() -> "awaiting human decision".equals(statusOf(workflowId)));
 
-        assertThat(activities.statuses)
-                .containsSubsequence("retrieving", "generating", "reviewing", "awaiting_human");
+        assertThat(activities.statuses).containsSubsequence("retrieving", "generating", "reviewing", "awaiting_human");
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
 
@@ -101,11 +99,9 @@ class CardRetrievalWorkflowTest {
         activities.cite("C9");
         String workflowId = start("job-fabricated", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> activities.generateFromContextCalls.get() >= 2);
+        await().atMost(Duration.ofSeconds(10)).until(() -> activities.generateFromContextCalls.get() >= 2);
 
-        List<ReviewIssue> lastRound = activities.contextIssuesSeen.get(
-                activities.contextIssuesSeen.size() - 1);
+        List<ReviewIssue> lastRound = activities.contextIssuesSeen.get(activities.contextIssuesSeen.size() - 1);
         assertThat(activities.contextIssuesSeen)
                 .as("the first round has nothing to fix; the second is told which claim cited what")
                 .hasSizeGreaterThanOrEqualTo(2);
@@ -118,21 +114,20 @@ class CardRetrievalWorkflowTest {
         resultOf(workflowId);
     }
 
-/**
- * A second fabrication goes to a person, and stops costing generations.
- *
- * <p>One rework and then a human. A model that cited three fragments correctly and invented a
- * fourth has a systematic problem, and another round produces another fabrication of the same
- * shape — so the loop stops rather than spending a generation to arrive at a card nobody trusts.
- */
+    /**
+     * A second fabrication goes to a person, and stops costing generations.
+     *
+     * <p>One rework and then a human. A model that cited three fragments correctly and invented a
+     * fourth has a systematic problem, and another round produces another fabrication of the same
+     * shape — so the loop stops rather than spending a generation to arrive at a card nobody trusts.
+     */
     @Test
     void aSecondFabricatedCitationGoesToAHumanInsteadOfTryingAgain() {
         activities.cite("C9");
         String workflowId = start("job-repeat", 5);
 
         await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision after citation failures"
-                        .equals(statusOf(workflowId)));
+                .until(() -> "awaiting human decision after citation failures".equals(statusOf(workflowId)));
 
         assertThat(activities.generateFromContextCalls.get())
                 .as("one attempt, one rework, and then a person")
@@ -154,14 +149,13 @@ class CardRetrievalWorkflowTest {
         activities.rejectReviewWith("the description promises quiet operation and no fragment says so");
         String workflowId = start("job-reviewer", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> activities.generateFromContextCalls.get() >= 2);
+        await().atMost(Duration.ofSeconds(10)).until(() -> activities.generateFromContextCalls.get() >= 2);
 
         assertThat(activities.contextIssuesSeen)
                 .as("the reviewer's words reach the model, not just a rejection flag")
                 .isNotEmpty()
-                .anySatisfy(round -> assertThat(round)
-                        .anyMatch(issue -> issue.asFeedback().contains("quiet operation")));
+                .anySatisfy(round ->
+                        assertThat(round).anyMatch(issue -> issue.asFeedback().contains("quiet operation")));
 
         client.newWorkflowStub(CardWorkflow.class, workflowId).approve();
         resultOf(workflowId);
@@ -180,14 +174,12 @@ class CardRetrievalWorkflowTest {
         String workflowId = start("job-escalated", 3);
 
         await().atMost(Duration.ofSeconds(10))
-                .until(() -> "awaiting human decision after trust escalation"
-                        .equals(statusOf(workflowId)));
+                .until(() -> "awaiting human decision after trust escalation".equals(statusOf(workflowId)));
 
         assertThat(activities.generateFromContextCalls.get())
                 .as("no generation runs on an escalated document")
                 .isZero();
-        assertThat(activities.statuses)
-                .containsSubsequence("retrieving", "awaiting_human");
+        assertThat(activities.statuses).containsSubsequence("retrieving", "awaiting_human");
 
         // An approval that reaches the workflow another way than the guarded endpoint must not
         // record a success with an empty draft: there was never a card to approve.
@@ -205,11 +197,9 @@ class CardRetrievalWorkflowTest {
         activities.cite("C1");
         String workflowId = start("job-docs", 3);
 
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> activities.retrieveCalls.get() >= 1);
+        await().atMost(Duration.ofSeconds(10)).until(() -> activities.retrieveCalls.get() >= 1);
 
-        assertThat(activities.hintsSeen)
-                .containsExactly("a 1.7 litre kettle");
+        assertThat(activities.hintsSeen).containsExactly("a 1.7 litre kettle");
         assertThat(activities.documentIdsSeen)
                 .as("retrieval is narrowed to what the caller chose, or the card cites the wrong document")
                 .containsExactly(List.of("doc-kettle"));
@@ -224,8 +214,8 @@ class CardRetrievalWorkflowTest {
                 .setTaskQueue("card-drafting")
                 .build();
         CardWorkflow workflow = client.newWorkflowStub(CardWorkflow.class, options);
-        io.temporal.client.WorkflowStub.fromTyped(workflow).start(new WorkflowRequest(
-                workflowId, "", maxRounds, "a 1.7 litre kettle", List.of("doc-kettle")));
+        io.temporal.client.WorkflowStub.fromTyped(workflow)
+                .start(new WorkflowRequest(workflowId, "", maxRounds, "a 1.7 litre kettle", List.of("doc-kettle")));
         return workflowId;
     }
 
@@ -235,8 +225,7 @@ class CardRetrievalWorkflowTest {
 
     private WorkflowResult resultOf(String workflowId) {
         try {
-            return io.temporal.client.WorkflowStub
-                    .fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId))
+            return io.temporal.client.WorkflowStub.fromTyped(client.newWorkflowStub(CardWorkflow.class, workflowId))
                     .getResult(10, java.util.concurrent.TimeUnit.SECONDS, WorkflowResult.class);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new AssertionError("workflow " + workflowId + " did not finish in time", e);
@@ -253,10 +242,14 @@ class CardRetrievalWorkflowTest {
     static class CitationActivities implements CardActivities {
 
         /** What retrieval assembled and retained, in the shape verification reads it back. */
-        private static final AssembledContext SHOWN = new AssembledContext("job", List.of(
-                new ContextChunk("C1", 101L, "doc-kettle", 1, "Characteristics", "Capacity 1.7 l"),
-                new ContextChunk("C2", 102L, "doc-kettle", 1, "Characteristics", "Power 2200 W"),
-                new ContextChunk("C3", 103L, "doc-kettle", 2, "Care", "Descale monthly")), 0, 0);
+        private static final AssembledContext SHOWN = new AssembledContext(
+                "job",
+                List.of(
+                        new ContextChunk("C1", 101L, "doc-kettle", 1, "Characteristics", "Capacity 1.7 l"),
+                        new ContextChunk("C2", 102L, "doc-kettle", 1, "Characteristics", "Power 2200 W"),
+                        new ContextChunk("C3", 103L, "doc-kettle", 2, "Care", "Descale monthly")),
+                0,
+                0);
 
         private final CitationVerifier verifier = new CitationVerifier();
 
@@ -302,31 +295,29 @@ class CardRetrievalWorkflowTest {
         }
 
         @Override
-        public synchronized RetrievedContext retrieveAndAssemble(String jobId, String productHint,
-                                                                 List<String> documentIds) {
+        public synchronized RetrievedContext retrieveAndAssemble(
+                String jobId, String productHint, List<String> documentIds) {
             retrieveCalls.incrementAndGet();
             hintsSeen.add(productHint);
             documentIdsSeen.add(List.copyOf(documentIds));
             if (escalationReason != null) {
-                return new RetrievedContext("", List.of("C1", "C2", "C3"), List.of(),
-                        true, escalationReason);
+                return new RetrievedContext("", List.of("C1", "C2", "C3"), List.of(), true, escalationReason);
             }
             return RetrievedContext.clean("[C1] Characteristics — Capacity 1.7 l");
         }
 
         @Override
-        public synchronized String generateFromContext(String jobId, String contextText,
-                                                       List<ReviewIssue> issues) {
+        public synchronized String generateFromContext(String jobId, String contextText, List<ReviewIssue> issues) {
             generateFromContextCalls.incrementAndGet();
             contextIssuesSeen.add(List.copyOf(issues));
             return "{\"title\":\"kettle\",\"sources\":{\"Power\":\"" + citation + "\"}}";
         }
 
         @Override
-        public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText,
-                                                                   String draftJson) {
-            return new ReviewOutcome(reviewerIssue == null, reviewerIssue == null
-                    ? List.of() : List.of(new ReviewIssue("Power", reviewerIssue)));
+        public synchronized ReviewOutcome reviewCardAgainstContext(String jobId, String contextText, String draftJson) {
+            return new ReviewOutcome(
+                    reviewerIssue == null,
+                    reviewerIssue == null ? List.of() : List.of(new ReviewIssue("Power", reviewerIssue)));
         }
 
         /**
@@ -338,10 +329,9 @@ class CardRetrievalWorkflowTest {
          */
         @Override
         public synchronized CitationCheck checkCitations(String jobId, String draftJson) {
-            CitationVerifier.Verdict verdict = verifier.verify(SHOWN, Set.of("Power"),
-                    Map.of("Power", citation));
-            return new CitationCheck(verdict.isClean(), verdict.messages(),
-                    verdict.fabricated().size(), 0);
+            CitationVerifier.Verdict verdict = verifier.verify(SHOWN, Set.of("Power"), Map.of("Power", citation));
+            return new CitationCheck(
+                    verdict.isClean(), verdict.messages(), verdict.fabricated().size(), 0);
         }
 
         @Override

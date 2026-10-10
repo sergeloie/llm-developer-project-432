@@ -52,8 +52,10 @@ public class MetricsReportWriter {
         out.append("| document | cost |\n");
         out.append("|---|---|\n");
         for (DocumentMetrics metrics : report.perDocument()) {
-            out.append("| ").append(metrics.document())
-                    .append(" | ").append(metrics.generationCost().toPlainString())
+            out.append("| ")
+                    .append(metrics.document())
+                    .append(" | ")
+                    .append(metrics.generationCost().toPlainString())
                     .append(" |\n");
         }
         out.append("| total | ").append(report.totalCost().toPlainString()).append(" |\n\n");
@@ -76,7 +78,9 @@ public class MetricsReportWriter {
     }
 
     private String supportRow(MetricsReport report) {
-        long supportCovered = report.perDocument().stream().filter(DocumentMetrics::supportMeasured).count();
+        long supportCovered = report.perDocument().stream()
+                .filter(DocumentMetrics::supportMeasured)
+                .count();
         return report.perDocument().stream().anyMatch(m -> !m.supportMeasured())
                 ? "| " + Metric.SOURCE_SUPPORT.label() + " (estimate) | not measured for "
                         + (report.perDocument().size() - supportCovered) + " of "
@@ -90,13 +94,18 @@ public class MetricsReportWriter {
         out.append("| document | match | precision | support | judged | weakest |\n");
         out.append("|---|---|---|---|---|---|\n");
         for (DocumentMetrics metrics : report.perDocument()) {
-            out.append("| ").append(metrics.document())
-                    .append(" | ").append(percent(metrics.characteristicMatch()))
-                    .append(" | ").append(percent(metrics.citationPrecision()))
-                    .append(" | ").append(metrics.supportMeasured()
-                            ? percent(metrics.sourceSupport()) : "not measured")
-                    .append(" | ").append(metrics.characteristicTotal())
-                    .append(" | ").append(metrics.weakestMetric())
+            out.append("| ")
+                    .append(metrics.document())
+                    .append(" | ")
+                    .append(percent(metrics.characteristicMatch()))
+                    .append(" | ")
+                    .append(percent(metrics.citationPrecision()))
+                    .append(" | ")
+                    .append(metrics.supportMeasured() ? percent(metrics.sourceSupport()) : "not measured")
+                    .append(" | ")
+                    .append(metrics.characteristicTotal())
+                    .append(" | ")
+                    .append(metrics.weakestMetric())
                     .append(" |\n");
         }
         out.append('\n');

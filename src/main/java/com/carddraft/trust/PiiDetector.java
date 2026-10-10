@@ -52,12 +52,10 @@ public class PiiDetector {
      */
     private static final Pattern PHONE = Pattern.compile("\\+?\\d[\\d\\s-]{8,17}\\d");
 
-    private static final Pattern EMAIL = Pattern.compile(
-            "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+    private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
 
     /** A card number, as its digits with spaces or dashes removed. */
-    private static final Pattern CARD = Pattern.compile(
-            "(?<![\\d])(?:\\d[ -]?){12,18}\\d(?![\\d])");
+    private static final Pattern CARD = Pattern.compile("(?<![\\d])(?:\\d[ -]?){12,18}\\d(?![\\d])");
 
     /**
      * The label a kind is replaced with.
@@ -90,16 +88,19 @@ public class PiiDetector {
         // detectors first means they get their chance to recognise themselves; the wide phone rule
         // only ever sees text that is genuinely not one of them.
         masked = apply(masked, EMAIL, Finding.Kind.EMAIL, value -> true, findings);
-        masked = apply(masked, TAXPAYER, Finding.Kind.TAXPAYER_NUMBER,
-                PiiDetector::hasValidTaxpayerChecksum, findings);
+        masked = apply(masked, TAXPAYER, Finding.Kind.TAXPAYER_NUMBER, PiiDetector::hasValidTaxpayerChecksum, findings);
         masked = apply(masked, CARD, Finding.Kind.CARD_NUMBER, PiiDetector::passesLuhn, findings);
         masked = apply(masked, PHONE, Finding.Kind.PHONE, PiiDetector::isProbablyPhone, findings);
 
         return new Finding.Report(findings, masked);
     }
 
-    private String apply(String text, Pattern pattern, Finding.Kind kind,
-                         java.util.function.Predicate<String> accept, List<Finding> findings) {
+    private String apply(
+            String text,
+            Pattern pattern,
+            Finding.Kind kind,
+            java.util.function.Predicate<String> accept,
+            List<Finding> findings) {
         Matcher matcher = pattern.matcher(text);
         StringBuffer out = new StringBuffer();
 
@@ -197,7 +198,7 @@ public class PiiDetector {
         return (sum + check) % 10 == 0;
     }
 
-/**
+    /**
      * Whether a candidate is a phone number rather than a specification.
      *
      * <p>Three checks, each learned from something real in supplier documents.

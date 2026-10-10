@@ -23,8 +23,10 @@ public class DocumentActivitiesImpl implements DocumentActivities {
     private final EmbeddingApplicationService embedding;
     private final com.carddraft.search.IndexingSettings indexing;
 
-    public DocumentActivitiesImpl(DocumentService documentService, EmbeddingApplicationService embedding,
-                                  com.carddraft.search.IndexingSettings indexing) {
+    public DocumentActivitiesImpl(
+            DocumentService documentService,
+            EmbeddingApplicationService embedding,
+            com.carddraft.search.IndexingSettings indexing) {
         this.documentService = documentService;
         this.embedding = embedding;
         this.indexing = indexing;
@@ -42,7 +44,6 @@ public class DocumentActivitiesImpl implements DocumentActivities {
     }
 
     private DocumentResult describe(com.carddraft.repositories.DocumentsRepository.DocumentRow document) {
-        return new DocumentResult(document.id(), document.state(), document.chunkCount(),
-                document.rejectionReason());
+        return new DocumentResult(document.id(), document.state(), document.chunkCount(), document.rejectionReason());
     }
 }

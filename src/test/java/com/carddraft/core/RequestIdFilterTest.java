@@ -1,13 +1,12 @@
 package com.carddraft.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
@@ -22,7 +21,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
-import org.slf4j.LoggerFactory;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves the identifier is present on log records, not merely computed.
@@ -34,13 +33,14 @@ import org.slf4j.LoggerFactory;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
-@TestPropertySource(properties = {
-        "spring.flyway.enabled=false",
-        "card.db.url=jdbc:postgresql://127.0.0.1:1/card",
-        "card.db.pool-size=2",
-        "card.db.initialization-fail-timeout-millis=-1",
-        "logging.level.com.carddraft.core.RequestIdFilter=DEBUG"
-})
+@TestPropertySource(
+        properties = {
+            "spring.flyway.enabled=false",
+            "card.db.url=jdbc:postgresql://127.0.0.1:1/card",
+            "card.db.pool-size=2",
+            "card.db.initialization-fail-timeout-millis=-1",
+            "logging.level.com.carddraft.core.RequestIdFilter=DEBUG"
+        })
 class RequestIdFilterTest {
 
     @Autowired
@@ -65,17 +65,19 @@ class RequestIdFilterTest {
 
     @Test
     void anIdentifierSuppliedByTheCallerReachesTheLogRecords() {
-        rest.exchange("/actuator/health/liveness?probe=1", HttpMethod.GET,
-                new HttpEntity<>(headers("caller-supplied-id")), Map.class);
+        rest.exchange(
+                "/actuator/health/liveness?probe=1",
+                HttpMethod.GET,
+                new HttpEntity<>(headers("caller-supplied-id")),
+                Map.class);
 
         List<ILoggingEvent> events = captured.list.stream()
                 .filter(event -> event.getLoggerName().endsWith("RequestIdFilter"))
                 .toList();
 
         assertThat(events).isNotEmpty();
-        assertThat(events).allSatisfy(event ->
-                assertThat(event.getMDCPropertyMap())
-                        .containsEntry(RequestIdFilter.MDC_KEY, "caller-supplied-id"));
+        assertThat(events).allSatisfy(event -> assertThat(event.getMDCPropertyMap())
+                .containsEntry(RequestIdFilter.MDC_KEY, "caller-supplied-id"));
     }
 
     @Test
@@ -84,8 +86,8 @@ class RequestIdFilterTest {
 
         assertThat(response.getHeaders().getFirst(RequestIdFilter.HEADER)).isNotBlank();
         assertThat(captured.list.stream()
-                .filter(event -> event.getLoggerName().endsWith("RequestIdFilter"))
-                .filter(event -> event.getMDCPropertyMap().containsKey(RequestIdFilter.MDC_KEY)))
+                        .filter(event -> event.getLoggerName().endsWith("RequestIdFilter"))
+                        .filter(event -> event.getMDCPropertyMap().containsKey(RequestIdFilter.MDC_KEY)))
                 .isNotEmpty();
     }
 

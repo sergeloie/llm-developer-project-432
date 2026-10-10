@@ -1,7 +1,5 @@
 package com.carddraft.documents;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -18,6 +16,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.carddraft.repositories.DocumentsRepository;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Registration and processing against a real database and the real supplied files.
@@ -105,7 +105,6 @@ class DocumentServiceTest {
                 .contains(content);
     }
 
-
     @Test
     @EnabledIf("dataIsPresent")
     void theScanIsRecordedAsRejectedWithAReasonAndNoChunks() throws Exception {
@@ -131,15 +130,18 @@ class DocumentServiceTest {
         var renamed = documentService.register("a-different-name.xlsx", content);
 
         assertThat(second.id()).isEqualTo(first.id());
-        assertThat(renamed.id()).as("content decides identity, not the filename").isEqualTo(first.id());
+        assertThat(renamed.id())
+                .as("content decides identity, not the filename")
+                .isEqualTo(first.id());
         assertThat(documents.findByContentHash(
-                documents.findById(first.id()).orElseThrow().contentSha256())).isPresent();
+                        documents.findById(first.id()).orElseThrow().contentSha256()))
+                .isPresent();
     }
 
     @Test
     @EnabledIf("dataIsPresent")
     void anUnsupportedExtensionIsRefusedWithAReason() {
-        var registered = documentService.register("supplier.exe", new byte[]{1, 2, 3});
+        var registered = documentService.register("supplier.exe", new byte[] {1, 2, 3});
 
         var processed = documentService.process(registered.id());
 

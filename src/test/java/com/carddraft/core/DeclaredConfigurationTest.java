@@ -1,7 +1,5 @@
 package com.carddraft.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +23,8 @@ import org.springframework.core.io.support.ResourcePatternResolver;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@code application.yml} has to declare every setting the application binds.
@@ -70,18 +70,14 @@ class DeclaredConfigurationTest {
      * <p>Compose reads {@code .env} natively; the application never sees these names. They belong
      * in the file because one file configures both readers, which is the point of it.
      */
-    private static final Set<String> COMPOSE_ONLY = Set.of(
-            "PG_PORT", "TEMPORAL_PORT", "TEMPORAL_UI_PORT");
+    private static final Set<String> COMPOSE_ONLY = Set.of("PG_PORT", "TEMPORAL_PORT", "TEMPORAL_UI_PORT");
 
     /** {@code @ConditionalOnProperty} names, which are settings but not record components. */
-    private static final Set<String> GATED_ON_PROPERTY = Set.of(
-            "card.metrics.enabled",
-            "card.embedding.backfill-on-start",
-            "card.temporal.worker.enabled");
+    private static final Set<String> GATED_ON_PROPERTY =
+            Set.of("card.metrics.enabled", "card.embedding.backfill-on-start", "card.temporal.worker.enabled");
 
     /** Prefixes owned by Spring or its dependencies rather than by this application. */
-    private static final Set<String> FRAMEWORK_PREFIXES =
-            Set.of("spring.", "server.", "management.", "logging.");
+    private static final Set<String> FRAMEWORK_PREFIXES = Set.of("spring.", "server.", "management.", "logging.");
 
     private final Set<String> declared = declaredKeys();
     private final Set<String> bindable = bindableKeys();
@@ -191,9 +187,7 @@ class DeclaredConfigurationTest {
         assertThat(unreadable)
                 .as("classes on the classpath that could not be loaded — the scan below would miss them")
                 .isEmpty();
-        assertThat(types)
-                .as("the class scan found the application's classes")
-                .isNotEmpty();
+        assertThat(types).as("the class scan found the application's classes").isNotEmpty();
         return types;
     }
 
@@ -216,7 +210,8 @@ class DeclaredConfigurationTest {
         try {
             lines = Files.readAllLines(Path.of(".env.example"), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new IllegalStateException("could not read .env.example from " + Path.of(".").toAbsolutePath(), e);
+            throw new IllegalStateException(
+                    "could not read .env.example from " + Path.of(".").toAbsolutePath(), e);
         }
         for (String line : lines) {
             String trimmed = line.trim();
@@ -267,8 +262,7 @@ class DeclaredConfigurationTest {
         Set<String> names = new TreeSet<>();
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         try {
-            for (Resource resource : resolver.getResources(
-                    "classpath*:META-INF/*spring-configuration-metadata.json")) {
+            for (Resource resource : resolver.getResources("classpath*:META-INF/*spring-configuration-metadata.json")) {
                 JsonNode metadata;
                 try (InputStream in = resource.getInputStream()) {
                     metadata = new ObjectMapper().readTree(in);

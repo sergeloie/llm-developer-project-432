@@ -37,9 +37,17 @@ public class JobsRepository {
         this.jdbc = jdbc;
     }
 
-    public record Job(String id, String idempotencyKey, String status, String detail, String payload,
-                      String result, int attempts, String error, Instant createdAt, Instant updatedAt) {
-    }
+    public record Job(
+            String id,
+            String idempotencyKey,
+            String status,
+            String detail,
+            String payload,
+            String result,
+            int attempts,
+            String error,
+            Instant createdAt,
+            Instant updatedAt) {}
 
     /**
      * Whether this call created the row or found an existing one.
@@ -48,8 +56,7 @@ public class JobsRepository {
      * <em>and</em> must not start a second process for it. Starting a process for a job that
      * already has one is not idempotent — it is a second charge with the same identifier.
      */
-    public record JobCreation(Job job, boolean created) {
-    }
+    public record JobCreation(Job job, boolean created) {}
 
     /**
      * Returns the existing job when the key has been seen, otherwise creates one.
@@ -76,9 +83,11 @@ public class JobsRepository {
                     .param("payload", payload)
                     .update();
         } catch (org.springframework.dao.DuplicateKeyException raced) {
-            return new JobCreation(findByIdempotencyKey(idempotencyKey)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "job " + id + " collided with an existing idempotency key", raced)), false);
+            return new JobCreation(
+                    findByIdempotencyKey(idempotencyKey)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "job " + id + " collided with an existing idempotency key", raced)),
+                    false);
         }
         return new JobCreation(
                 findById(id).orElseThrow(() -> new IllegalStateException("job " + id + " vanished after insert")),
@@ -112,8 +121,8 @@ public class JobsRepository {
                     .param("payload", payload)
                     .update();
         } catch (org.springframework.dao.DuplicateKeyException raced) {
-            return findById(id).orElseThrow(() -> new IllegalStateException(
-                    "job " + id + " collided on re-entry", raced));
+            return findById(id)
+                    .orElseThrow(() -> new IllegalStateException("job " + id + " collided on re-entry", raced));
         }
         return findById(id).orElseThrow(() -> new IllegalStateException("job " + id + " vanished after insert"));
     }

@@ -1,7 +1,5 @@
 package com.carddraft.routers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +15,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Proves the vector-extension indicator is a member of the readiness group, not a bystander.
  *
@@ -26,10 +26,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {
-                "test.context-id=health-missing-vector",
-                "spring.flyway.enabled=false"
-        })
+        properties = {"test.context-id=health-missing-vector", "spring.flyway.enabled=false"})
 @AutoConfigureTestRestTemplate
 @Testcontainers(disabledWithoutDocker = true)
 class HealthEndpointMissingVectorExtensionTest {
@@ -60,7 +57,8 @@ class HealthEndpointMissingVectorExtensionTest {
                 .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(response.getBody()).containsEntry("status", "DOWN");
 
-        Map<String, Object> components = (Map<String, Object>) response.getBody().get("components");
+        Map<String, Object> components =
+                (Map<String, Object>) response.getBody().get("components");
         assertThat((Map<String, Object>) components.get("db")).containsEntry("status", "UP");
         assertThat((Map<String, Object>) components.get("vectorExtension")).containsEntry("status", "DOWN");
     }

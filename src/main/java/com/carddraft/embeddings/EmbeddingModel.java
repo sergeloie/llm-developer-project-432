@@ -32,6 +32,5 @@ public interface EmbeddingModel {
 
     int dimension();
 
-    record Document(String text, String title) {
-    }
+    record Document(String text, String title) {}
 }

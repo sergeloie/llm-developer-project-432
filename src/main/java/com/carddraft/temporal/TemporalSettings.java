@@ -1,11 +1,11 @@
 package com.carddraft.temporal;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * Process engine settings.
@@ -36,5 +36,4 @@ public record TemporalSettings(
         @DefaultValue("card-drafting") @NotBlank String taskQueue,
 
         @DefaultValue("100") @Min(1) int maxWorkflowThreads,
-        @DefaultValue("200") @Min(1) int maxActivityThreads) {
-}
+        @DefaultValue("200") @Min(1) int maxActivityThreads) {}

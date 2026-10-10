@@ -11,22 +11,29 @@ import java.util.function.ToDoubleFunction;
  * at the minimum is the weakest.
  */
 enum Metric {
-
-    CHARACTERISTIC_MATCH("characteristicMatch", "characteristic match",
-            DocumentMetrics::characteristicMatch, MetricsReport::averageCharacteristicMatch),
-    CITATION_PRECISION("citationPrecision", "citation precision",
-            DocumentMetrics::citationPrecision, MetricsReport::averageCitationPrecision),
-    SOURCE_SUPPORT("sourceSupport", "source support",
-            DocumentMetrics::sourceSupport, MetricsReport::averageSourceSupport);
+    CHARACTERISTIC_MATCH(
+            "characteristicMatch",
+            "characteristic match",
+            DocumentMetrics::characteristicMatch,
+            MetricsReport::averageCharacteristicMatch),
+    CITATION_PRECISION(
+            "citationPrecision",
+            "citation precision",
+            DocumentMetrics::citationPrecision,
+            MetricsReport::averageCitationPrecision),
+    SOURCE_SUPPORT(
+            "sourceSupport", "source support", DocumentMetrics::sourceSupport, MetricsReport::averageSourceSupport);
 
     private final String key;
     private final String label;
     private final ToDoubleFunction<DocumentMetrics> documentValue;
     private final ToDoubleFunction<MetricsReport> averageValue;
 
-    Metric(String key, String label,
-           ToDoubleFunction<DocumentMetrics> documentValue,
-           ToDoubleFunction<MetricsReport> averageValue) {
+    Metric(
+            String key,
+            String label,
+            ToDoubleFunction<DocumentMetrics> documentValue,
+            ToDoubleFunction<MetricsReport> averageValue) {
         this.key = key;
         this.label = label;
         this.documentValue = documentValue;

@@ -1,13 +1,13 @@
 package com.carddraft.agents;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The prompts, as the model will read them.
@@ -31,10 +31,9 @@ class PromptsTest {
                 0.42,
                 Map.of("Power", "C7"));
 
-        String prompt = Prompts.repairField(mapper.writeValueAsString(card), "title",
-                "the title is too long");
-        String block = prompt.substring(
-                prompt.indexOf("CURRENT CARD:") + "CURRENT CARD:".length()).strip();
+        String prompt = Prompts.repairField(mapper.writeValueAsString(card), "title", "the title is too long");
+        String block = prompt.substring(prompt.indexOf("CURRENT CARD:") + "CURRENT CARD:".length())
+                .strip();
 
         ProductCard reread = mapper.readValue(block, ProductCard.class);
 
@@ -77,9 +76,7 @@ class PromptsTest {
         assertThat(Prompts.generator("{}", List.of()))
                 .as("an accepted first draft carries no rejection section")
                 .doesNotContain("rejected");
-        assertThat(Prompts.generator("{}", issues))
-                .contains("Power: the value is missing");
-        assertThat(Prompts.generatorFromContext("[C1] text", issues))
-                .contains("Power: the value is missing");
+        assertThat(Prompts.generator("{}", issues)).contains("Power: the value is missing");
+        assertThat(Prompts.generatorFromContext("[C1] text", issues)).contains("Power: the value is missing");
     }
 }

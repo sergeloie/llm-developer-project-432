@@ -1,7 +1,5 @@
 package com.carddraft.routers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -11,6 +9,8 @@ import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRe
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The reason liveness and readiness are separate groups.
@@ -26,12 +26,12 @@ import org.springframework.http.ResponseEntity;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "test.context-id=health-outage",
-                "spring.flyway.enabled=false",
-                "card.db.url=jdbc:postgresql://127.0.0.1:1/card",
-                "card.db.pool-size=2",
-                "card.db.connection-timeout=1s",
-                "card.db.initialization-fail-timeout-millis=-1"
+            "test.context-id=health-outage",
+            "spring.flyway.enabled=false",
+            "card.db.url=jdbc:postgresql://127.0.0.1:1/card",
+            "card.db.pool-size=2",
+            "card.db.connection-timeout=1s",
+            "card.db.initialization-fail-timeout-millis=-1"
         })
 @AutoConfigureTestRestTemplate
 class HealthEndpointDatabaseOutageTest {

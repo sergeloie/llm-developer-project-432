@@ -14,18 +14,15 @@ import com.carddraft.repositories.ChunkSearchRepository.Hit;
  * @param chunkId   the real chunk, so a reader can open what was cited
  * @param documentId the document to open it in
  */
-public record ContextChunk(String reference, long chunkId, String documentId, int page,
-                           String section, String text) {
+public record ContextChunk(String reference, long chunkId, String documentId, int page, String section, String text) {
 
     public static ContextChunk from(Hit hit, int position) {
-        return new ContextChunk("C" + position, hit.chunkId(), hit.documentId(),
-                hit.page(), hit.section(), hit.text());
+        return new ContextChunk("C" + position, hit.chunkId(), hit.documentId(), hit.page(), hit.section(), hit.text());
     }
 
     /** The line the model sees. Carries the reference in every line it might quote from. */
     public String render() {
-        return "[" + reference + "] " + (section == null || section.isBlank() ? "" : section + " — ")
-                + text;
+        return "[" + reference + "] " + (section == null || section.isBlank() ? "" : section + " — ") + text;
     }
 
     /** One citation target: enough to open the source, and no more than a reader needs. */
@@ -33,8 +30,7 @@ public record ContextChunk(String reference, long chunkId, String documentId, in
         return new CitationTarget(reference, chunkId, documentId, page, section);
     }
 
-    public record CitationTarget(String reference, long chunkId, String documentId, int page, String section) {
-    }
+    public record CitationTarget(String reference, long chunkId, String documentId, int page, String section) {}
 
     public static List<ContextChunk> none() {
         return List.of();

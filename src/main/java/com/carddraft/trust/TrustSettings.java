@@ -25,7 +25,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.trust")
 public record TrustSettings(
-
         @DefaultValue("2") int maxSuspiciousChunks,
 
         /**

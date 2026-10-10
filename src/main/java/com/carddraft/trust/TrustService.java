@@ -47,8 +47,7 @@ public class TrustService {
      * @param masked   chunks whose personal data was replaced
      * @param escalated whether so many chunks looked suspicious that the document needs a person
      */
-    public record Screening(List<String> excluded, List<String> masked, boolean escalated,
-                            String reason) {
+    public record Screening(List<String> excluded, List<String> masked, boolean escalated, String reason) {
 
         public static Screening clean() {
             return new Screening(List.of(), List.of(), false, null);
@@ -84,8 +83,12 @@ public class TrustService {
             Finding.Report personal = pii.scan(chunk.text());
             if (!personal.isClean()) {
                 masked.add(chunk.reference());
-                survivors.add(new ContextChunk(chunk.reference(), chunk.chunkId(),
-                        chunk.documentId(), chunk.page(), chunk.section(),
+                survivors.add(new ContextChunk(
+                        chunk.reference(),
+                        chunk.chunkId(),
+                        chunk.documentId(),
+                        chunk.page(),
+                        chunk.section(),
                         personal.maskedText()));
             } else {
                 survivors.add(chunk);
@@ -94,8 +97,7 @@ public class TrustService {
 
         boolean escalated = excluded.size() > suspiciousBudget;
         String reason = escalated
-                ? excluded.size() + " fragments carried injected instructions, above the budget of "
-                        + suspiciousBudget
+                ? excluded.size() + " fragments carried injected instructions, above the budget of " + suspiciousBudget
                 : null;
 
         return new Screened(survivors, excluded, masked, escalated, reason);
@@ -107,8 +109,8 @@ public class TrustService {
      * @param maskedText the text to send, already masked. Held rather than re-rendered so the prompt
      *                   and the screening decision cannot disagree about what was masked.
      */
-    public record Screened(List<ContextChunk> chunks, List<String> excluded, List<String> masked,
-                           boolean escalated, String reason) {
+    public record Screened(
+            List<ContextChunk> chunks, List<String> excluded, List<String> masked, boolean escalated, String reason) {
 
         public String render() {
             StringBuilder rendered = new StringBuilder();
@@ -132,9 +134,9 @@ public class TrustService {
         InjectionDetector.RuleVerdict leaked = injection.inspect(text);
         if (!leaked.isClean()) {
             List<Finding> findings = new ArrayList<>(personal.findings());
-            leaked.rules().forEach(rule -> findings.add(
-                    new Finding(Finding.Kind.INJECTION, PiiDetector.labelFor(Finding.Kind.INJECTION),
-                            rule, 0)));
+            leaked.rules()
+                    .forEach(rule -> findings.add(new Finding(
+                            Finding.Kind.INJECTION, PiiDetector.labelFor(Finding.Kind.INJECTION), rule, 0)));
             return new Finding.Report(findings, personal.maskedText());
         }
         return personal;

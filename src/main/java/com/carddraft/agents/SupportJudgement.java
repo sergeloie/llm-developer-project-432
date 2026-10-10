@@ -22,8 +22,8 @@ import java.util.Map;
  *                          answered. Distinguishes "checked and found nothing" from "never
  *                          checked", which are the same number and different facts.
  */
-public record SupportJudgement(Map<String, Boolean> supported, Map<String, String> reasoning,
-                              String unavailableReason) {
+public record SupportJudgement(
+        Map<String, Boolean> supported, Map<String, String> reasoning, String unavailableReason) {
 
     public SupportJudgement {
         supported = supported == null ? Map.of() : Map.copyOf(supported);

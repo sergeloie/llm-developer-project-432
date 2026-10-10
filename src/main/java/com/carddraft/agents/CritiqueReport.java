@@ -12,7 +12,8 @@ public record CritiqueReport(Verdict verdict, List<ReviewIssue> issues) {
 
     public CritiqueReport {
         if (verdict == null) {
-            throw new IllegalArgumentException("verdict is required; a review without a decision cannot drive the rework loop");
+            throw new IllegalArgumentException(
+                    "verdict is required; a review without a decision cannot drive the rework loop");
         }
         issues = issues == null ? List.of() : List.copyOf(issues);
     }

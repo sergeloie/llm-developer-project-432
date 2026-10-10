@@ -1,12 +1,5 @@
 package com.carddraft.services;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
 import java.util.List;
 import java.util.Map;
 
@@ -18,12 +11,19 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.ReviewIssue;
-import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.SupplierFacts;
 import com.carddraft.agents.Verdict;
 import com.carddraft.llm.LlmClient;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * The rewrite loop, observed through the model boundary.
@@ -69,7 +69,9 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE,
+                .willReturn(
+                        new CritiqueReport(
+                                Verdict.REGENERATE,
                                 List.of(new ReviewIssue("title", "title is longer than 60 characters"))),
                         new CritiqueReport(Verdict.APPROVE, List.of()));
 
@@ -85,8 +87,8 @@ class PipelineServiceTest {
                 .as("the field is repeated into the line the generator reads, so it can find the "
                         + "line it concerns in its own draft")
                 .singleElement()
-                .satisfies(issue -> assertThat(issue.asFeedback())
-                        .isEqualTo("title: title is longer than 60 characters"));
+                .satisfies(
+                        issue -> assertThat(issue.asFeedback()).isEqualTo("title: title is longer than 60 characters"));
     }
 
     @Test
@@ -94,7 +96,8 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"), draft("Third"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue one"))),
+                .willReturn(
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue one"))),
                         new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue two"))),
                         new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("issue three"))));
 
@@ -113,7 +116,8 @@ class PipelineServiceTest {
         given(llmClient.extractFacts("supplier text")).willReturn(FACTS);
         given(llmClient.draftCard(eq(FACTS), any())).willReturn(draft("First"), draft("Second"), draft("Third"));
         given(llmClient.reviewDraft(eq(FACTS), any()))
-                .willReturn(new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("a"))),
+                .willReturn(
+                        new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("a"))),
                         new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("b"))),
                         new CritiqueReport(Verdict.REGENERATE, List.of(new ReviewIssue("c"))));
 
@@ -123,7 +127,7 @@ class PipelineServiceTest {
     }
 
     private ProductCard draft(String title) {
-        return new ProductCard(title, "A blender.", Map.of("Power", "800 W"),
-                List.of("Quiet"), List.of(), 0.9, Map.of());
+        return new ProductCard(
+                title, "A blender.", Map.of("Power", "800 W"), List.of("Quiet"), List.of(), 0.9, Map.of());
     }
 }

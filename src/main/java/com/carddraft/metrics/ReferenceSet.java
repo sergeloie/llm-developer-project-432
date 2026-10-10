@@ -21,13 +21,13 @@ import tools.jackson.databind.ObjectMapper;
  *                    harness — a local model is slow enough that measuring everything is a measure
  *                    nobody performs
  */
-public record ReferenceSet(Map<String, Map<String, String>> characteristics,
-                           Map<String, Map<String, Object>> probes,
-                           List<String> defaults) {
+public record ReferenceSet(
+        Map<String, Map<String, String>> characteristics,
+        Map<String, Map<String, Object>> probes,
+        List<String> defaults) {
 
     public static ReferenceSet load(Path golden) throws IOException {
-        Map<String, Object> root = new ObjectMapper()
-                .readValue(Files.readString(golden), Map.class);
+        Map<String, Object> root = new ObjectMapper().readValue(Files.readString(golden), Map.class);
 
         Map<String, Map<String, String>> characteristics = new LinkedHashMap<>();
         Map<String, Map<String, Object>> probes = new LinkedHashMap<>();

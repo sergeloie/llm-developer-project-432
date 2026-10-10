@@ -1,7 +1,5 @@
 package com.carddraft.repositories;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.time.Instant;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +14,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * The jobs table, against a real PostgreSQL.
  *
@@ -25,7 +25,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
-
 @TestPropertySource(properties = "test.context-id=jobs-repo")
 class JobsRepositoryTest {
 
@@ -73,7 +72,9 @@ class JobsRepositoryTest {
 
         assertThat(second.job().id()).isEqualTo(first.job().id());
         assertThat(first.created()).isTrue();
-        assertThat(second.created()).as("a repeated request must not create a second row").isFalse();
+        assertThat(second.created())
+                .as("a repeated request must not create a second row")
+                .isFalse();
         assertThat(countJobs()).isEqualTo(1);
     }
 

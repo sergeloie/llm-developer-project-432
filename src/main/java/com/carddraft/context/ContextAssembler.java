@@ -56,8 +56,7 @@ public class ContextAssembler {
             accepted.add(ContextChunk.from(hit, accepted.size() + 1));
         }
 
-        return new AssembledContext(jobId, accepted, duplicates,
-                hits.size() - duplicates - accepted.size());
+        return new AssembledContext(jobId, accepted, duplicates, hits.size() - duplicates - accepted.size());
     }
 
     /**

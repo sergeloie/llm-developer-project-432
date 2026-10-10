@@ -1,10 +1,10 @@
 package com.carddraft.search;
 
-import jakarta.validation.constraints.Min;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
 
 /**
  * How indexing is driven, as opposed to how a single text is encoded.
@@ -19,8 +19,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("card.embedding.indexing")
 public record IndexingSettings(
-
         @DefaultValue("16") @Min(1) int batchSize,
 
-        @DefaultValue("1000") @Min(1) int maxBatches) {
-}
+        @DefaultValue("1000") @Min(1) int maxBatches) {}

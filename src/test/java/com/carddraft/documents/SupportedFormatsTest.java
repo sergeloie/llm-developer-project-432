@@ -1,12 +1,12 @@
 package com.carddraft.documents;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import com.carddraft.agents.StructuralUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The supported set lives in the parsers and nowhere else.
@@ -19,8 +19,8 @@ class SupportedFormatsTest {
 
     @Test
     void aParserAddedInOnePlaceIsAcceptedAndAdvertised() {
-        DocumentService service = serviceWith(
-                declaring(".pdf"), declaring(".docx"), declaring(".xlsx", ".xls"), declaring(".odt"));
+        DocumentService service =
+                serviceWith(declaring(".pdf"), declaring(".docx"), declaring(".xlsx", ".xls"), declaring(".odt"));
 
         assertThat(service.supports("manual.odt")).isTrue();
         assertThat(service.supportedFormats()).contains("odt");
@@ -42,8 +42,7 @@ class SupportedFormatsTest {
                 new DocxDocumentParser(normaliser),
                 new XlsxDocumentParser(normaliser));
 
-        assertThat(service.supportedFormats())
-                .containsExactlyInAnyOrder("pdf", "docx", "xlsx", "xls");
+        assertThat(service.supportedFormats()).containsExactlyInAnyOrder("pdf", "docx", "xlsx", "xls");
     }
 
     private static DocumentService serviceWith(DocumentParser... parsers) {

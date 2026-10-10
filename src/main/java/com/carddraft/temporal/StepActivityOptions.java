@@ -32,6 +32,5 @@ final class StepActivityOptions {
                 .build();
     }
 
-    private StepActivityOptions() {
-    }
+    private StepActivityOptions() {}
 }

@@ -12,9 +12,13 @@ import java.util.List;
  * @param scope which documents were measured. Recorded so a comparison of two reports says whether
  *              it compared like with like — a subset run against a full run is not a regression.
  */
-public record MetricsReport(String runId, String scope, List<DocumentMetrics> perDocument,
-                            double averageCharacteristicMatch, double averageCitationPrecision,
-                            double averageSourceSupport) {
+public record MetricsReport(
+        String runId,
+        String scope,
+        List<DocumentMetrics> perDocument,
+        double averageCharacteristicMatch,
+        double averageCitationPrecision,
+        double averageSourceSupport) {
 
     public MetricsReport {
         perDocument = perDocument == null ? List.of() : List.copyOf(perDocument);
@@ -28,7 +32,8 @@ public record MetricsReport(String runId, String scope, List<DocumentMetrics> pe
      * to the same question.
      */
     public java.math.BigDecimal totalCost() {
-        return perDocument.stream().map(DocumentMetrics::generationCost)
+        return perDocument.stream()
+                .map(DocumentMetrics::generationCost)
                 .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 

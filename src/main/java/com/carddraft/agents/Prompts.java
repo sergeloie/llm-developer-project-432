@@ -1,8 +1,8 @@
 package com.carddraft.agents;
 
-import com.carddraft.llm.ResultContract;
-
 import java.util.List;
+
+import com.carddraft.llm.ResultContract;
 
 /**
  * The three roles' instructions, as named functions.
@@ -15,8 +15,7 @@ import java.util.List;
  */
 public final class Prompts {
 
-    private Prompts() {
-    }
+    private Prompts() {}
 
     /**
      * The reply format, stated once.
@@ -24,8 +23,7 @@ public final class Prompts {
      * <p>Every prompt that expects JSON ends with the same instruction, so a change of wording is a
      * change to one constant rather than to six prompts that can drift apart.
      */
-    private static final String JSON_REPLY_PREFIX =
-            "Reply with a JSON object matching this schema and nothing else";
+    private static final String JSON_REPLY_PREFIX = "Reply with a JSON object matching this schema and nothing else";
 
     private static final String NO_PROSE = "No prose, no markdown fences.";
 
@@ -35,8 +33,7 @@ public final class Prompts {
 
     static final String NO_MARKDOWN = "Do not wrap the JSON in markdown. Do not add commentary.";
 
-    static final String CORRECTED_JSON_REPLY =
-            "Reply with the corrected JSON object and nothing else. " + NO_PROSE;
+    static final String CORRECTED_JSON_REPLY = "Reply with the corrected JSON object and nothing else. " + NO_PROSE;
 
     public static String extractor(String supplierText) {
         return """
@@ -54,7 +51,8 @@ public final class Prompts {
     }
 
     public static String generator(String factsJson, List<ReviewIssue> issues) {
-        StringBuilder prompt = new StringBuilder("""
+        StringBuilder prompt = new StringBuilder(
+                """
                 You are the generator. Write a product card using only the facts below.
 
                 %s The title must be at most %d characters. Every characteristic \
@@ -67,13 +65,12 @@ public final class Prompts {
 
                 FACTS:
                 %s
-                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH,
-                schemaSection(ProductCard.class), factsJson));
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), factsJson));
         prompt.append(issues("The reviewer rejected the previous draft. Address every point:", issues));
         return prompt.toString();
     }
 
-public static String critic(String factsJson, String draftJson) {
+    public static String critic(String factsJson, String draftJson) {
         return """
                 You are the reviewer. Check the draft card against the facts by these rules:
                 1. the title is at most %d characters;
@@ -97,8 +94,13 @@ public static String critic(String factsJson, String draftJson) {
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(ProductCard.MAX_TITLE_LENGTH, JSON_REPLY_WITH_KEYS, NO_MARKDOWN,
-                schemaSection(CritiqueReport.class), factsJson, draftJson);
+                """.formatted(
+                        ProductCard.MAX_TITLE_LENGTH,
+                        JSON_REPLY_WITH_KEYS,
+                        NO_MARKDOWN,
+                        schemaSection(CritiqueReport.class),
+                        factsJson,
+                        draftJson);
     }
 
     /**
@@ -116,7 +118,8 @@ public static String critic(String factsJson, String draftJson) {
      * wrong, it fails the card.
      */
     public static String generatorFromContext(String contextText, List<ReviewIssue> issues) {
-        StringBuilder prompt = new StringBuilder("""
+        StringBuilder prompt = new StringBuilder(
+                """
                 You are the generator. Write a product card using only the fragments below.
 
 Each fragment is labelled, for example [C3]. For every characteristic you write, \
@@ -133,8 +136,7 @@ fragment is far better than a characteristic citing a fragment that does not sup
 
                 FRAGMENTS:
                 %s
-                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH,
-                schemaSection(ProductCard.class), contextText));
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), contextText));
         prompt.append(issues("The previous draft was rejected. Address every point:", issues));
         return prompt.toString();
     }
@@ -178,8 +180,8 @@ fragment is far better than a characteristic citing a fragment that does not sup
 
                 DRAFT TO REVIEW:
                 %s
-                """.formatted(JSON_REPLY_WITH_KEYS, NO_MARKDOWN,
-                schemaSection(CritiqueReport.class), contextText, draftJson);
+                """.formatted(
+                        JSON_REPLY_WITH_KEYS, NO_MARKDOWN, schemaSection(CritiqueReport.class), contextText, draftJson);
     }
 
     /**
@@ -208,8 +210,7 @@ fragment is far better than a characteristic citing a fragment that does not sup
 
                 CURRENT CARD:
                 %s
-                """.formatted(field, problem, CORRECTED_JSON_REPLY,
-                schemaSection(ProductCard.class), currentJson);
+                """.formatted(field, problem, CORRECTED_JSON_REPLY, schemaSection(ProductCard.class), currentJson);
     }
 
     /**

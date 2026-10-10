@@ -26,28 +26,21 @@ import jakarta.validation.constraints.Size;
  * {@code ResultContract}, so that the model receives the same wording we check.
  */
 public record ProductCard(
-
-        @NotBlank @Size(max = MAX_TITLE_LENGTH,
-                message = "the title must be at most " + MAX_TITLE_LENGTH + " characters")
+        @NotBlank
+        @Size(max = MAX_TITLE_LENGTH, message = "the title must be at most " + MAX_TITLE_LENGTH + " characters")
         String title,
 
-        @NotBlank
-        String description,
+        @NotBlank String description,
 
-        @NotNull
-        Map<String, String> characteristics,
+        @NotNull Map<String, String> characteristics,
 
-        @NotNull
-        List<String> benefits,
+        @NotNull List<String> benefits,
 
-        @NotNull
-        List<String> missingFields,
+        @NotNull List<String> missingFields,
 
-        @NotNull @DecimalMin("0.0") @DecimalMax("1.0")
-        Double confidence,
+        @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double confidence,
 
-        @NotNull
-        Map<String, String> sources) {
+        @NotNull Map<String, String> sources) {
 
     /** The longest title a card may carry, shared by the annotation, the contract and the prompts. */
     public static final int MAX_TITLE_LENGTH = 60;
