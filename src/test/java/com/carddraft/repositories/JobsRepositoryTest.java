@@ -2,7 +2,6 @@ package com.carddraft.repositories;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Duration;
 import java.time.Instant;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -109,19 +108,18 @@ class JobsRepositoryTest {
     }
 
     @Test
-    void changingStatusAdvancesTheLastModifiedTimestamp() throws InterruptedException {
+    void changingStatusAdvancesTheLastModifiedTimestamp() {
         String id = createNew("key-4", "{}");
         Instant before = jobs.findById(id).orElseThrow().updatedAt();
 
-        Thread.sleep(1100);
         jobs.setStatus(id, "generating", "attempt 2");
 
         JobsRepository.Job after = jobs.findById(id).orElseThrow();
         assertThat(after.status()).isEqualTo("generating");
         assertThat(after.detail()).isEqualTo("attempt 2");
-        assertThat(Duration.between(before, after.updatedAt()).toSeconds())
+        assertThat(after.updatedAt())
                 .as("updated_at is what makes a stuck job detectable at all")
-                .isGreaterThanOrEqualTo(1);
+                .isAfter(before);
     }
 
     @Test

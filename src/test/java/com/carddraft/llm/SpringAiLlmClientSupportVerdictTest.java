@@ -29,7 +29,6 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.SupportJudgement;
-import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * What the support judge can actually read back.
@@ -77,11 +76,7 @@ class SpringAiLlmClientSupportVerdictTest {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
-                new ModelCallRepository(null) {
-                    @Override
-                    public void record(ModelCallRecord call) {
-                    }
-                },
+                new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }
 

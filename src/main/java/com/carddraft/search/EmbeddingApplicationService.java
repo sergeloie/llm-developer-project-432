@@ -59,10 +59,9 @@ public class EmbeddingApplicationService {
             return 0;
         }
 
-        List<EmbeddingModel.Document> inputs = new ArrayList<>(pending.size());
-        for (ChunkSearchRepository.ChunkToEmbed chunk : pending) {
-            inputs.add(new EmbeddingModel.Document(chunk.text(), chunk.section()));
-        }
+        List<EmbeddingModel.Document> inputs = pending.stream()
+                .map(chunk -> new EmbeddingModel.Document(chunk.text(), chunk.section()))
+                .toList();
 
         List<List<Double>> vectors = model.embedDocuments(inputs);
 

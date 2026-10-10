@@ -168,7 +168,9 @@ public class CardGenerator {
         if (report.isClean()) {
             return card;
         }
-        log.warn("metrics_output_filtered job={} findings={}", jobId, report.summary());
+        if (log.isWarnEnabled()) {
+            log.warn("metrics_output_filtered job={} findings={}", jobId, report.summary());
+        }
         boolean personal = report.findings().stream().anyMatch(Finding::isPersonal);
         if (!personal) {
             return card;

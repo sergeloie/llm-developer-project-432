@@ -72,7 +72,7 @@ class CardRetrievalWorkflowTest {
      */
     @Test
     void aFullySupportedCardWaitsForAHumanRatherThanApprovingItself() {
-        activities.cite("Power", "C1");
+        activities.cite("C1");
         String workflowId = start("job-clean", 3);
 
         await().atMost(Duration.ofSeconds(10))
@@ -98,7 +98,7 @@ class CardRetrievalWorkflowTest {
      */
     @Test
     void aCitationToAFragmentThatWasNeverShownSendsTheCardBackForRework() {
-        activities.cite("Power", "C9");
+        activities.cite("C9");
         String workflowId = start("job-fabricated", 3);
 
         await().atMost(Duration.ofSeconds(10))
@@ -127,7 +127,7 @@ class CardRetrievalWorkflowTest {
  */
     @Test
     void aSecondFabricatedCitationGoesToAHumanInsteadOfTryingAgain() {
-        activities.cite("Power", "C9");
+        activities.cite("C9");
         String workflowId = start("job-repeat", 5);
 
         await().atMost(Duration.ofSeconds(10))
@@ -202,7 +202,7 @@ class CardRetrievalWorkflowTest {
     /** The hints and documents reach retrieval rather than being dropped on the floor. */
     @Test
     void theChosenDocumentsAndHintAreHandedToRetrieval() {
-        activities.cite("Power", "C1");
+        activities.cite("C1");
         String workflowId = start("job-docs", 3);
 
         await().atMost(Duration.ofSeconds(10))
@@ -267,12 +267,14 @@ class CardRetrievalWorkflowTest {
         final List<List<String>> documentIdsSeen = new ArrayList<>();
         final AtomicInteger generateFromContextCalls = new AtomicInteger();
         final AtomicInteger retrieveCalls = new AtomicInteger();
+        final AtomicInteger attempts = new AtomicInteger();
+        final List<String> outcomes = new ArrayList<>();
 
         private volatile String citation = "C1";
         private volatile String reviewerIssue;
         private volatile String escalationReason;
 
-        void cite(String characteristic, String reference) {
+        void cite(String reference) {
             this.citation = reference;
         }
 
@@ -349,10 +351,12 @@ class CardRetrievalWorkflowTest {
 
         @Override
         public void countAttempt(String jobId, int attempt) {
+            attempts.incrementAndGet();
         }
 
         @Override
         public void recordOutcome(String jobId, String status, String draftJson) {
+            outcomes.add(status + ":" + draftJson);
         }
 
         @Override

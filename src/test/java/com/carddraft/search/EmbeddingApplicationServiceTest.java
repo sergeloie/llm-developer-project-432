@@ -140,8 +140,7 @@ class EmbeddingApplicationServiceTest {
 
         @Override
         public void writeVectors(List<ChunkVector> vectors) {
-            vectors.forEach(vector -> embedded.merge(
-                    documentOf(vector.chunkId()), 1, Integer::sum));
+            vectors.forEach(ignored -> embedded.merge(documentOf(), 1, Integer::sum));
         }
 
         private List<ChunkToEmbed> take(String documentId, int limit) {
@@ -159,7 +158,7 @@ class EmbeddingApplicationServiceTest {
             return batch;
         }
 
-        private String documentOf(long chunkId) {
+        private String documentOf() {
             return outstanding.keySet().stream().findFirst().orElseThrow();
         }
 

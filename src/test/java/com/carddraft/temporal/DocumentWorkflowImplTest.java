@@ -186,7 +186,7 @@ class DocumentWorkflowImplTest {
 
         @Override
         public DocumentResult parse(String documentId) {
-            record("parse", documentId);
+            track("parse", documentId);
             if (fail) {
                 throw new IllegalStateException("the database is unreachable");
             }
@@ -198,14 +198,14 @@ class DocumentWorkflowImplTest {
 
         @Override
         public DocumentResult index(String documentId) {
-            record("index", documentId);
+            track("index", documentId);
             if (fail) {
                 throw new IllegalStateException("the model server is unreachable");
             }
             return new DocumentResult(documentId, "indexed", 7, null);
         }
 
-        private synchronized void record(String step, String documentId) {
+        private synchronized void track(String step, String documentId) {
             calls.incrementAndGet();
             steps.add(step);
             identifiersSeen.add(documentId);

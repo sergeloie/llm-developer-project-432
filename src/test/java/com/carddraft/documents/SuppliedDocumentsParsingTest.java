@@ -75,8 +75,8 @@ class SuppliedDocumentsParsingTest {
         byte[] scanned = read("boiler_scan.pdf");
 
         assertThatThrownBy(() -> pdf.parse(scanned))
-                .isInstanceOf(DocumentParser.DocumentRejectedException.class)
-                .satisfies(thrown -> assertThat(((DocumentParser.DocumentRejectedException) thrown).reason())
+                .isInstanceOf(DocumentRejectedException.class)
+                .satisfies(thrown -> assertThat(((DocumentRejectedException) thrown).reason())
                         .containsIgnoringCase("text layer"));
     }
 

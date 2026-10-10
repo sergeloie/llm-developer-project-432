@@ -32,7 +32,6 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
 import com.carddraft.agents.SupplierFacts;
-import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * The temperature reaches the model.
@@ -99,11 +98,7 @@ class SpringAiLlmClientTemperatureTest {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, temperature);
 
         return new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
-                new ModelCallRepository(null) {
-                    @Override
-                    public void record(ModelCallRecord call) {
-                    }
-                },
+                new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }
 }

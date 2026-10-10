@@ -24,13 +24,15 @@ public class JobContextRepository {
 
     private final JdbcClient jdbc;
 
+    private static final String JOB_ID = "jobId";
+
     public JobContextRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
     }
 
     public void save(AssembledContext context) {
         jdbc.sql("DELETE FROM job_context_chunks WHERE job_id = :jobId")
-                .param("jobId", context.jobId())
+                .param(JOB_ID, context.jobId())
                 .update();
 
         for (int i = 0; i < context.chunks().size(); i++) {
@@ -40,7 +42,7 @@ public class JobContextRepository {
                                 (job_id, position, reference, chunk_id, document_id, page, section, text)
                             VALUES (:jobId, :position, :reference, :chunkId, :documentId, :page, :section, :text)
                             """)
-                    .param("jobId", context.jobId())
+                    .param(JOB_ID, context.jobId())
                     .param("position", i)
                     .param("reference", chunk.reference())
                     .param("chunkId", chunk.chunkId())
@@ -59,7 +61,7 @@ public class JobContextRepository {
                          WHERE job_id = :jobId
                          ORDER BY position
                         """)
-                .param("jobId", jobId)
+                .param(JOB_ID, jobId)
                 .query(ContextChunk.class)
                 .list();
 
@@ -75,7 +77,7 @@ public class JobContextRepository {
      */
     public java.util.Optional<Long> chunkIdForReference(String jobId, String reference) {
         return jdbc.sql("SELECT chunk_id FROM job_context_chunks WHERE job_id = :jobId AND reference = :ref")
-                .param("jobId", jobId)
+                .param(JOB_ID, jobId)
                 .param("ref", reference)
                 .query(Long.class)
                 .optional();

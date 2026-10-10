@@ -49,6 +49,9 @@ public class SpringAiLlmClient implements LlmClient {
 
     private static final String CALL_TIMER = "card.llm.call.duration";
 
+    private static final String TITLE_FIELD = "title";
+    private static final String SOURCES_FIELD = "sources";
+
     private final ChatClient chatClient;
     private final ObjectMapper mapper;
     private final LlmSettings settings;
@@ -161,7 +164,7 @@ public class SpringAiLlmClient implements LlmClient {
     private ProductCard repairTitleIfNeeded(ProductCard draft) {
         return ResultContract.titleLengthProblem(draft)
                 .map(problem -> keepingFirstDraft(draft,
-                        repairCardField(draft, "title", problem), "title"))
+                        repairCardField(draft, TITLE_FIELD, problem), TITLE_FIELD))
                 .orElse(draft);
     }
 
@@ -171,9 +174,9 @@ public class SpringAiLlmClient implements LlmClient {
             return draft;
         }
         try {
-            ProductCard repaired = repairCardField(draft, "sources",
+            ProductCard repaired = repairCardField(draft, SOURCES_FIELD,
                     instruction + ": " + String.join("; ", problems));
-            return keepingFirstDraft(draft, repaired, "sources");
+            return keepingFirstDraft(draft, repaired, SOURCES_FIELD);
         } catch (ModelResponseFormatException e) {
             // The mapping stayed imperfect within budget, and the first draft goes on anyway.
             // Sources validity is the workflow's jurisdiction — it holds the retained context,
@@ -200,10 +203,10 @@ public class SpringAiLlmClient implements LlmClient {
      */
     private ProductCard keepingFirstDraft(ProductCard first, ProductCard repaired, String field) {
         ProductCard merged = switch (field) {
-            case "sources" -> new ProductCard(first.title(), first.description(),
+            case SOURCES_FIELD -> new ProductCard(first.title(), first.description(),
                     first.characteristics(), first.benefits(), first.missingFields(),
                     first.confidence(), repaired.sources());
-            case "title" -> new ProductCard(repaired.title(), first.description(),
+            case TITLE_FIELD -> new ProductCard(repaired.title(), first.description(),
                     first.characteristics(), first.benefits(), first.missingFields(),
                     first.confidence(), first.sources());
             default -> repaired;
@@ -321,7 +324,7 @@ public class SpringAiLlmClient implements LlmClient {
             throw new EmptyModelResponseException(settings.modelFor(tier), finishReason(response), operation);
         }
 
-        recordCall(operation, tier, prompt, text, response, elapsed);
+        recordCall(operation, tier, response, elapsed);
         return text;
     }
 
@@ -341,7 +344,7 @@ public class SpringAiLlmClient implements LlmClient {
      * then honest about what is known, and a card that prices at zero because the provider withheld
      * the number is visibly different from one priced correctly.
      */
-    private void recordCall(String operation, ModelTier tier, String prompt, String text,
+    private void recordCall(String operation, ModelTier tier,
                             org.springframework.ai.chat.model.ChatResponse response,
                             Duration elapsed) {
         var usage = usageOf(response);
@@ -353,7 +356,7 @@ public class SpringAiLlmClient implements LlmClient {
         String model = settings.modelFor(tier);
         var cost = settings.calculatorFor(tier).costOf(inputTokens, outputTokens);
 
-        calls.record(new ModelCallRecord(
+        calls.write(new ModelCallRecord(
                 JobLogContext.currentJob(), tier.wireName(), model, operation,
                 inputTokens, outputTokens, cost, elapsed, Instant.now()));
 

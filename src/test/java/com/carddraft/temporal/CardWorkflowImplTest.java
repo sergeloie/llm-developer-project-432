@@ -81,11 +81,10 @@ class CardWorkflowImplTest {
 
         long callsWhileWaiting = activities.statuses.size();
         Duration waited = Duration.ofSeconds(2);
-        sleep(waited);
-
-        assertThat(activities.statuses)
-                .as("a process standing on a condition must not keep executing steps")
-                .hasSize((int) callsWhileWaiting);
+        await().pollDelay(waited).atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                assertThat(activities.statuses)
+                        .as("a process standing on a condition must not keep executing steps")
+                        .hasSize((int) callsWhileWaiting));
         assertThat(activities.statuses).doesNotContain("approved", "rejected");
     }
 
@@ -129,7 +128,7 @@ class CardWorkflowImplTest {
     @Test
     void aFailingStepEndsTheJobAsFailedAndRecordsTheError() {
         activities.failExtraction = true;
-        String workflowId = start("job-failed", 3);
+        start("job-failed", 3);
 
         await().atMost(Duration.ofSeconds(15))
                 .until(() -> !activities.failures.isEmpty());
@@ -230,14 +229,6 @@ class CardWorkflowImplTest {
         }
     }
 
-    private void sleep(Duration duration) {
-        try {
-            Thread.sleep(duration.toMillis());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
     /**
      * A recording stand-in for the steps.
      *
@@ -269,7 +260,7 @@ class CardWorkflowImplTest {
 
         @Override
         public synchronized String extractFacts(String jobId, String supplierText) {
-            record("extracting");
+            statuses.add("extracting");
             if (failExtraction) {
                 throw new IllegalStateException("provider unreachable");
             }
@@ -331,10 +322,6 @@ class CardWorkflowImplTest {
         @Override
         public synchronized void recordFailure(String jobId, String error) {
             failures.add(error);
-        }
-
-        private synchronized void record(String state) {
-            statuses.add(state);
         }
     }
 }

@@ -31,6 +31,8 @@ public class JobsRepository {
 
     private final JdbcClient jdbc;
 
+    private static final String STATUS_PARAM = "status";
+
     public JobsRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
     }
@@ -70,7 +72,7 @@ public class JobsRepository {
                             """)
                     .param("id", id)
                     .param("key", idempotencyKey)
-                    .param("status", status)
+                    .param(STATUS_PARAM, status)
                     .param("payload", payload)
                     .update();
         } catch (org.springframework.dao.DuplicateKeyException raced) {
@@ -106,7 +108,7 @@ public class JobsRepository {
                             VALUES (:id, :status, CAST(:payload AS jsonb))
                             """)
                     .param("id", id)
-                    .param("status", status)
+                    .param(STATUS_PARAM, status)
                     .param("payload", payload)
                     .update();
         } catch (org.springframework.dao.DuplicateKeyException raced) {
@@ -135,7 +137,7 @@ public class JobsRepository {
                                updated_at = now()
                          WHERE id = :id
                         """)
-                .param("status", status)
+                .param(STATUS_PARAM, status)
                 .param("detail", detail)
                 .param("id", id)
                 .update();
@@ -164,7 +166,7 @@ public class JobsRepository {
                                updated_at = now()
                          WHERE id = :id
                         """)
-                .param("status", status)
+                .param(STATUS_PARAM, status)
                 .param("result", resultJson)
                 .param("id", id)
                 .update();

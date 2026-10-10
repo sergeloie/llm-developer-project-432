@@ -49,6 +49,8 @@ public class CardWorkflowImpl implements CardWorkflow {
             .setInitialInterval(Duration.ofSeconds(1))
             .build();
 
+    private static final String ATTEMPT_PREFIX = "attempt ";
+
     private final CardActivities steps = Workflow.newActivityStub(
             CardActivities.class, StepActivityOptions.options());
 
@@ -99,11 +101,11 @@ public class CardWorkflowImpl implements CardWorkflow {
                 List<ReviewIssue> issues = List.of();
                 while (attempts < request.maxRounds()) {
                     attempts++;
-                    publish(jobId, JobState.GENERATING, "attempt " + attempts);
+                    publish(jobId, JobState.GENERATING, ATTEMPT_PREFIX + attempts);
                     statusWrites.countAttempt(jobId, attempts);
                     draftJson = steps.generateDraft(jobId, factsJson, issues);
 
-                    publish(jobId, JobState.REVIEWING, "attempt " + attempts);
+                    publish(jobId, JobState.REVIEWING, ATTEMPT_PREFIX + attempts);
                     ReviewOutcome review = steps.reviewDraft(jobId, factsJson, draftJson);
                     if (review.approved()) {
                         reviewerApproved = true;
@@ -170,11 +172,11 @@ public class CardWorkflowImpl implements CardWorkflow {
 
         while (attempts < maxRounds && citationFailures <= MAX_CITATION_REWORKS) {
             attempts++;
-            publish(jobId, JobState.GENERATING, "attempt " + attempts);
+            publish(jobId, JobState.GENERATING, ATTEMPT_PREFIX + attempts);
             statusWrites.countAttempt(jobId, attempts);
             draftJson = steps.generateFromContext(jobId, contextText, issues);
 
-            publish(jobId, JobState.REVIEWING, "attempt " + attempts);
+            publish(jobId, JobState.REVIEWING, ATTEMPT_PREFIX + attempts);
             CritiqueStep review = reviewAgainstContext(jobId, contextText, draftJson);
 
             if (review.approved()) {
@@ -200,11 +202,14 @@ public class CardWorkflowImpl implements CardWorkflow {
             }
         }
 
-        String awaitingStatus = escalated
-                ? "awaiting human decision after citation failures"
-                : clean
-                        ? "awaiting human decision"
-                        : "awaiting human decision after review";
+        String awaitingStatus;
+        if (escalated) {
+            awaitingStatus = "awaiting human decision after citation failures";
+        } else if (clean) {
+            awaitingStatus = "awaiting human decision";
+        } else {
+            awaitingStatus = "awaiting human decision after review";
+        }
         String awaitingDetail = escalated ? citations.messages().toString() : null;
         return new RetrievalLoop(draftJson, attempts, reviewerApproved, awaitingStatus,
                 awaitingDetail);

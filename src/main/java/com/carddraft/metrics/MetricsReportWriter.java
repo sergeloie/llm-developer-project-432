@@ -45,12 +45,7 @@ public class MetricsReportWriter {
         out.append("|---|---|\n");
         out.append(row(Metric.CHARACTERISTIC_MATCH.label(), report.averageCharacteristicMatch()));
         out.append(row(Metric.CITATION_PRECISION.label(), report.averageCitationPrecision()));
-        long supportCovered = report.perDocument().stream().filter(DocumentMetrics::supportMeasured).count();
-        out.append(report.perDocument().stream().anyMatch(m -> !m.supportMeasured())
-                ? "| " + Metric.SOURCE_SUPPORT.label() + " (estimate) | not measured for "
-                        + (report.perDocument().size() - supportCovered) + " of "
-                        + report.perDocument().size() + " documents |\n"
-                : row(Metric.SOURCE_SUPPORT.label() + " (estimate)", report.averageSourceSupport()));
+        out.append(supportRow(report));
         out.append('\n');
 
         out.append("## Cost\n\n");
@@ -62,12 +57,37 @@ public class MetricsReportWriter {
                     .append(" |\n");
         }
         out.append("| total | ").append(report.totalCost().toPlainString()).append(" |\n\n");
-        out.append("Costs are read from model_calls, one card's rows by job: the question \"what did "
-                + "this cost\" is answered by the same rows every other figure comes from. Local "
-                + "models price at zero, so this reads zero until the prices are set — the arithmetic "
-                + "at non-zero rates is proven by CostCalculatorTest, not by this table.\n\n");
+        out.append("""
+                Costs are read from model_calls, one card's rows by job: the question "what did
+                this cost" is answered by the same rows every other figure comes from. Local
+                models price at zero, so this reads zero until the prices are set — the arithmetic
+                at non-zero rates is proven by CostCalculatorTest, not by this table.
 
-        out.append("## Per document\n\n");        out.append("| document | match | precision | support | judged | weakest |\n");
+                """);
+
+        out.append(perDocumentTable(report));
+
+        out.append("## Weakest\n\n");
+        out.append(report.weakestSummary()).append("\n\n");
+
+        out.append(unsupportedDetails(report));
+
+        return out.toString();
+    }
+
+    private String supportRow(MetricsReport report) {
+        long supportCovered = report.perDocument().stream().filter(DocumentMetrics::supportMeasured).count();
+        return report.perDocument().stream().anyMatch(m -> !m.supportMeasured())
+                ? "| " + Metric.SOURCE_SUPPORT.label() + " (estimate) | not measured for "
+                        + (report.perDocument().size() - supportCovered) + " of "
+                        + report.perDocument().size() + " documents |\n"
+                : row(Metric.SOURCE_SUPPORT.label() + " (estimate)", report.averageSourceSupport());
+    }
+
+    private String perDocumentTable(MetricsReport report) {
+        StringBuilder out = new StringBuilder();
+        out.append("## Per document\n\n");
+        out.append("| document | match | precision | support | judged | weakest |\n");
         out.append("|---|---|---|---|---|---|\n");
         for (DocumentMetrics metrics : report.perDocument()) {
             out.append("| ").append(metrics.document())
@@ -80,10 +100,11 @@ public class MetricsReportWriter {
                     .append(" |\n");
         }
         out.append('\n');
+        return out.toString();
+    }
 
-        out.append("## Weakest\n\n");
-        out.append(report.weakestSummary()).append("\n\n");
-
+    private String unsupportedDetails(MetricsReport report) {
+        StringBuilder out = new StringBuilder();
         for (DocumentMetrics metrics : report.perDocument()) {
             if (!metrics.supportMeasured()) {
                 out.append("### ").append(metrics.document()).append(" — support judge unavailable\n\n");
@@ -104,7 +125,6 @@ public class MetricsReportWriter {
                 out.append('\n');
             }
         }
-
         return out.toString();
     }
 

@@ -23,6 +23,7 @@ import com.carddraft.agents.ProductCard;
 import com.carddraft.repositories.ModelCallRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -71,7 +72,7 @@ class ModelCallRepositoryTest {
 
     @Test
     void oneCallBecomesOneRowWithEveryPartOfIt() {
-        calls.record(call("main", "qwen/qwen3.5-9b", "draftCard", 2100, 550, "0.0147",
+        calls.write(call("main", "qwen/qwen3.5-9b", "draftCard", 2100, 550, "0.0147",
                 Duration.ofMillis(4200)));
 
         List<ModelCallRecord> stored = calls.forJob("job-1");
@@ -98,7 +99,7 @@ class ModelCallRepositoryTest {
      */
     @Test
     void aCostKeepsEveryDigitTheColumnPromises() {
-        calls.record(call("main", "m", "draftCard", 1, 1, "0.000000000016", Duration.ofMillis(1)));
+        calls.write(call("main", "m", "draftCard", 1, 1, "0.000000000016", Duration.ofMillis(1)));
 
         assertThat(calls.forJob("job-1").get(0).cost())
                 .isEqualByComparingTo("0.000000000016");
@@ -107,9 +108,9 @@ class ModelCallRepositoryTest {
 
     @Test
     void theTotalForAJobIsTheSumOfItsRows() {
-        calls.record(call("main", "m", "extractFacts", 1200, 300, "0.0081", Duration.ofMillis(900)));
-        calls.record(call("utility", "u", "reviewDraft", 2000, 200, "0.0011", Duration.ofMillis(700)));
-        calls.record(call("main", "m", "draftCard", 3000, 600, "0.0180", Duration.ofMillis(5200)));
+        calls.write(call("main", "m", "extractFacts", 1200, 300, "0.0081", Duration.ofMillis(900)));
+        calls.write(call("utility", "u", "reviewDraft", 2000, 200, "0.0011", Duration.ofMillis(700)));
+        calls.write(call("main", "m", "draftCard", 3000, 600, "0.0180", Duration.ofMillis(5200)));
 
         assertThat(calls.costOfJob("job-1")).isEqualByComparingTo("0.0272");
         assertThat(calls.forJob("job-1"))
@@ -132,9 +133,9 @@ class ModelCallRepositoryTest {
      */
     @Test
     void spendIsBrokenDownByTier() {
-        calls.record(call("main", "qwen/qwen3.5-9b", "extractFacts", 1000, 100, "0.0050", Duration.ofMillis(1)));
-        calls.record(call("main", "qwen/qwen3.5-9b", "draftCard", 1000, 100, "0.0070", Duration.ofMillis(1)));
-        calls.record(call("utility", "qwen/qwen3-4b-2507", "reviewDraft", 2000, 200, "0.0030", Duration.ofMillis(1)));
+        calls.write(call("main", "qwen/qwen3.5-9b", "extractFacts", 1000, 100, "0.0050", Duration.ofMillis(1)));
+        calls.write(call("main", "qwen/qwen3.5-9b", "draftCard", 1000, 100, "0.0070", Duration.ofMillis(1)));
+        calls.write(call("utility", "qwen/qwen3-4b-2507", "reviewDraft", 2000, 200, "0.0030", Duration.ofMillis(1)));
 
         List<ModelCallRepository.TierSpend> breakdown = calls.breakdownByTier();
 
@@ -161,7 +162,7 @@ class ModelCallRepositoryTest {
      */
     @Test
     void aCallWithNoJobIsRecordedAndLeftOutOfEveryJobTotal() {
-        calls.record(new ModelCallRecord(null, "main", "m", "draftCard", 500, 100,
+        calls.write(new ModelCallRecord(null, "main", "m", "draftCard", 500, 100,
                 new BigDecimal("0.0020"), Duration.ofMillis(1), Instant.now()));
 
         assertThat(jdbc.sql("SELECT count(*) FROM model_calls WHERE job_id IS NULL")
@@ -181,7 +182,8 @@ class ModelCallRepositoryTest {
     void aRecordThatCannotBeWrittenIsSwallowedRatherThanFailingTheCall() {
         ModelCallRepository broken = new ModelCallRepository(null);
 
-        broken.record(call("main", "m", "draftCard", 1, 1, "0.0000000001", Duration.ofMillis(1)));
+        assertThatNoException().isThrownBy(() -> broken.write(
+                call("main", "m", "draftCard", 1, 1, "0.0000000001", Duration.ofMillis(1))));
     }
 
     /**
@@ -193,7 +195,7 @@ class ModelCallRepositoryTest {
      */
     @Test
     void repairIsRecordedUnderItsOwnOperation() {
-        calls.record(call("main", "m", "repairField:title", 3000, 200, "0.0120", Duration.ofMillis(3100)));
+        calls.write(call("main", "m", "repairField:title", 3000, 200, "0.0120", Duration.ofMillis(3100)));
 
         assertThat(calls.forJob("job-1")).extracting(ModelCallRecord::operation)
                 .containsExactly("repairField:title");
@@ -240,15 +242,15 @@ class ModelCallRepositoryTest {
                 client.draftCardFromContext("[C1] Power 800 W", List.of()));
 
         // The stubbed card is already valid, so generation is a single call and a single record.
-        assertThat(recorder.recorded).singleElement().satisfies(record -> {
-            assertThat(record.jobId()).as("taken from the execution context, not passed in").isEqualTo("job-42");
-            assertThat(record.tier()).isEqualTo("main");
-            assertThat(record.inputTokens()).isEqualTo(900);
-            assertThat(record.outputTokens()).isEqualTo(120);
-            assertThat(record.cost())
+        assertThat(recorder.recorded).singleElement().satisfies(written -> {
+            assertThat(written.jobId()).as("taken from the execution context, not passed in").isEqualTo("job-42");
+            assertThat(written.tier()).isEqualTo("main");
+            assertThat(written.inputTokens()).isEqualTo(900);
+            assertThat(written.outputTokens()).isEqualTo(120);
+            assertThat(written.cost())
                     .as("900 in at 3.00/M plus 120 out at 15.00/M")
                     .isEqualByComparingTo("0.0045");
-            assertThat(record.operation()).startsWith("draftCardFromContext:phase1");
+            assertThat(written.operation()).startsWith("draftCardFromContext:phase1");
         });
     }
 
@@ -279,8 +281,8 @@ class ModelCallRepositoryTest {
         client.draftCardFromContext("[C1] text", List.of());
 
         // The stubbed card is already valid: one call, one record, with a null job.
-        assertThat(recorder.recorded).singleElement().satisfies(record ->
-                assertThat(record.jobId())
+        assertThat(recorder.recorded).singleElement().satisfies(written ->
+                assertThat(written.jobId())
                         .as("the synchronous endpoint has no job, and must still be counted")
                         .isNull());
     }
@@ -307,7 +309,7 @@ class ModelCallRepositoryTest {
         }
 
         @Override
-        public void record(ModelCallRecord call) {
+        public void write(ModelCallRecord call) {
             recorded.add(call);
         }
     }

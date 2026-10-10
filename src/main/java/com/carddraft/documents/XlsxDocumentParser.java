@@ -42,38 +42,15 @@ public class XlsxDocumentParser implements DocumentParser {
 
     @Override
     public List<StructuralUnit> parse(byte[] content) {
-        DataFormatter formatter = new DataFormatter();
         List<StructuralUnit> units = new ArrayList<>();
 
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(content))) {
             if (workbook.getNumberOfSheets() == 0) {
                 throw new DocumentRejectedException("the workbook has no sheets", null);
             }
+            DataFormatter formatter = new DataFormatter();
             for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
-                Sheet sheet = workbook.getSheetAt(sheetIndex);
-                Row header = sheet.getRow(sheet.getFirstRowNum());
-                if (header == null) {
-                    throw new DocumentRejectedException(
-                            "sheet '" + sheet.getSheetName() + "' is empty, so it has no column headers", null);
-                }
-                List<String> headers = cellValues(header, formatter);
-                if (headers.isEmpty() || headers.stream().allMatch(String::isBlank)) {
-                    throw new DocumentRejectedException(
-                            "sheet '" + sheet.getSheetName() + "' has an empty first row, "
-                                    + "so the columns cannot be named", null);
-                }
-
-                for (int rowIndex = header.getRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-                    Row row = sheet.getRow(rowIndex);
-                    if (row == null) {
-                        continue;
-                    }
-                    List<String> values = cellValues(row, formatter);
-                    String sentence = toSentence(headers, values);
-                    if (sentence != null) {
-                        units.add(new StructuralUnit(1, sheet.getSheetName(), sentence, true));
-                    }
-                }
+                collectSheet(workbook.getSheetAt(sheetIndex), formatter, units);
             }
         } catch (IOException e) {
             throw new DocumentRejectedException("the workbook could not be read", e.getMessage());
@@ -84,6 +61,32 @@ public class XlsxDocumentParser implements DocumentParser {
                     "the workbook has column headers but no data rows", null);
         }
         return units;
+    }
+
+    private void collectSheet(Sheet sheet, DataFormatter formatter, List<StructuralUnit> units) {
+        Row header = sheet.getRow(sheet.getFirstRowNum());
+        if (header == null) {
+            throw new DocumentRejectedException(
+                    "sheet '" + sheet.getSheetName() + "' is empty, so it has no column headers", null);
+        }
+        List<String> headers = cellValues(header, formatter);
+        if (headers.isEmpty() || headers.stream().allMatch(String::isBlank)) {
+            throw new DocumentRejectedException(
+                    "sheet '" + sheet.getSheetName() + "' has an empty first row, "
+                            + "so the columns cannot be named", null);
+        }
+
+        for (int rowIndex = header.getRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            List<String> values = cellValues(row, formatter);
+            String sentence = toSentence(headers, values);
+            if (sentence != null) {
+                units.add(new StructuralUnit(1, sheet.getSheetName(), sentence, true));
+            }
+        }
     }
 
     private String toSentence(List<String> headers, List<String> values) {

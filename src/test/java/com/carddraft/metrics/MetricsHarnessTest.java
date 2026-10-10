@@ -366,7 +366,7 @@ class MetricsHarnessTest {
     }
 
     @Test
-    void theReportListsWhatWasMissedSoALowScoreCanBeRead(@TempDir Path directory) throws Exception {
+    void theReportListsWhatWasMissedSoALowScoreCanBeRead() {
         MetricsReport report = new MetricsReport("run-1", "default",
                 List.of(new DocumentMetrics("a.pdf", 0.5, 1.0, 1.0, 2,
                         List.of("power = 900 W, expected 800 W"),
@@ -480,7 +480,7 @@ class MetricsHarnessTest {
     }
 
     @Test
-    void aDocumentThatGeneratedNothingIsListedOnceRatherThanUnderTwoHeadings(@TempDir Path directory) {
+    void aDocumentThatGeneratedNothingIsListedOnceRatherThanUnderTwoHeadings() {
         MetricsReport report = new MetricsReport("run-1", "full (1 document)",
                 List.of(DocumentMetrics.failed("kettle_manual.pdf", "no usable card could be generated")),
                 0, 0, 0);

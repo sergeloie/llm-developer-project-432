@@ -101,7 +101,7 @@ class SpringAiLlmClientRepairTest {
         }
 
         @Override
-        public void record(ModelCallRecord call) {
+        public void write(ModelCallRecord call) {
             recorded.add(call);
         }
     }

@@ -97,7 +97,7 @@ public class DocumentService {
             DocumentParser parser = parserFor(document.filename());
             units = parser.parse(content);
             chunks = chunker.chunk(documentId, units);
-        } catch (DocumentParser.DocumentRejectedException rejected) {
+        } catch (DocumentRejectedException rejected) {
             return documents.markRejected(documentId, rejected.reason());
         } catch (RuntimeException corrupt) {
             return documents.markRejected(documentId,
@@ -114,7 +114,7 @@ public class DocumentService {
                             c.page(), c.section(), c.text(), c.table()))
                     .toList());
             return documents.findById(documentId).orElseThrow();
-        } catch (DocumentParser.DocumentRejectedException rejected) {
+        } catch (DocumentRejectedException rejected) {
             return documents.markRejected(documentId, rejected.reason());
         }
     }
@@ -163,7 +163,7 @@ public class DocumentService {
         return parsers.stream()
                 .filter(parser -> parser.supports(filename))
                 .findFirst()
-                .orElseThrow(() -> new DocumentParser.DocumentRejectedException(
+                .orElseThrow(() -> new DocumentRejectedException(
                         "unsupported file type", filename));
     }
 

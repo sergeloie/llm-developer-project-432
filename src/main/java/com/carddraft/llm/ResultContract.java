@@ -96,12 +96,11 @@ public final class ResultContract {
         if (report.verdict() == null) {
             problems.add("the verdict is missing; return APPROVE if the draft is acceptable, REJECT otherwise");
         }
-        for (ReviewIssue issue : report.issues()) {
-            if (issue.problem().isBlank()) {
-                problems.add("an issue about \"" + (issue.field().isEmpty() ? "the card" : issue.field())
-                        + "\" has no problem statement; say what is wrong in one sentence");
-            }
-        }
+        report.issues().stream()
+                .filter(issue -> issue.problem().isBlank())
+                .map(issue -> "an issue about \"" + (issue.field().isEmpty() ? "the card" : issue.field())
+                        + "\" has no problem statement; say what is wrong in one sentence")
+                .forEach(problems::add);
         return List.copyOf(problems);
     }
 
@@ -146,12 +145,11 @@ public final class ResultContract {
             }
         });
 
-        for (String missing : card.missingFields()) {
-            if (card.characteristics().containsKey(missing)) {
-                problems.add("'" + missing + "' appears in both characteristics and missingFields; "
-                        + "a field cannot be present and absent at once");
-            }
-        }
+        card.missingFields().stream()
+                .filter(missing -> card.characteristics().containsKey(missing))
+                .map(missing -> "'" + missing + "' appears in both characteristics and missingFields; "
+                        + "a field cannot be present and absent at once")
+                .forEach(problems::add);
 
         if (card.confidence() == null) {
             problems.add("confidence is missing; give a number between 0 and 1");

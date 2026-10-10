@@ -32,7 +32,6 @@ import com.carddraft.agents.CritiqueReport;
 import com.carddraft.agents.ModelVerdict;
 import com.carddraft.agents.ProductCard;
 import com.carddraft.agents.Verdict;
-import com.carddraft.repositories.ModelCallRepository;
 
 /**
  * What the injection judge can actually read back.
@@ -84,11 +83,7 @@ class SpringAiLlmClientInjectionVerdictTest {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
-                new ModelCallRepository(null) {
-                    @Override
-                    public void record(ModelCallRecord call) {
-                    }
-                },
+                new RecordingModelCallRepository(),
                 new SimpleMeterRegistry());
     }
 

@@ -34,7 +34,7 @@ public class TextNormaliser {
      * words and running them together would invent a third.
      */
     private static final Pattern HYPHENATED_BREAK =
-            Pattern.compile("([\\p{L}])[-\u2010\u2011]\\s*\\n\\s*([\\p{Ll}])");
+            Pattern.compile("([\\p{L}])[-\u2010\u2011][ \\t]*\\n[ \\t]*([\\p{Ll}])");
 
     private static final Pattern PLAIN_BREAK =
             Pattern.compile("([\\p{L}])[ \\t]*\\n[ \\t]*([\\p{Ll}])");
@@ -118,12 +118,11 @@ public class TextNormaliser {
         if (furniture.isEmpty()) {
             return pageTexts;
         }
-        List<String> cleaned = new ArrayList<>(pageTexts.size());
-        for (String pageText : pageTexts) {
-            cleaned.add(lines(pageText).stream()
-                    .filter(line -> !furniture.contains(line))
-                    .collect(java.util.stream.Collectors.joining("\n")));
-        }
+        List<String> cleaned = pageTexts.stream()
+                .map(pageText -> lines(pageText).stream()
+                        .filter(line -> !furniture.contains(line))
+                        .collect(java.util.stream.Collectors.joining("\n")))
+                .toList();
         // If the rule would leave nothing, it has misfired: a document whose every line repeats
         // is not a document made of headers. Keeping the original is the safe direction, because a
         // stray header costs a little noise while a deleted document costs the whole card.

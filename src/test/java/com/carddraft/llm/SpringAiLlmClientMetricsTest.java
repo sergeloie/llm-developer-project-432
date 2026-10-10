@@ -27,8 +27,6 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 
 import tools.jackson.databind.ObjectMapper;
 
-import com.carddraft.repositories.ModelCallRepository;
-
 /**
  * The latency timer, alongside the per-row cost record.
  *
@@ -73,11 +71,7 @@ class SpringAiLlmClientMetricsTest {
 
         registry = new SimpleMeterRegistry();
         client = new SpringAiLlmClient(chatClientBuilder, new ObjectMapper(), settings,
-                new ModelCallRepository(null) {
-                    @Override
-                    public void record(ModelCallRecord call) {
-                    }
-                },
+                new RecordingModelCallRepository(),
                 registry);
     }
 

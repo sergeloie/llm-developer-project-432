@@ -80,10 +80,9 @@ public class MetricsRunner implements ApplicationRunner {
         ReferenceSet reference = ReferenceSet.load(GOLDEN);
         List<String> documents = "full".equals(scope) ? reference.documents() : reference.defaults();
 
-        List<DocumentMetrics> results = new ArrayList<>();
-        for (String document : documents) {
-            results.add(measure(document, reference.characteristicsOf(document)));
-        }
+        List<DocumentMetrics> results = documents.stream()
+                .map(document -> measure(document, reference.characteristicsOf(document)))
+                .toList();
 
         MetricsReport report = new MetricsReport(
                 "run-" + System.currentTimeMillis(),

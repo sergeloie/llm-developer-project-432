@@ -13,7 +13,7 @@ import org.springframework.http.HttpStatus;
 public class ApiRefusalException extends RuntimeException {
 
     private final HttpStatus status;
-    private final java.util.Map<String, Object> properties;
+    private final transient java.util.Map<String, Object> properties;
 
     public ApiRefusalException(HttpStatus status, String detail) {
         this(status, detail, java.util.Map.of());

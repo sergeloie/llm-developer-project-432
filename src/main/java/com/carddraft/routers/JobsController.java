@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
 
+import com.carddraft.repositories.JobsRepository;
 import com.carddraft.services.JobSubmissionService;
 import com.carddraft.services.JobSubmissionService.DecisionOutcome;
+import com.carddraft.services.JobSubmissionService.JobStatus;
 import com.carddraft.services.JobSubmissionService.SubmitOutcome;
 import com.carddraft.temporal.JobDecision;
 
@@ -46,13 +48,13 @@ public class JobsController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         return switch (submissions.submit(idempotencyKey, request.supplierText(),
                 request.documentIds(), request.productHint())) {
-            case SubmitOutcome.DocumentsNotIndexed notIndexed ->
+            case SubmitOutcome.DocumentsNotIndexed(Map<String, String> states) ->
                     throw new ApiRefusalException(HttpStatus.CONFLICT,
                             "these documents are not indexed; poll GET /documents/{id} until the "
                                     + "state is indexed, and submit again",
-                            Map.of("documents", notIndexed.states()));
-            case SubmitOutcome.Accepted accepted ->
-                    ResponseEntity.accepted().body(JobAcceptedResponse.from(accepted.job()));
+                            Map.of("documents", states));
+            case SubmitOutcome.Accepted(JobsRepository.Job job) ->
+                    ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
         };
     }
 
@@ -69,8 +71,8 @@ public class JobsController {
         JobDecision decision = JobDecision.fromWireName(request.decision()).orElseThrow();
         return switch (submissions.decide(jobId, decision)) {
             case DecisionOutcome.UnknownJob ignored -> ResponseEntity.notFound().build();
-            case DecisionOutcome.Settled settled ->
-                    ResponseEntity.ok(JobStatusResponse.from(settled.status()));
+            case DecisionOutcome.Settled(JobStatus status) ->
+                    ResponseEntity.ok(JobStatusResponse.from(status));
             // A job escalated before generation never produced a draft to approve: approving it
             // would record a success with nothing to show, so it is refused before the signal
             // reaches the workflow.
@@ -78,10 +80,10 @@ public class JobsController {
                     throw new ApiRefusalException(HttpStatus.CONFLICT,
                             "this job has no draft card to approve; it was escalated before generation, "
                                     + "and approving it would record a success with nothing to show");
-            case DecisionOutcome.ProcessGone gone ->
-                    throw new WorkflowNotFoundException(gone.job().status());
-            case DecisionOutcome.Accepted accepted ->
-                    ResponseEntity.accepted().body(JobAcceptedResponse.from(accepted.job()));
+            case DecisionOutcome.ProcessGone(JobsRepository.Job job) ->
+                    throw new WorkflowNotFoundException(job.status());
+            case DecisionOutcome.Accepted(JobsRepository.Job job) ->
+                    ResponseEntity.accepted().body(JobAcceptedResponse.from(job));
         };
     }
 

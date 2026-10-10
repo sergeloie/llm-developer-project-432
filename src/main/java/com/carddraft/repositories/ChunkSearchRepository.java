@@ -26,6 +26,10 @@ public class ChunkSearchRepository {
     /** Canonical from the original rank-fusion paper; other values work, this one is not a guess. */
     public static final int DEFAULT_RRF_K = 60;
 
+    private static final String LIMIT_PARAM = "limit";
+    private static final String DOCUMENTS_PARAM = "documents";
+    private static final String SECTION_PARAM = "section";
+
     /**
      * Restricts a search to a set of documents, and optionally to one section.
      *
@@ -34,9 +38,10 @@ public class ChunkSearchRepository {
      * clause is bound parameters: the document ids are an array and the section a scalar, so no
      * caller value is ever spliced into the SQL text.
      */
-    private static final String DOCUMENT_FILTER =
-            " AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))\n"
-                    + " AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))\n";
+    private static final String DOCUMENT_FILTER = """
+             AND (CAST(:documents AS text[]) IS NULL OR c.document_id = ANY(CAST(:documents AS text[])))
+             AND (CAST(:section AS text) IS NULL OR c.section = CAST(:section AS text))
+            """;
 
     private final JdbcClient jdbc;
     private final JdbcTemplate template;
@@ -126,7 +131,7 @@ public class ChunkSearchRepository {
                           ORDER BY c.document_id, c.ordinal
                           LIMIT :limit
                         """)
-                .param("limit", limit)
+                .param(LIMIT_PARAM, limit)
                 .query(ChunkToEmbed.class)
                 .list();
     }
@@ -142,7 +147,7 @@ public class ChunkSearchRepository {
                           LIMIT :limit
                         """)
                 .param("documentId", documentId)
-                .param("limit", limit)
+                .param(LIMIT_PARAM, limit)
                 .query(ChunkToEmbed.class)
                 .list();
     }
@@ -174,9 +179,9 @@ public class ChunkSearchRepository {
                         """)
                 .param("vector", toVectorLiteral(queryVector))
                 .param("maxDistance", maxDistance)
-                .param("documents", filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
-                .param("section", filter.section())
-                .param("limit", limit)
+                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(SECTION_PARAM, filter.section())
+                .param(LIMIT_PARAM, limit)
                 .query(Hit.class)
                 .list();
     }
@@ -197,9 +202,9 @@ public class ChunkSearchRepository {
                          LIMIT :limit
                         """)
                 .param("query", query)
-                .param("documents", filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
-                .param("section", filter.section())
-                .param("limit", limit)
+                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(SECTION_PARAM, filter.section())
+                .param(LIMIT_PARAM, limit)
                 .query(Hit.class)
                 .list();
     }
@@ -262,11 +267,11 @@ public class ChunkSearchRepository {
                 .param("vector", toVectorLiteral(queryVector))
                 .param("query", textQuery == null ? "" : textQuery)
                 .param("maxDistance", maxDistance)
-                .param("documents", filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
-                .param("section", filter.section())
+                .param(DOCUMENTS_PARAM, filter.documentIds() == null ? null : filter.documentIds().toArray(new String[0]))
+                .param(SECTION_PARAM, filter.section())
                 .param("perList", perListLimit)
                 .param("k", rrfK)
-                .param("limit", limit)
+                .param(LIMIT_PARAM, limit)
                 .query(Hit.class)
                 .list();
     }

@@ -26,6 +26,8 @@ public class ModelCallRepository {
     private static final org.slf4j.Logger log =
             org.slf4j.LoggerFactory.getLogger(ModelCallRepository.class);
 
+    private static final String JOB_ID = "jobId";
+
     private final JdbcClient jdbc;
 
     public ModelCallRepository(JdbcClient jdbc) {
@@ -41,7 +43,7 @@ public class ModelCallRepository {
      * every call appears to have succeeded. Converting here is the one-line difference between
      * working accounting and accounting that silently records nothing.
      */
-    public void record(ModelCallRecord call) {
+    public void write(ModelCallRecord call) {
         try {
             java.time.OffsetDateTime calledAt = call.calledAt() == null
                     ? java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
@@ -54,7 +56,7 @@ public class ModelCallRepository {
                             VALUES (:jobId, :tier, :model, :operation, :inputTokens, :outputTokens,
                                     :cost, :durationMs, :calledAt)
                             """)
-                    .param("jobId", call.jobId())
+                    .param(JOB_ID, call.jobId())
                     .param("tier", call.tier())
                     .param("model", call.model())
                     .param("operation", call.operation())
@@ -93,7 +95,7 @@ public class ModelCallRepository {
                          WHERE job_id = :jobId
                          ORDER BY called_at, id
                         """)
-                .param("jobId", jobId)
+                .param(JOB_ID, jobId)
                 .query(CallRow.class)
                 .list()
                 .stream()
@@ -111,7 +113,7 @@ public class ModelCallRepository {
      */
     public BigDecimal costOfJob(String jobId) {
         BigDecimal total = jdbc.sql("SELECT coalesce(sum(cost), 0) AS total FROM model_calls WHERE job_id = :jobId")
-                .param("jobId", jobId)
+                .param(JOB_ID, jobId)
                 .query(BigDecimal.class)
                 .single();
         return total == null ? BigDecimal.ZERO.setScale(CostCalculator.SCALE) : total;

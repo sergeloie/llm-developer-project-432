@@ -44,21 +44,15 @@ class CitationVerifierTest {
     }
 
     /**
-     * The failure that matters.
+     * A citation written the way the fragment was displayed still resolves.
      *
-     * <p>C7 does not exist in the corpus and never existed. The label is contiguous-checked, so no
-     * database is consulted: with three fragments shown, anything past C3 was not sent.
+     * <p>Found by running the service, not by reading it: the context is rendered to the model as
+     * {@code [C1]}, the model copies what it was shown, and the lookup was being asked for the
+     * bracketed form against a retained reference that has no brackets. Every citation on a real card
+     * was therefore reported as fabricated — which is the gate designed to catch fabrications unable to
+     * tell one from a truth.
      */
-/**
- * A citation written the way the fragment was displayed still resolves.
- *
- * <p>Found by running the service, not by reading it: the context is rendered to the model as
- * {@code [C1]}, the model copies what it was shown, and the lookup was being asked for the
- * bracketed form against a retained reference that has no brackets. Every citation on a real card
- * was therefore reported as fabricated — which is the gate designed to catch fabrications unable to
- * tell one from a truth.
- */
-@Test
+    @Test
     void aCitationInTheDisplayedFormResolvesToTheReferenceItWasShownAs() {
     Verdict verdict = verifier.verify(contextOf(3), Set.of("Power", "Weight"),
             Map.of("Power", "[C2]", "Weight", "[C1]"));
@@ -82,7 +76,13 @@ class CitationVerifierTest {
             .containsExactlyInAnyOrder("Power", "Weight", "Model");
 }
 
-@Test
+    /**
+     * The failure that matters.
+     *
+     * <p>C7 does not exist in the corpus and never existed. The label is contiguous-checked, so no
+     * database is consulted: with three fragments shown, anything past C3 was not sent.
+     */
+    @Test
     void aCitationBeyondTheContextIsFabricated() {
     Verdict verdict = verifier.verify(contextOf(3), Set.of("Power"), Map.of("Power", "C7"));
 
