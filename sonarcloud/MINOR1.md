@@ -1,0 +1,9 @@
+# MINOR issues for sergeloie/sergeloie_llm-developer-project-432 (Part 1/1)
+
+| Key | Type | Rule | Severity | Status | File | Line | Message | Created |
+| --- | ---- | ---- | -------- | ------ | ---- | ---- | ------- | ------- |
+| [AaEhDP6EC3ZU2ol2_KXw](https://sonarcloud.io/project/issues?id=sergeloie_llm-developer-project-432&issues=AaEhDP6EC3ZU2ol2_KXw&open=AaEhDP6EC3ZU2ol2_KXw) | CODE_SMELL | java:S135 | MINOR | OPEN | src/main/java/com/carddraft/context/ContextAssembler.java | 45 | Reduce the total number of break and continue statements in this loop to use at most one. | 2026-10-07 |
+| [AaEhDP-YC3ZU2ol2_KX9](https://sonarcloud.io/project/issues?id=sergeloie_llm-developer-project-432&issues=AaEhDP-YC3ZU2ol2_KX9&open=AaEhDP-YC3ZU2ol2_KX9) | CODE_SMELL | java:S135 | MINOR | OPEN | src/main/java/com/carddraft/documents/DocxDocumentParser.java | 49 | Reduce the total number of break and continue statements in this loop to use at most one. | 2026-10-07 |
+| [AaEhDQAvC3ZU2ol2_KYm](https://sonarcloud.io/project/issues?id=sergeloie_llm-developer-project-432&issues=AaEhDQAvC3ZU2ol2_KYm&open=AaEhDQAvC3ZU2ol2_KYm) | CODE_SMELL | java:S2924 | MINOR | OPEN | src/test/java/com/carddraft/metrics/MetricsHarnessTest.java | 369 | Remove this unused "TempDir". | 2026-10-07 |
+| [AaEhDQAvC3ZU2ol2_KYn](https://sonarcloud.io/project/issues?id=sergeloie_llm-developer-project-432&issues=AaEhDQAvC3ZU2ol2_KYn&open=AaEhDQAvC3ZU2ol2_KYn) | CODE_SMELL | java:S2924 | MINOR | OPEN | src/test/java/com/carddraft/metrics/MetricsHarnessTest.java | 483 | Remove this unused "TempDir". | 2026-10-07 |
+| [AaEhDQAaC3ZU2ol2_KYf](https://sonarcloud.io/project/issues?id=sergeloie_llm-developer-project-432&issues=AaEhDQAaC3ZU2ol2_KYf&open=AaEhDQAaC3ZU2ol2_KYf) | CODE_SMELL | java:S1481 | MINOR | OPEN | src/test/java/com/carddraft/temporal/CardWorkflowImplTest.java | 132 | Remove this unused "workflowId" local variable. | 2026-10-07 |
