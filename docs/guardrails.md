@@ -8,7 +8,7 @@ hand-editing so the formatter does not overwrite manual line breaks.
 
 | Tool | Version | Where configured | When it runs |
 |------|---------|------------------|--------------|
-| Spotless (Palantir for Java, ktlint for build scripts) | plugin 8.10.2, ktlint 1.4.0 | root `build.gradle.kts` (`// === Guardrail: spotless ===`) | manually `spotlessApply` / `spotlessCheck` |
+| Spotless (Palantir for Java, ktlint for build scripts) | plugin 8.10.2, ktlint 1.4.0 | root `build.gradle.kts` (`// === Guardrail: spotless ===`) | in `check` (+ manual `spotlessApply` before hand-editing) |
 | Checkstyle (OpenJDK style) | 14.3.0 | `config/checkstyle/openjdk_checks.xml` + `suppressions.xml`, root `build.gradle.kts` | in `check` |
 
 ## Order of authority
@@ -39,7 +39,7 @@ deviations so it accepts Spotless output and the project's existing content:
 
 - `./gradlew spotlessApply` - format everything (Java + build scripts) before hand-editing.
 - `./gradlew spotlessCheck` - verify formatting without changing files.
-- `./gradlew check` - Checkstyle + tests (must be green).
+- `./gradlew check` - Spotless + Checkstyle + tests (must be green).
 
 ## Reports
 

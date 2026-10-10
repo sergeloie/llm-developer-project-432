@@ -145,3 +145,8 @@ allprojects {
         }
     }
 }
+
+// === Guardrail: spotlessCheck runs as part of check ===
+tasks.check {
+    dependsOn(tasks.spotlessCheck)
+}

@@ -17,6 +17,6 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 Full description: `docs/guardrails.md`. Short:
 
 - `./gradlew spotlessApply` - format before hand-editing (Spotless/Palantir for Java, ktlint for build scripts).
-- `./gradlew check` - mandatory green run after any change (Checkstyle is part of `check`, plus tests).
+- `./gradlew check` - mandatory green run after any change (Spotless and Checkstyle are part of `check`, plus tests).
 - Spotless is authoritative for formatting; the Checkstyle config accepts its output.
 - Tool versions: Spotless 8.10.2, Checkstyle 14.3.0, pinned inline in `build.gradle.kts`.
