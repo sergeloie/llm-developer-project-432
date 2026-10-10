@@ -73,7 +73,6 @@ class EmbeddingThresholdCalibrationTest {
     @EnabledIf("referenceSetAndModelAreAvailable")
     void everyReferenceProbeIsWithinTheConfiguredThreshold() throws Exception {
         EmbeddingModel model = liveModel();
-        SearchSettings configured = configuredSettings();
 
         Map<String, Object> golden = readGolden();
         var documents = (Map<String, Map<String, Object>>) golden.get("documents");
@@ -114,6 +113,7 @@ class EmbeddingThresholdCalibrationTest {
             }
         }
 
+        SearchSettings configured = configuredSettings();
         assertThat(configured.maxVectorDistance())
                 .as(
                         "the threshold must admit the worst reference probe (%s / %s at %.3f)",

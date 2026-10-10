@@ -45,18 +45,30 @@ class ModelCallRepositoryTest {
             .withUsername("card")
             .withPassword("card");
 
-    @DynamicPropertySource
-    static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("card.db.url", DATABASE::getJdbcUrl);
-        registry.add("card.db.username", DATABASE::getUsername);
-        registry.add("card.db.password", DATABASE::getPassword);
-    }
+    /**
+     * A card that satisfies the contract.
+     *
+     * <p>Needed rather than any JSON: the client validates before it records, so a stub response of
+     * "{}" throws and the accounting code never runs. The test would then pass for the wrong
+     * reason - it would be asserting that a failed call records nothing.
+     */
+    private static final String VALID_CARD = """
+            {"title":"Kettle","description":"A 1.7 litre kettle.","characteristics":{"Power":"2200 W"},
+             "benefits":["fast to boil"],"missingFields":[],"confidence":0.9,"sources":{"Power":"C1"}}
+            """;
 
     @Autowired
     ModelCallRepository calls;
 
     @Autowired
     JdbcClient jdbc;
+
+    @DynamicPropertySource
+    static void datasource(DynamicPropertyRegistry registry) {
+        registry.add("card.db.url", DATABASE::getJdbcUrl);
+        registry.add("card.db.username", DATABASE::getUsername);
+        registry.add("card.db.password", DATABASE::getPassword);
+    }
 
     @BeforeEach
     void clean() {
@@ -258,18 +270,20 @@ class ModelCallRepositoryTest {
         JobLogContext.withJob("job-42", () -> client.draftCardFromContext("[C1] Power 800 W", List.of()));
 
         // The stubbed card is already valid, so generation is a single call and a single record.
-        assertThat(recorder.recorded).singleElement().satisfies(written -> {
-            assertThat(written.jobId())
-                    .as("taken from the execution context, not passed in")
-                    .isEqualTo("job-42");
-            assertThat(written.tier()).isEqualTo("main");
-            assertThat(written.inputTokens()).isEqualTo(900);
-            assertThat(written.outputTokens()).isEqualTo(120);
-            assertThat(written.cost())
-                    .as("900 in at 3.00/M plus 120 out at 15.00/M")
-                    .isEqualByComparingTo("0.0045");
-            assertThat(written.operation()).startsWith("draftCardFromContext:phase1");
-        });
+        assertThat(recorder.recorded).singleElement().satisfies(written -> assertRecordedFromDraftContext(written));
+    }
+
+    private static void assertRecordedFromDraftContext(ModelCallRecord written) {
+        assertThat(written.jobId())
+                .as("taken from the execution context, not passed in")
+                .isEqualTo("job-42");
+        assertThat(written.tier()).isEqualTo("main");
+        assertThat(written.inputTokens()).isEqualTo(900);
+        assertThat(written.outputTokens()).isEqualTo(120);
+        assertThat(written.cost())
+                .as("900 in at 3.00/M plus 120 out at 15.00/M")
+                .isEqualByComparingTo("0.0045");
+        assertThat(written.operation()).startsWith("draftCardFromContext:phase1");
     }
 
     /** A call with no job behind it is recorded rather than refused. */
@@ -312,18 +326,6 @@ class ModelCallRepositoryTest {
                 .as("the synchronous endpoint has no job, and must still be counted")
                 .isNull());
     }
-
-    /**
-     * A card that satisfies the contract.
-     *
-     * <p>Needed rather than any JSON: the client validates before it records, so a stub response of
-     * "{}" throws and the accounting code never runs. The test would then pass for the wrong
-     * reason - it would be asserting that a failed call records nothing.
-     */
-    private static final String VALID_CARD = """
-            {"title":"Kettle","description":"A 1.7 litre kettle.","characteristics":{"Power":"2200 W"},
-             "benefits":["fast to boil"],"missingFields":[],"confidence":0.9,"sources":{"Power":"C1"}}
-            """;
 
     /** Counts rows instead of restating an expectation about a mock. */
     static final class RecordingRepository extends ModelCallRepository {

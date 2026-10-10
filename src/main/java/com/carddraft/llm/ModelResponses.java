@@ -21,6 +21,8 @@ public final class ModelResponses {
     private ModelResponses() {}
 
     /**
+     * The first complete JSON object in the model's reply.
+     *
      * @throws ModelResponseFormatException when no JSON object can be recovered, with a message
      *         naming the operation and quoting the start of the text rather than dumping all of it
      */

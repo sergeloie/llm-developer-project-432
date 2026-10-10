@@ -24,6 +24,27 @@ import com.carddraft.agents.SupportJudgement;
  */
 public final class ResultContract {
 
+    /**
+     * A fragment reference in the shape the prompts define: {@code [C3]} or {@code C3}.
+     *
+     * <p>What the shape is and what is forgiven are two separate questions, and the sources gate
+     * and the characteristic-value check answer them differently.
+     *
+     * <p>The sources gate answers the shape question only, and exactly: the verifier unwraps a
+     * full pair of brackets and nothing else — case and surrounding space are the model's to get
+     * right — so {@link #sourcesProblems} must accept the same forms the verifier resolves or a
+     * card passes one gate and fails the next. That exactness is
+     * {@link com.carddraft.context.CitationVerifierTest}, which locks the two together.
+     *
+     * <p>The characteristic-value check answers a different question — "is this value a reference
+     * rather than a fact?" — and for that, a value the model padded with a stray space is still
+     * clearly the mistake it is, so it is worth sending back even though the sources gate would
+     * phrase the same padding differently.
+     */
+    private static final Pattern FRAGMENT_REFERENCE = Pattern.compile("(?:\\[C\\d+\\]|C\\d+)");
+
+    private static final Map<Class<?>, String> SCHEMAS = new ConcurrentHashMap<>();
+
     private ResultContract() {}
 
     /**
@@ -102,6 +123,8 @@ public final class ResultContract {
     }
 
     /**
+     * Whether a generated card satisfies everything the application will rely on.
+     *
      * @return the problems, empty when the result satisfies the contract. An empty list means
      *         usable; a non-empty one means send it back with these sentences attached.
      */
@@ -187,39 +210,22 @@ public final class ResultContract {
      */
     public static List<String> sourcesProblems(ProductCard card) {
         List<String> problems = new java.util.ArrayList<>();
-        card.sources().forEach((name, chunkId) -> {
-            if (!card.characteristics().containsKey(name)) {
-                problems.add("sources names '" + name + "' but there is no such characteristic");
-            }
-            if (chunkId == null || chunkId.isBlank()) {
-                problems.add("the source for '" + name + "' has no chunk identifier");
-            } else if (!isExactReference(chunkId)) {
-                problems.add("the source for '" + name + "' is '" + chunkId.strip() + "', which is "
-                        + "not a fragment reference; use the label exactly as shown in brackets, "
-                        + "such as C3");
-            }
-        });
+        card.sources().forEach((name, chunkId) -> checkSource(card, name, chunkId, problems));
         return List.copyOf(problems);
     }
 
-    /**
-     * A fragment reference in the shape the prompts define: {@code [C3]} or {@code C3}.
-     *
-     * <p>What the shape is and what is forgiven are two separate questions, and the sources gate
-     * and the characteristic-value check answer them differently.
-     *
-     * <p>The sources gate answers the shape question only, and exactly: the verifier unwraps a
-     * full pair of brackets and nothing else — case and surrounding space are the model's to get
-     * right — so {@link #sourcesProblems} must accept the same forms the verifier resolves or a
-     * card passes one gate and fails the next. That exactness is
-     * {@link com.carddraft.context.CitationVerifierTest}, which locks the two together.
-     *
-     * <p>The characteristic-value check answers a different question — "is this value a reference
-     * rather than a fact?" — and for that, a value the model padded with a stray space is still
-     * clearly the mistake it is, so it is worth sending back even though the sources gate would
-     * phrase the same padding differently.
-     */
-    private static final Pattern FRAGMENT_REFERENCE = Pattern.compile("(?:\\[C\\d+\\]|C\\d+)");
+    private static void checkSource(ProductCard card, String name, String chunkId, List<String> problems) {
+        if (!card.characteristics().containsKey(name)) {
+            problems.add("sources names '" + name + "' but there is no such characteristic");
+        }
+        if (chunkId == null || chunkId.isBlank()) {
+            problems.add("the source for '" + name + "' has no chunk identifier");
+        } else if (!isExactReference(chunkId)) {
+            problems.add("the source for '" + name + "' is '" + chunkId.strip() + "', which is "
+                    + "not a fragment reference; use the label exactly as shown in brackets, "
+                    + "such as C3");
+        }
+    }
 
     /**
      * Whether a sources value is a reference exactly as the citation verifier will resolve it.
@@ -247,8 +253,6 @@ public final class ResultContract {
     static boolean isReference(String value) {
         return FRAGMENT_REFERENCE.matcher(value.strip()).matches();
     }
-
-    private static final Map<Class<?>, String> SCHEMAS = new ConcurrentHashMap<>();
 
     /**
      * A JSON schema derived from the record itself.

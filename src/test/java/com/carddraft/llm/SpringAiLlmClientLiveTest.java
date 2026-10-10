@@ -46,18 +46,18 @@ class SpringAiLlmClientLiveTest {
             .withUsername("card")
             .withPassword("card");
 
+    private static final String SUPPLIER_TEXT = "Блендер погружной МиксерПро 800. Мощность 800 Вт, питание 220 В. "
+            + "6 скоростей плюс турбо. Металлическая ножка. Гарантия 24 месяца.";
+
+    @Autowired
+    LlmClient llmClient;
+
     @org.springframework.test.context.DynamicPropertySource
     static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @Autowired
-    LlmClient llmClient;
-
-    private static final String SUPPLIER_TEXT = "Блендер погружной МиксерПро 800. Мощность 800 Вт, питание 220 В. "
-            + "6 скоростей плюс турбо. Металлическая ножка. Гарантия 24 месяца.";
 
     @Test
     void extractsStructuredFactsFromRealSupplierText() {

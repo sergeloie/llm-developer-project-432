@@ -29,11 +29,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class InjectionDetector {
 
-    private final Pattern longOpaque;
-
-    public InjectionDetector(TrustSettings settings) {
-        this.longOpaque = Pattern.compile("\\S{" + Math.max(1, settings.maxOpaqueFragmentLength()) + ",}");
-    }
     /** A direct instruction to the model, in either language the supplied documents use. */
     private static final Pattern DIRECT_COMMAND = Pattern.compile(
             "(?iuU)\\b(ignore|disregard|forget)\\b[^.]{0,40}\\b(previous|prior|above|earlier|all)\\b[^.]{0,20}\\b"
@@ -60,6 +55,12 @@ public class InjectionDetector {
      * is almost always an attempt to carry instructions past anything that reads words.
      */
     private static final Pattern LONG_ENCODED = Pattern.compile("\\b[A-Za-z0-9+/]{40,}={0,2}\\b");
+
+    private final Pattern longOpaque;
+
+    public InjectionDetector(TrustSettings settings) {
+        this.longOpaque = Pattern.compile("\\S{" + Math.max(1, settings.maxOpaqueFragmentLength()) + ",}");
+    }
 
     /**
      * What the rules found, before any model is consulted.

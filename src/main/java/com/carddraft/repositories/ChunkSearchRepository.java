@@ -195,7 +195,7 @@ public class ChunkSearchRepository {
     public List<Hit> searchByText(String query, Filter filter, int limit) {
         return jdbc.sql("""
                         SELECT c.id AS chunk_id, c.document_id, c.page, c.section, c.text,
-                               ts_rank(c.search_text, websearch_to_tsquery('simple', :query)) AS score, 'text' AS matched_by
+                        ts_rank(c.search_text, websearch_to_tsquery('simple', :query)) AS score, 'text' AS matched_by
                           FROM chunks c
                          WHERE c.search_text @@ websearch_to_tsquery('simple', :query)
                         """ + DOCUMENT_FILTER + """

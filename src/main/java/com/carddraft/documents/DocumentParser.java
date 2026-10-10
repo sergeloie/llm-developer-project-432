@@ -15,6 +15,8 @@ import com.carddraft.agents.StructuralUnit;
 public interface DocumentParser {
 
     /**
+     * The document's prose as its structural units.
+     *
      * @throws DocumentRejectedException when the file cannot be read at all. A document with no
      *         text layer is rejected rather than returned empty: an empty result with no reason
      *         is indistinguishable from a broken parser.

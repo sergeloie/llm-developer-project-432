@@ -6,4 +6,5 @@
 
 <suppressions>
     <suppress checks="LineEnding"/>
+    <suppress files="TextNormaliser\.java" checks="AvoidEscapedUnicodeCharacters"/>
 </suppressions>

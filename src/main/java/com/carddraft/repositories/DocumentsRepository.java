@@ -58,8 +58,10 @@ public class DocumentsRepository {
             Instant createdAt,
             Instant updatedAt) {}
 
-    /** {@code is_table} arrives aliased as {@code table_flag}: "table" is reserved enough in SQL
-     *  to be an awkward column name to map onto a record component. */
+    /**
+     * {@code is_table} arrives aliased as {@code table_flag}: "table" is reserved enough in SQL to
+     * be an awkward column name to map onto a record component.
+     */
     public record ChunkRow(
             long id, String documentId, int ordinal, int page, String section, String text, boolean tableFlag) {}
 

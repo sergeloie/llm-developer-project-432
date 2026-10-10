@@ -36,18 +36,18 @@ class JobContextRepositoryTest {
             .withUsername("card")
             .withPassword("card");
 
+    @Autowired
+    JobContextRepository contexts;
+
+    @Autowired
+    JdbcClient jdbc;
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @Autowired
-    JobContextRepository contexts;
-
-    @Autowired
-    JdbcClient jdbc;
 
     @Test
     void aContextComesBackInTheOrderItWasGivenAndWithItsLabels() {

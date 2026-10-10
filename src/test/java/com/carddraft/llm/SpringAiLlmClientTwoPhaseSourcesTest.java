@@ -108,7 +108,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
     }
 
     @Test
-    void whenFirstCallHasInvalidSources_SecondCallUsesSourcesOnlyPrompt() {
+    void whenFirstCallHasInvalidSourcesSecondCallUsesSourcesOnlyPrompt() {
         // Given: first response has sentences in sources instead of characteristic names
         String firstResponse = """
                 {"title":"Blender 800","description":"A powerful blender.",
@@ -163,7 +163,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
     }
 
     @Test
-    void whenSourcesAreSentencesRatherThanReferences_TheyAreRepairedPointwise() {
+    void whenSourcesAreSentencesRatherThanReferencesTheyAreRepairedPointwise() {
         // Given: first response is valid but with sentence-based sources
         String firstResponse = """
                 {"title":"Blender 800","description":"A powerful blender.",
@@ -197,7 +197,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
     }
 
     @Test
-    void whenSourcesAlreadyCiteCorrectly_NoSecondCallIsBilled() {
+    void whenSourcesAlreadyCiteCorrectlyNoSecondCallIsBilled() {
         // Given: a first response whose sources are already references
         String valid = """
                 {"title":"Blender 800","description":"A powerful blender.",
@@ -227,7 +227,7 @@ class SpringAiLlmClientTwoPhaseSourcesTest {
      * not end the job in the client.
      */
     @Test
-    void whenSourcesRepairNeverConverges_TheFirstDraftStillGoesOn() {
+    void whenSourcesRepairNeverConvergesTheFirstDraftStillGoesOn() {
         // Given: valid facts with sentence sources, and a model that never fixes the mapping
         // while keeping everything else intact
         String stubborn = """

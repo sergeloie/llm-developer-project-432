@@ -48,18 +48,18 @@ class CardsControllerTest {
             .withUsername("card")
             .withPassword("card");
 
+    @MockitoBean
+    LlmClient llmClient;
+
+    @Autowired
+    TestRestTemplate rest;
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @MockitoBean
-    LlmClient llmClient;
-
-    @Autowired
-    TestRestTemplate rest;
 
     @Test
     void returnsADraftCardForSupplierText() {

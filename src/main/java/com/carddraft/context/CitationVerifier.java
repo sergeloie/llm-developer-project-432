@@ -60,6 +60,8 @@ public class CitationVerifier {
     }
 
     /**
+     * The outcome of checking a card against the context it was generated from.
+     *
      * @param findings every declared characteristic's citation, in card order, so a reviewer sees
      *                 them all
      * @param fabricated subset that names a fragment the model was not shown

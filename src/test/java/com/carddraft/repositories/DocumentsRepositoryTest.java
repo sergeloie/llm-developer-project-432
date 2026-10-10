@@ -37,6 +37,9 @@ class DocumentsRepositoryTest {
     private static JdbcClient jdbc;
     private static JdbcTemplate template;
 
+    /** A zero vector of the width the column demands, which pgvector refuses to narrow. */
+    private static final String ZERO_VECTOR = "[" + String.join(",", java.util.Collections.nCopies(768, "0")) + "]";
+
     private DocumentsRepository documents;
 
     @BeforeAll
@@ -82,9 +85,6 @@ class DocumentsRepositoryTest {
                 .as("empty would read as a file of no bytes, which parses to nothing without saying so")
                 .isEmpty();
     }
-
-    /** A zero vector of the width the column demands, which pgvector refuses to narrow. */
-    private static final String ZERO_VECTOR = "[" + String.join(",", java.util.Collections.nCopies(768, "0")) + "]";
 
     @Test
     void aDocumentRowStillReadsBackItsMetadataWithTheFileInTheTable() {

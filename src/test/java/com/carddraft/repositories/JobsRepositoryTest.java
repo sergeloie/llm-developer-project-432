@@ -34,18 +34,18 @@ class JobsRepositoryTest {
             .withUsername("card")
             .withPassword("card");
 
+    @Autowired
+    JobsRepository jobs;
+
+    @Autowired
+    JdbcClient jdbc;
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @Autowired
-    JobsRepository jobs;
-
-    @Autowired
-    JdbcClient jdbc;
 
     @BeforeEach
     void clear() {
@@ -115,12 +115,13 @@ class JobsRepositoryTest {
 
         jobs.setStatus(id, "generating", "attempt 2");
 
+        assertThat(jobs.findById(id).orElseThrow().updatedAt())
+                .as("updated_at is what makes a stuck job detectable at all")
+                .isAfter(before);
+
         JobsRepository.Job after = jobs.findById(id).orElseThrow();
         assertThat(after.status()).isEqualTo("generating");
         assertThat(after.detail()).isEqualTo("attempt 2");
-        assertThat(after.updatedAt())
-                .as("updated_at is what makes a stuck job detectable at all")
-                .isAfter(before);
     }
 
     @Test

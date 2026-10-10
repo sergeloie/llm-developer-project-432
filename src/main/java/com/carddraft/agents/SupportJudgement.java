@@ -75,8 +75,6 @@ public record SupportJudgement(
         return (double) yes / expectedClaims;
     }
 
-
-
     /**
      * Claims the judge did not mark supported, among those it was asked about.
      *

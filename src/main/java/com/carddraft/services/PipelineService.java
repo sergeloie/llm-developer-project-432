@@ -19,6 +19,8 @@ import com.carddraft.llm.LlmClient;
  */
 @Service
 public class PipelineService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PipelineService.class);
+
     private final LlmClient llmClient;
     private final GenerationSettings settings;
 
@@ -48,6 +50,4 @@ public class PipelineService {
 
         return new PipelineOutcome(draft, attempts, PipelineVerdict.REJECTED, true);
     }
-
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PipelineService.class);
 }

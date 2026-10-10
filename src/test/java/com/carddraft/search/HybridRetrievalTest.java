@@ -49,6 +49,16 @@ class HybridRetrievalTest {
             .withUsername("card")
             .withPassword("card");
 
+    static final String PASSPORT_SECTION = "Technical specifications";
+    static final String KETTLE_SECTION = "Specifications";
+    static final String UNRELATED_SECTION = "Miscellaneous";
+
+    @Autowired
+    JdbcClient jdbc;
+
+    @Autowired
+    ChunkSearchRepository repository;
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
@@ -73,6 +83,9 @@ class HybridRetrievalTest {
 
         static final int WIDTH = 768;
 
+        /** The question is about a passport, so it sits exactly on the passport axis. */
+        static final List<Double> PASSPORT_QUERY = axis(0);
+
         /** 1.0 on one axis, zeros elsewhere. */
         static List<Double> axis(int index) {
             return weighted(index, 1.0);
@@ -92,9 +105,6 @@ class HybridRetrievalTest {
             values.set((index + 1) % WIDTH, 1.0 - weight);
             return values;
         }
-
-        /** The question is about a passport, so it sits exactly on the passport axis. */
-        static final List<Double> PASSPORT_QUERY = axis(0);
 
         @Bean
         @Primary
@@ -128,16 +138,6 @@ class HybridRetrievalTest {
             };
         }
     }
-
-    static final String PASSPORT_SECTION = "Technical specifications";
-    static final String KETTLE_SECTION = "Specifications";
-    static final String UNRELATED_SECTION = "Miscellaneous";
-
-    @Autowired
-    JdbcClient jdbc;
-
-    @Autowired
-    ChunkSearchRepository repository;
 
     /**
      * The property fusion exists for.

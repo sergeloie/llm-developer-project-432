@@ -30,15 +30,15 @@ class HealthEndpointTest {
             .withUsername("card")
             .withPassword("card");
 
+    @Autowired
+    TestRestTemplate rest;
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @Autowired
-    TestRestTemplate rest;
 
     @Test
     void livenessAnswersSuccessWhileTheServiceIsRunning() {

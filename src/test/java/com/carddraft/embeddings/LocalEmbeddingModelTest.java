@@ -60,13 +60,13 @@ class LocalEmbeddingModelTest {
             throw new UnsupportedOperationException("the adapter always embeds a batch");
         }
 
-        RecordingWire respondingWith(EmbeddingResponse response) {
-            this.response = response;
+        RecordingWire respondingWith(EmbeddingResponse value) {
+            this.response = value;
             return this;
         }
 
-        RecordingWire failingWith(RuntimeException failure) {
-            this.failure = failure;
+        RecordingWire failingWith(RuntimeException error) {
+            this.failure = error;
             return this;
         }
 

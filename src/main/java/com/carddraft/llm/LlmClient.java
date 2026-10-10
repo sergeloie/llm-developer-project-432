@@ -27,6 +27,8 @@ public interface LlmClient {
     SupplierFacts extractFacts(String supplierText);
 
     /**
+     * The next draft, given the reviewer's objections to the previous one.
+     *
      * @param issues the reviewer's objections to the previous draft, empty on the first round
      */
     ProductCard draftCard(SupplierFacts facts, List<ReviewIssue> issues);

@@ -111,35 +111,36 @@ public class CardActivitiesImpl implements CardActivities {
      */
     @Override
     public RetrievedContext retrieveAndAssemble(String jobId, String productHint, List<String> documentIds) {
-        return JobLogContext.withJob(jobId, () -> {
-            String query = productHint == null || productHint.isBlank() ? filenamesOf(documentIds) : productHint;
-            var hits = search.search(
-                    query, new ChunkSearchRepository.Filter(documentIds, null), SearchService.Mode.HYBRID);
+        return JobLogContext.withJob(jobId, () -> assemble(jobId, productHint, documentIds));
+    }
 
-            AssembledContext assembled = assembler.assemble(jobId, hits);
-            TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
-            screened.excluded()
-                    .forEach(reference -> log.info("llm_fragment_excluded job={} reference={}", jobId, reference));
+    private RetrievedContext assemble(String jobId, String productHint, List<String> documentIds) {
+        String query = productHint == null || productHint.isBlank() ? filenamesOf(documentIds) : productHint;
+        var hits = search.search(query, new ChunkSearchRepository.Filter(documentIds, null), SearchService.Mode.HYBRID);
 
-            AssembledContext retained = new AssembledContext(
-                    jobId, screened.chunks(), assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
-            contexts.save(retained);
+        AssembledContext assembled = assembler.assemble(jobId, hits);
+        TrustService.Screened screened = trust.screen(assembled.chunks(), trustSettings.maxSuspiciousChunks());
+        screened.excluded()
+                .forEach(reference -> log.info("llm_fragment_excluded job={} reference={}", jobId, reference));
 
-            // Nothing safe to generate from is its own outcome, distinct from "few were dropped".
-            // An empty context would send the model off with no sources, and the card that comes
-            // back cites nothing it was shown — so the job waits for a person with the reason
-            // rather than failing a generation that never had anything to work from.
-            if (screened.chunks().isEmpty()) {
-                String reason = "all " + assembled.chunks().size()
-                        + " retrieved fragments were excluded as suspicious, so there is nothing "
-                        + "safe to generate from";
-                log.warn("llm_context_empty job={} excluded={}", jobId, screened.excluded());
-                return new RetrievedContext("", screened.excluded(), screened.masked(), true, reason);
-            }
+        AssembledContext retained = new AssembledContext(
+                jobId, screened.chunks(), assembled.droppedAsDuplicate(), assembled.droppedOverBudget());
+        contexts.save(retained);
 
-            return new RetrievedContext(
-                    screened.render(), screened.excluded(), screened.masked(), screened.escalated(), screened.reason());
-        });
+        // Nothing safe to generate from is its own outcome, distinct from "few were dropped".
+        // An empty context would send the model off with no sources, and the card that comes
+        // back cites nothing it was shown — so the job waits for a person with the reason
+        // rather than failing a generation that never had anything to work from.
+        if (screened.chunks().isEmpty()) {
+            String reason = "all " + assembled.chunks().size()
+                    + " retrieved fragments were excluded as suspicious, so there is nothing "
+                    + "safe to generate from";
+            log.warn("llm_context_empty job={} excluded={}", jobId, screened.excluded());
+            return new RetrievedContext("", screened.excluded(), screened.masked(), true, reason);
+        }
+
+        return new RetrievedContext(
+                screened.render(), screened.excluded(), screened.masked(), screened.escalated(), screened.reason());
     }
 
     private String filenamesOf(List<String> documentIds) {

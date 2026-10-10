@@ -15,14 +15,6 @@ import com.carddraft.llm.ResultContract;
  */
 public final class Prompts {
 
-    static final String JSON_REPLY = JSON_REPLY_PREFIX + ". " + NO_PROSE;
-
-    static final String JSON_REPLY_WITH_KEYS = JSON_REPLY_PREFIX + ", with these two keys:";
-
-    static final String NO_MARKDOWN = "Do not wrap the JSON in markdown. Do not add commentary.";
-
-    static final String CORRECTED_JSON_REPLY = "Reply with the corrected JSON object and nothing else. " + NO_PROSE;
-
     /**
      * The reply format, stated once.
      *
@@ -33,20 +25,26 @@ public final class Prompts {
 
     private static final String NO_PROSE = "No prose, no markdown fences.";
 
-    private Prompts() {
-    }
+    static final String JSON_REPLY = JSON_REPLY_PREFIX + ". " + NO_PROSE;
 
+    static final String JSON_REPLY_WITH_KEYS = JSON_REPLY_PREFIX + ", with these two keys:";
+
+    static final String NO_MARKDOWN = "Do not wrap the JSON in markdown. Do not add commentary.";
+
+    static final String CORRECTED_JSON_REPLY = "Reply with the corrected JSON object and nothing else. " + NO_PROSE;
+
+    private Prompts() {}
 
     public static String extractor(String supplierText) {
         return """
                 You are the extractor. From the supplier text below, pull out only the facts it \
                 actually states. Do not invent anything: whatever is absent goes into \
                 missingFields by name, never into the characteristics.
-                
+
                 %s
-                
+
                 %s
-                
+
                 SUPPLIER TEXT:
                 %s
                 """.formatted(JSON_REPLY, schemaSection(SupplierFacts.class), supplierText);
@@ -55,19 +53,19 @@ public final class Prompts {
     public static String generator(String factsJson, List<ReviewIssue> issues) {
         StringBuilder prompt = new StringBuilder(
                 """
-                        You are the generator. Write a product card using only the facts below.
-                        
-                        %s The title must be at most %d characters. Every characteristic \
-                        must be present in the facts; do not promise anything the facts do not support. \
-                        For each characteristic, sources maps the characteristic name to the identifier \
-                        of the fragment it came from. If the facts carry no identifiers, leave sources \
-                        empty rather than inventing one. Put anything absent into missingFields.
-                        
-                        %s
-                        
-                        FACTS:
-                        %s
-                        """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), factsJson));
+                You are the generator. Write a product card using only the facts below.
+
+                %s The title must be at most %d characters. Every characteristic \
+                must be present in the facts; do not promise anything the facts do not support. \
+                For each characteristic, sources maps the characteristic name to the identifier \
+                of the fragment it came from. If the facts carry no identifiers, leave sources \
+                empty rather than inventing one. Put anything absent into missingFields.
+
+                %s
+
+                FACTS:
+                %s
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), factsJson));
         prompt.append(issues("The reviewer rejected the previous draft. Address every point:", issues));
         return prompt.toString();
     }
@@ -80,29 +78,29 @@ public final class Prompts {
                 3. the description and the benefits are not empty;
                 4. there are no empty promises such as "high quality" or "premium";
                 5. every characteristic has a source, or the facts carried no identifiers.
-                
+
                 %s
                   verdict  string   "APPROVE" if the card is fit, otherwise "REGENERATE"
                   issues   array    one object per problem, each with `field` naming the \
                 characteristic or "" when the objection is about the card as a whole, and `problem` \
                 saying what is wrong in one sentence. Empty when approving.
-                
+
                 %s
-                
+
                 %s
-                
+
                 FACTS:
                 %s
-                
+
                 DRAFT TO REVIEW:
                 %s
                 """.formatted(
-                ProductCard.MAX_TITLE_LENGTH,
-                JSON_REPLY_WITH_KEYS,
-                NO_MARKDOWN,
-                schemaSection(CritiqueReport.class),
-                factsJson,
-                draftJson);
+                        ProductCard.MAX_TITLE_LENGTH,
+                        JSON_REPLY_WITH_KEYS,
+                        NO_MARKDOWN,
+                        schemaSection(CritiqueReport.class),
+                        factsJson,
+                        draftJson);
     }
 
     /**
@@ -122,23 +120,23 @@ public final class Prompts {
     public static String generatorFromContext(String contextText, List<ReviewIssue> issues) {
         StringBuilder prompt = new StringBuilder(
                 """
-                                        You are the generator. Write a product card using only the fragments below.
-                        
-                        Each fragment is labelled, for example [C3]. For every characteristic you write, \
-                        sources must map that characteristic name to the reference of the fragment it came from. Write \
-                        that reference exactly as it appears inside the brackets and without them: for the fragment shown \
-                        as [C3] the value is C3, not [C3]. Use a reference that appears in the fragments above and no \
-                        other. Never invent a reference: if no fragment supports a characteristic, leave that \
-                        characteristic out and name it in missingFields instead. A characteristic with no supporting \
-                        fragment is far better than a characteristic citing a fragment that does not support it.
-                        
-                                        %s The title must be at most %d characters.
-                        
-                                        %s
-                        
-                                        FRAGMENTS:
-                                        %s
-                        """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), contextText));
+                You are the generator. Write a product card using only the fragments below.
+
+                Each fragment is labelled, for example [C3]. For every characteristic you write, \
+                sources must map that characteristic name to the reference of the fragment it came from. Write \
+                that reference exactly as it appears inside the brackets and without them: for the fragment shown \
+                as [C3] the value is C3, not [C3]. Use a reference that appears in the fragments above and no \
+                other. Never invent a reference: if no fragment supports a characteristic, leave that \
+                characteristic out and name it in missingFields instead. A characteristic with no supporting \
+                fragment is far better than a characteristic citing a fragment that does not support it.
+
+                %s The title must be at most %d characters.
+
+                %s
+
+                FRAGMENTS:
+                %s
+                """.formatted(JSON_REPLY, ProductCard.MAX_TITLE_LENGTH, schemaSection(ProductCard.class), contextText));
         prompt.append(issues("The previous draft was rejected. Address every point:", issues));
         return prompt.toString();
     }
@@ -159,12 +157,12 @@ public final class Prompts {
     public static String criticAgainstContext(String contextText, String draftJson) {
         return """
                 You are the reviewer. Check the draft card against the fragments it cites.
-                
+
                 For each characteristic, find the label the card gives it in sources, then read \
                 the fragment with that label and decide whether the fragment supports the value. A \
                 right fact attributed to the wrong fragment is a failure: the value and the \
                 fragment are both plausible, and a reader cannot see the mismatch.
-                
+
                 %s
                   verdict  string   "APPROVE" if every cited characteristic is supported, \
                 otherwise "REGENERATE"
@@ -172,18 +170,18 @@ public final class Prompts {
                 characteristic or "" when the objection is about the card as a whole, and `problem` \
                 saying in one sentence what is wrong - naming the fragment label when the problem \
                 is that the card cites the wrong one. Empty when approving.
-                
+
                 %s
-                
+
                 %s
-                
+
                 FRAGMENTS:
                 %s
-                
+
                 DRAFT TO REVIEW:
                 %s
                 """.formatted(
-                JSON_REPLY_WITH_KEYS, NO_MARKDOWN, schemaSection(CritiqueReport.class), contextText, draftJson);
+                        JSON_REPLY_WITH_KEYS, NO_MARKDOWN, schemaSection(CritiqueReport.class), contextText, draftJson);
     }
 
     /**
@@ -200,16 +198,16 @@ public final class Prompts {
     public static String repairField(String currentJson, String field, String problem) {
         return """
                 You are correcting one field of a product card.
-                
+
                 Change the field "%s" and nothing else. Every other field must be returned \
                 exactly as it appears below, unchanged, character for character.
-                
+
                 The problem with that field: %s
-                
+
                 %s
-                
+
                 %s
-                
+
                 CURRENT CARD:
                 %s
                 """.formatted(field, problem, CORRECTED_JSON_REPLY, schemaSection(ProductCard.class), currentJson);

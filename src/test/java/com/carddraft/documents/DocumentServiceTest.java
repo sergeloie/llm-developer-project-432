@@ -42,6 +42,15 @@ class DocumentServiceTest {
             .withUsername("card")
             .withPassword("card");
 
+    @Autowired
+    DocumentService documentService;
+
+    @Autowired
+    DocumentsRepository documents;
+
+    @Autowired
+    JdbcClient jdbc;
+
     static boolean dataIsPresent() {
         return Files.isDirectory(DATA) && Files.exists(DATA.resolve("boiler_scan.pdf"));
     }
@@ -52,15 +61,6 @@ class DocumentServiceTest {
         registry.add("card.db.username", DATABASE::getUsername);
         registry.add("card.db.password", DATABASE::getPassword);
     }
-
-    @Autowired
-    DocumentService documentService;
-
-    @Autowired
-    DocumentsRepository documents;
-
-    @Autowired
-    JdbcClient jdbc;
 
     @BeforeEach
     void clear() {

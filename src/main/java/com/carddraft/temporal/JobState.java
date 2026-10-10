@@ -26,14 +26,14 @@ public enum JobState {
      * list. A job that is merely slow and a job that needs a decision look identical from outside
      * unless the states themselves say which, and the difference is the whole reason a person polls.
      */
-    public boolean awaitsHuman() {
-        return this == AWAITING_HUMAN;
-    }
-
     private final String wireName;
 
     JobState(String wireName) {
         this.wireName = wireName;
+    }
+
+    public boolean awaitsHuman() {
+        return this == AWAITING_HUMAN;
     }
 
     public String wireName() {

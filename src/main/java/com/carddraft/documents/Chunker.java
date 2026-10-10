@@ -47,17 +47,18 @@ public class Chunker {
         int size = settings.chunkSize();
         int overlap = Math.min(settings.chunkOverlap(), size - 1);
         int start = 0;
+        int nextOrdinal = ordinal;
         while (start < text.length()) {
             int end = Math.min(start + size, text.length());
             String slice = text.substring(start, end).strip();
             if (!slice.isEmpty()) {
-                chunks.add(new Chunk(documentId, ordinal++, unit.page(), unit.section(), slice, false));
+                chunks.add(new Chunk(documentId, nextOrdinal++, unit.page(), unit.section(), slice, false));
             }
             if (end == text.length()) {
                 break;
             }
             start = end - overlap;
         }
-        return ordinal;
+        return nextOrdinal;
     }
 }

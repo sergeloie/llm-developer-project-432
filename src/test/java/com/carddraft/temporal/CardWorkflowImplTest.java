@@ -242,9 +242,9 @@ class CardWorkflowImplTest {
             approve = true;
         }
 
-        void alwaysRegenerate(String issue) {
+        void alwaysRegenerate(String problem) {
             approve = false;
-            this.issue = issue;
+            this.issue = problem;
         }
 
         @Override

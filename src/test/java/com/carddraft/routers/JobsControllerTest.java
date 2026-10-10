@@ -78,6 +78,15 @@ class JobsControllerTest {
             .withUsername("card")
             .withPassword("card");
 
+    @MockitoBean
+    LlmClient llmClient;
+
+    @Autowired
+    TestRestTemplate rest;
+
+    @Autowired
+    JobsRepository jobs;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("card.db.url", DATABASE::getJdbcUrl);
@@ -118,15 +127,6 @@ class JobsControllerTest {
     static void stopEngine() {
         ENGINE.shutdown();
     }
-
-    @MockitoBean
-    LlmClient llmClient;
-
-    @Autowired
-    TestRestTemplate rest;
-
-    @Autowired
-    JobsRepository jobs;
 
     private void givenAnApprovingReviewer() {
         given(llmClient.extractFacts(anyString()))

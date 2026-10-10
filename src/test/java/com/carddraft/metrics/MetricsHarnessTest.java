@@ -519,20 +519,22 @@ class MetricsHarnessTest {
 
         assertThat(runner.measure("kettle_manual.pdf", Map.of("Power", "2200 W")))
                 .as("one document with an unusable model answer must not cost the run its report")
-                .satisfies(metrics -> {
-                    assertThat(metrics.supportMeasured())
-                            .as("nothing was judged, so no support number is a measurement")
-                            .isFalse();
-                    assertThat(metrics.supportUnavailableReason())
-                            .as("why the document produced nothing has to be readable, not just zero")
-                            .contains("no usable card")
-                            .contains("no such characteristic");
-                    assertThat(metrics.missedCharacteristics())
-                            .as("a document that never generated has no card for a characteristic "
-                                    + "to be missing from, and listing the failure under both headings "
-                                    + "makes the report contradict itself")
-                            .isEmpty();
-                });
+                .satisfies(metrics -> assertUnmeasurable(metrics));
+    }
+
+    private static void assertUnmeasurable(DocumentMetrics metrics) {
+        assertThat(metrics.supportMeasured())
+                .as("nothing was judged, so no support number is a measurement")
+                .isFalse();
+        assertThat(metrics.supportUnavailableReason())
+                .as("why the document produced nothing has to be readable, not just zero")
+                .contains("no usable card")
+                .contains("no such characteristic");
+        assertThat(metrics.missedCharacteristics())
+                .as("a document that never generated has no card for a characteristic "
+                        + "to be missing from, and listing the failure under both headings "
+                        + "makes the report contradict itself")
+                .isEmpty();
     }
 
     @Test

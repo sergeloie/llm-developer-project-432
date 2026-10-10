@@ -33,6 +33,8 @@ public class CostCalculator {
     private final BigDecimal outputPricePerMillion;
 
     /**
+     * A calculator for the price of the model calls a job makes.
+     *
      * @param inputPricePerMillion  price of a million input tokens; zero for a local model
      * @param outputPricePerMillion price of a million output tokens; zero for a local model
      */

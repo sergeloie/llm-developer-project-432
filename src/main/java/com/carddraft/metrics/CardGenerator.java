@@ -58,20 +58,6 @@ public class CardGenerator {
     private final LlmClient llm;
     private final ObjectMapper mapper;
 
-    /** One document's generation: the text the model was shown, and the card it produced. */
-    public record Generated(AssembledContext context, ProductCard card) {}
-
-    /**
-     * The job a document's generation is recorded under.
-     *
-     * <p>One place rather than a format string in two files: the metrics report reads this job's
-     * cost rows, and a second spelling of the name here would make the report read another job's
-     * rows while the generation billed this one.
-     */
-    public static String jobIdFor(String filename) {
-        return "metrics-" + filename;
-    }
-
     public CardGenerator(
             DocumentService documents,
             EmbeddingApplicationService embedding,
@@ -93,6 +79,20 @@ public class CardGenerator {
         this.contexts = contexts;
         this.jobs = jobs;
         this.mapper = mapper;
+    }
+
+    /** One document's generation: the text the model was shown, and the card it produced. */
+    public record Generated(AssembledContext context, ProductCard card) {}
+
+    /**
+     * The job a document's generation is recorded under.
+     *
+     * <p>One place rather than a format string in two files: the metrics report reads this job's
+     * cost rows, and a second spelling of the name here would make the report read another job's
+     * rows while the generation billed this one.
+     */
+    public static String jobIdFor(String filename) {
+        return "metrics-" + filename;
     }
 
     /**
