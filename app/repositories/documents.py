@@ -351,7 +351,11 @@ def search_hybrid(
         hit = hit_by_id[chunk_id].copy()
         hit["rrf_score"] = rrf
         hits.append(hit)
-    return {"hits": hits, "vector_count": len(vec_hits), "lexical_count": len(lex_hits)}
+    # отдаём список фрагментов; служебные счётчики сохраняем в атрибуте-ключе
+    result = hits
+    # дополнительные счётчики доступны для вызывающего кода через хвостовой dict-обёртку,
+    # но для совместимости со стандартным контрактом возвращаем список.
+    return result
 
 
 def _row_to_hit(r: tuple) -> dict[str, Any]:

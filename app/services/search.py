@@ -43,13 +43,8 @@ async def search(
             result = docs_repo.search_hybrid(
                 conn, query, v, top_k=top_k, threshold=threshold, document_ids=document_ids
             )
-            log.info(
-                "hybrid_search",
-                vector=result["vector_count"],
-                lexical=result["lexical_count"],
-                merged=len(result["hits"]),
-            )
-            return result["hits"]
+            log.info("hybrid_search", merged=len(result))
+            return result
         raise ValueError(f"неизвестный режим поиска: {mode}")
 
 

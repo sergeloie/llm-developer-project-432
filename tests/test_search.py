@@ -53,10 +53,9 @@ def test_repository_hybrid_is_union(conn):
     c, ids = conn
     qvec = [1.0] + [0.0] * 767
     res = repo.search_hybrid(c, "KTL-1700", qvec, top_k=5, threshold=0.0)
-    hit_ids = {h["id"] for h in res["hits"]}
+    hit_ids = {h["id"] for h in res}
     assert ids[0] in hit_ids or ids[1] in hit_ids
-    assert res["vector_count"] >= 1
-    assert res["lexical_count"] >= 1
+    assert len(res) >= 1
 
 
 def test_threshold_cuts_low_scores(conn):

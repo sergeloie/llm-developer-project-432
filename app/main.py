@@ -25,6 +25,7 @@ app.include_router(jobs.router)
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(generators.router, prefix="/generators")
+app.include_router(generators.router, prefix="/generate")
 app.include_router(workflows.router)
 # Роутеры шагов 7+ (генерация по документам, поиск) подключаются на своих шагах.
 
