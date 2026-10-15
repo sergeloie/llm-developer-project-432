@@ -3,6 +3,7 @@
 Статусная машина документа: new → parsing → indexed | failed.
 Скен-PDF без текстового слоя честно помечается failed: no text layer.
 """
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.parsers import normalizer
 from app.parsers.chunker import chunk_blocks
@@ -14,7 +15,7 @@ from app.repositories import documents as docs_repo
 log = get_logger(__name__)
 
 ALLOWED_EXTENSIONS = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 МБ
+MAX_FILE_SIZE = settings.upload_max_mb * 1024 * 1024
 
 
 def parse_to_chunks(content: bytes, kind: str, doc_id: str) -> list[dict]:

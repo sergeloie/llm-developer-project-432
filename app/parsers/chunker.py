@@ -6,21 +6,24 @@ Metadata каждого чанка: {doc_id, page, section, articul, brand}.
 import re
 import uuid
 
+from app.core.config import settings
 from app.parsers.pdf import Block
-
-CHUNK_SIZE = 700      # символов
-CHUNK_OVERLAP = 120
 
 _ARTICUL_RE = re.compile(r"\b[A-Z]{2,5}-[A-Z0-9]{2,6}\b")
 _BRANDS = ("МиксерПро", "КеттлПро", "АкваТерм", "ТехноДом")
 
 
-def chunk_blocks(blocks: list[Block], doc_id: str, *, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[dict]:
+def chunk_blocks(
+    blocks: list[Block], doc_id: str, *, size: int | None = None, overlap: int | None = None
+) -> list[dict]:
     """Блоки → чанки-словари с метаданными.
 
+    size/overlap по умолчанию берутся из settings.chunk_size / settings.chunk_overlap.
     Таблица — layout-aware: не рвём строку; большая таблица делится
     по строкам, каждая часть несёт контекст (предыдущая строка непрерывности).
     """
+    size = settings.chunk_size if size is None else size
+    overlap = settings.chunk_overlap if overlap is None else overlap
     chunks: list[dict] = []
     for b in blocks:
         if b.kind == "table":

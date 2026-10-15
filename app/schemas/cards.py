@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.config import settings
+
 
 class SupplierFacts(BaseModel):
     """Результат extractor-агента: структурированные факты из текста поставщика."""
@@ -60,8 +62,10 @@ class CardDraft(BaseModel):
     @field_validator("title")
     @classmethod
     def title_max_length(cls, v: str) -> str:
-        if len(v) > 60:
-            raise ValueError(f"заголовок длиннее 60 символов ({len(v)}): сократи")
+        if len(v) > settings.card_title_max_len:
+            raise ValueError(
+                f"заголовок длиннее {settings.card_title_max_len} символов ({len(v)}): сократи"
+            )
         return v
 
     @field_validator("confidence")

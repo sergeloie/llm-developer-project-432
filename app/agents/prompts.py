@@ -9,7 +9,9 @@ _MODEL = settings.llm_model
 # Reasoning-модели тратят токены на «размышления» до ответа: без запаса
 # max_tokens бюджет кончается раньше content, и локальный стрим обрывается
 # по таймауту. 4096 хватает на размышления + JSON-ответ.
-_MODEL_SETTINGS = ModelSettings(max_tokens=4096, temperature=0.4)
+_MODEL_SETTINGS = ModelSettings(
+    max_tokens=settings.llm_max_tokens, temperature=settings.llm_temperature
+)
 
 extractor_agent = Agent(
     name="Extractor",

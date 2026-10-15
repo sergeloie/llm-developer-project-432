@@ -16,7 +16,6 @@ from app.rag.retrieval import search
 from app.repositories import chunks as chunks_repo
 from app.schemas.cards import CardDraft, CritiqueReport
 from app.services.json_utils import LLMJsonError, parse_llm_json
-from app.services.structured import CONFIDENCE_GATE, MAX_FIX_ATTEMPTS
 
 log = get_logger(__name__)
 
@@ -44,7 +43,7 @@ async def generate_from_context(context: str, feedback: list[str] | None = None)
 
     current_prompt = prefix + prompt
     last_error: Exception | None = None
-    for attempt in range(MAX_FIX_ATTEMPTS + 1):
+    for attempt in range(settings.max_fix_attempts + 1):
         out = await run_agent(context_generator_agent, current_prompt)
         try:
             draft = _coerce_card(out)
@@ -108,18 +107,20 @@ async def critique_with_context(context: str, draft: CardDraft) -> CritiqueRepor
 
 
 async def run_rag_pipeline(
-    query: str, doc_ids: list[str] | None = None, max_attempts: int = 3
+    query: str, doc_ids: list[str] | None = None, max_attempts: int | None = None
 ):
     """Полный RAG-цикл: retrieval → guardrails → (generate → critique)* → guard_output.
 
+    max_attempts по умолчанию — settings.max_pipeline_rounds.
     Возвращает (draft, attempts, verdict, status, guard_report).
     """
+    rounds = settings.max_pipeline_rounds if max_attempts is None else max_attempts
     context, guard_report = await retrieve_context_async(query, doc_ids)
     feedback: list[str] = []
     attempts = 0
     draft = None
     verdict = "rejected"
-    while attempts < max_attempts:
+    while attempts < rounds:
         attempts += 1
         draft = await generate_from_context(context, feedback or None)
         report = await critique_with_context(context, draft)
@@ -138,7 +139,7 @@ async def run_rag_pipeline(
 
     status = "rejected"
     if verdict == "approved" and draft is not None:
-        if guard_report.needs_review or draft.confidence < CONFIDENCE_GATE:
+        if guard_report.needs_review or draft.confidence < settings.confidence_human_threshold:
             status = "needs_review"
         else:
             status = "done"

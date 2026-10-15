@@ -51,6 +51,8 @@ packages = ["app", "evals"]
 
 [tool.ruff]
 line-length = 100
+# .autopilot/ — папка прогона с его собственными скриптами, не код сервиса
+extend-exclude = [".autopilot"]
 
 [tool.ruff.lint]
 extend-select = ["I"]

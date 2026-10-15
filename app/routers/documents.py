@@ -18,7 +18,7 @@ async def upload_document(file: UploadFile):
         raise HTTPException(415, f"поддерживаются: {sorted(ALLOWED_EXTENSIONS)}")
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(413, "файл больше 10 МБ")
+        raise HTTPException(413, f"файл больше {settings.upload_max_mb} МБ")
     if not content:
         raise HTTPException(400, "пустой файл")
 

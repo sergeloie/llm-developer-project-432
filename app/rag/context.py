@@ -4,7 +4,7 @@
 Контекст сопровождается жёсткой инструкцией «отвечай только по контексту».
 """
 
-MAX_CONTEXT_CHARS = 6000  # ~1500 токенов — потолок контекста генерации
+from app.core.config import settings
 
 CONTEXT_INSTRUCTION = """Ты получаешь КОНТЕКСТ — фрагменты документов поставщика.
 Правила:
@@ -15,8 +15,12 @@ CONTEXT_INSTRUCTION = """Ты получаешь КОНТЕКСТ — фрагм
 """
 
 
-def build_context(chunks: list[dict], *, max_chars: int = MAX_CONTEXT_CHARS) -> str:
-    """Чанки → текст контекста с шапками-источниками, лимит по символам."""
+def build_context(chunks: list[dict], *, max_chars: int | None = None) -> str:
+    """Чанки → текст контекста с шапками-источниками, лимит по символам.
+
+    max_chars по умолчанию — settings.context_char_limit.
+    """
+    limit = settings.context_char_limit if max_chars is None else max_chars
     parts: list[str] = []
     total = 0
     seen: set[str] = set()
@@ -32,7 +36,7 @@ def build_context(chunks: list[dict], *, max_chars: int = MAX_CONTEXT_CHARS) -> 
             header += f" | {meta['section']}"
         header += "]"
         body = header + "\n" + ch["text"]
-        if total + len(body) > max_chars and parts:
+        if total + len(body) > limit and parts:
             break
         parts.append(body)
         total += len(body)

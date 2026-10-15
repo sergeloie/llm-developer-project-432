@@ -8,15 +8,13 @@
 from pydantic import ValidationError
 
 from app.agents.prompts import fixer_agent, generator_agent
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.llm.client import run_agent
 from app.schemas.cards import CardDraft
 from app.services.json_utils import LLMJsonError, parse_llm_json
 
 log = get_logger(__name__)
-
-MAX_FIX_ATTEMPTS = 2
-CONFIDENCE_GATE = 0.5
 
 
 class CardValidationError(Exception):
@@ -27,11 +25,11 @@ async def validate_or_retry(prompt: str, feedback_prefix: str = "") -> CardDraft
     """Сгенерировать карточку и провалидировать; при ошибке — повтор с текстом ошибки.
 
     feedback_prefix — замечания критика (если это регенерация пайплайна).
-    Бросает CardValidationError после MAX_FIX_ATTEMPTS неудачных исправлений.
+    Бросает CardValidationError после settings.max_fix_attempts неудачных попыток.
     """
     current_prompt = feedback_prefix + prompt
     last_error: Exception | None = None
-    for attempt in range(MAX_FIX_ATTEMPTS + 1):
+    for attempt in range(settings.max_fix_attempts + 1):
         out = await run_agent(generator_agent, current_prompt)
         if isinstance(out, CardDraft):
             return out
@@ -74,4 +72,4 @@ async def regenerate_field(draft: CardDraft, field: str, error: str) -> CardDraf
 
 def confidence_gate(draft: CardDraft) -> str:
     """Низкая уверенность → карточка требует ручной проверки."""
-    return "needs_review" if draft.confidence < CONFIDENCE_GATE else "done"
+    return "needs_review" if draft.confidence < settings.confidence_human_threshold else "done"
