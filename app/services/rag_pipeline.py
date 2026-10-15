@@ -112,7 +112,10 @@ async def run_rag_pipeline(
     """Полный RAG-цикл: retrieval → guardrails → (generate → critique)* → guard_output.
 
     max_attempts по умолчанию — settings.max_pipeline_rounds.
-    Возвращает (draft, attempts, verdict, status, guard_report).
+    Возвращает (draft, attempts, verdict, status, guard_report, context):
+    context — тот самый текст, по которому строилась карточка, а не отчёт
+    guardrails: без него потребитель не может сверить источники с тем,
+    что реально ушло в модель.
     """
     rounds = settings.max_pipeline_rounds if max_attempts is None else max_attempts
     context, guard_report = await retrieve_context_async(query, doc_ids)
@@ -143,4 +146,4 @@ async def run_rag_pipeline(
             status = "needs_review"
         else:
             status = "done"
-    return draft, attempts, verdict, status, guard_report
+    return draft, attempts, verdict, status, guard_report, context

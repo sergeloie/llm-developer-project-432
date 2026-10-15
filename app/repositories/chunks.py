@@ -105,17 +105,24 @@ def search_hybrid(
 
     score = sum(1 / (rrf_k + rank_i)) по спискам результатов.
     CTE: каждый поиск — свой SELECT с ROW_NUMBER(), JOIN по chunk_id.
+
+    threshold применяется к векторной ноге: чанк, который она принесла с
+    косинусом ниже порога, в слияние не попадает. Найденный только полно-
+    текстовым поиском чанк порог не режет — у него векторной оценки нет,
+    его релевантность и есть его ранг в списке FTS.
     """
     top_k = top_k or settings.retrieval_top_k
     threshold = settings.retrieval_threshold if threshold is None else threshold
     vec = _vec_str(embed_query(query))
     sql = """
         WITH vec AS (
-            SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %s::vector) AS rank
+            SELECT c.id,
+                   ROW_NUMBER() OVER (ORDER BY c.embedding <=> %s::vector) AS rank,
+                   1 - (c.embedding <=> %s::vector) AS cosine
             FROM chunks c JOIN documents d ON d.id = c.doc_id
             WHERE c.embedding IS NOT NULL AND d.status = 'indexed'
     """
-    args: list = [vec]
+    args: list = [vec, vec]
     if doc_ids:
         sql += " AND c.doc_id = ANY(%s)"
         args.append(doc_ids)
@@ -141,9 +148,10 @@ def search_hybrid(
         JOIN documents d ON d.id = c.doc_id
         LEFT JOIN vec v ON v.id = c.id
         LEFT JOIN fts f ON f.id = c.id
-        WHERE v.id IS NOT NULL OR f.id IS NOT NULL
+        WHERE (v.id IS NOT NULL OR f.id IS NOT NULL)
+          AND (v.id IS NULL OR v.cosine >= %s)
     """
-    args += [top_k * 2, RRF_K, RRF_K, vec]
+    args += [top_k * 2, RRF_K, RRF_K, vec, threshold]
     sql += " ORDER BY rrf_score DESC LIMIT %s"
     args.append(top_k)
     with conn.cursor() as cur:

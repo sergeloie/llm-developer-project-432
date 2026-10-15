@@ -110,7 +110,7 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
         with db.connection() as conn:
             jobs_repo.set_status(conn, job_id, "retrieving")
         query = product_hint or "карточка товара характеристики"
-        draft, attempts, _verdict, status, guard = asyncio.run(
+        draft, attempts, _verdict, status, guard, _context = asyncio.run(
             rag_pipeline.run_rag_pipeline(query, document_ids or None)
         )
         with db.connection() as conn:

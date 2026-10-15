@@ -70,10 +70,34 @@ def citation_hit(card_sources: list[dict], golden_probes: dict, chunks_by_id: di
     return hits / len(golden_probes)
 
 
+async def _judge(context: str, card_json: str) -> float:
+    """Faithfulness от LLM-as-judge.
+
+    Глотаются только отказы модели — транспорт, таймаут, нечитаемый JSON:
+    это неисправность сервиса моделей, а не отчёт о системе, и метрика
+    помечается NaN. Ошибка самого вызова (TypeError на склейке контекста,
+    AttributeError на разборе ответа) не ловится и валит прогон: иначе
+    сломанная метрика тихо превращается в её отсутствие.
+    """
+    from openai import APIError
+    from pydantic import ValidationError
+
+    from app.services.json_utils import LLMJsonError
+    from evals.judge import judge_faithfulness
+
+    try:
+        return (await judge_faithfulness(context, card_json)).faithfulness
+    except (APIError, TimeoutError, LLMJsonError, ValidationError) as exc:
+        log.warning("judge_failed", error=repr(exc))
+        return float("nan")
+
+
 async def eval_document(doc_id: str, golden: dict) -> dict:
     query = golden.get("product", "карточка товара характеристики")
     t0 = time.time()
-    draft, attempts, _verdict, status, context = await run_rag_pipeline(query, [doc_id])
+    draft, attempts, _verdict, status, _guard, context = await run_rag_pipeline(
+        query, [doc_id]
+    )
     dt = time.time() - t0
     card = draft.model_dump()
 
@@ -86,15 +110,7 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
     fa = field_accuracy(card["characteristics"], golden.get("characteristics", {}))
     ch = citation_hit(card["sources"], golden.get("source_probes", {}), chunks_by_id)
 
-    # faithfulness через judge
-    from evals.judge import judge_faithfulness
-
-    try:
-        verdict_j = await judge_faithfulness(context, draft.model_dump_json())
-        faith = verdict_j.faithfulness
-    except Exception as exc:
-        log.warning("judge_failed", error=repr(exc))
-        faith = float("nan")
+    faith = await _judge(context, draft.model_dump_json())
 
     return {
         "attempts": attempts,

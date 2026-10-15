@@ -115,9 +115,13 @@ def test_rag_pipeline_happy_path(rag_setup, monkeypatch):
         rp, "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    draft, attempts, verdict, status, _guard = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+    draft, attempts, verdict, status, _guard, context = asyncio.run(
+        rp.run_rag_pipeline("блендер", [DOC_ID])
+    )
     assert verdict == "approved" and attempts == 1
     assert status == "done"
+    # контекст в ответе — тот самый, что ушёл в модель
+    assert context == "[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]
     assert draft.sources[0].chunk_id == "tstragc1"
     # источник реально существует в БД
     from app.repositories import chunks as chunks_repo
@@ -146,5 +150,5 @@ def test_rag_pipeline_low_confidence_needs_review(rag_setup, monkeypatch):
         rp, "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    _draft, _a, _v, status, _g = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+    _draft, _a, _v, status, _g, _context = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
     assert status == "needs_review"

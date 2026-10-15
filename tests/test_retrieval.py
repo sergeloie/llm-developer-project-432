@@ -104,6 +104,27 @@ def test_hybrid_combines_vector_and_fts(db_with_chunks):
     assert results[0]["chunk_id"] == "tstc1"  # гибрид ранжирует точное выше
 
 
+def test_hybrid_threshold_cuts_vector_leg_but_keeps_fts_only(db_with_chunks):
+    """Порог режёт векторную ногу; чанк без вектора остаётся по рангу FTS."""
+    from app.repositories import chunks as chunks_repo
+
+    with db_with_chunks.cursor() as cur:
+        cur.execute(
+            "INSERT INTO chunks (id, doc_id, ordinal, text, metadata) "
+            "VALUES ('tstc4', 'tstdoc1', 3, %s, '{}')",
+            ("Мощность блендера 800 Вт, двойная стенка корпуса",),
+        )
+    # 0.9: tstc1 (косинус 1.0) проходит, tstc3 (≈0.71) и tstc2 (0.0) — нет
+    results = chunks_repo.search_hybrid(
+        db_with_chunks, "мощность блендера", top_k=5, threshold=0.9
+    )
+    ids = [r["chunk_id"] for r in results]
+    assert "tstc1" in ids
+    assert "tstc3" not in ids
+    assert "tstc2" not in ids
+    assert "tstc4" in ids
+
+
 def test_fts_search_exact_words(db_with_chunks):
     from app.repositories import chunks as chunks_repo
 
