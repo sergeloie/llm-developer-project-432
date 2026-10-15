@@ -1,195 +1,113 @@
-"""Промпты как код: каждый промпт — функция, а не строка внутри логики.
+"""Промпт как код: агенты кард-пайплайна — extractor, generator, fixer, critic."""
+from agents import Agent, AgentOutputSchema, ModelSettings
 
-LM Studio не поддерживает strict structured output — схема результата
-дублируется текстом в инструкции (это осознанное решение, шаг 4: п.2).
-"""
-import json
-
-from app import schemas
 from app.core.config import settings
+from app.schemas.cards import CardDraft, CritiqueReport, SupplierFacts
 
+_MODEL = settings.llm_model
 
-def _schema_text(model_cls) -> str:
-    """JSON-схема модели текстом для промпта (дешёвая замена strict mode).
+# Reasoning-модели тратят токены на «размышления» до ответа: без запаса
+# max_tokens бюджет кончается раньше content, и локальный стрим обрывается
+# по таймауту. 4096 хватает на размышления + JSON-ответ.
+_MODEL_SETTINGS = ModelSettings(max_tokens=4096, temperature=0.4)
 
-    JSON-схема формальна, но модели чаще понимают «форму ответа» — пример
-    объекта. Отдаём обе сущности: компактную схему-подсказку рядом.
-    """
-    schema = model_cls.model_json_schema()
-    return "\n```" + json.dumps(schema, ensure_ascii=False, indent=1) + "```"
-
-
-def _example_text(model_cls) -> str:
-    """Пример заполненной формы: работает на маленьких моделях лучше схемы."""
-    schema = model_cls.model_json_schema()
-    props = schema.get("properties", {})
-    example = {}
-    for name, prop in props.items():
-        typ = prop.get("type")
-        if "anyOf" in prop and not typ:
-            typ = next(p2.get("type") for p2 in prop["anyOf"] if p2.get("type"))
-        if typ == "string":
-            example[name] = f"<{name}>"
-        elif typ == "object":
-            example[name] = {}
-        elif typ == "array":
-            example[name] = []
-        elif typ == "number":
-            example[name] = 0.5
-        else:
-            example[name] = None
-    if "title" in example:
-        example["title"] = "МиксерПро 800"
-    return json.dumps(example, ensure_ascii=False, indent=1)
-
-
-JSON_ONLY = (
-    "Ответ — ТОЛЬКО валидный JSON без markdown-заборов, без пояснений,"
-    " без текста до и после."
+extractor_agent = Agent(
+    name="Extractor",
+    instructions=(
+        "Ты — извлекатель фактов. Из текста поставщика выдели структурированные факты.\n"
+        "Верни СТРОГО JSON с этими полями и никаких других:\n"
+        "- product_name (string): название товара\n"
+        "- characteristics (object): пары ключ-значение, ТОЛЬКО из текста\n"
+        "- missing_fields (array of string): что важно для карточки, но в тексте нет "
+        "(например: гарантия, цвет, страна-производитель)\n"
+        "Не выдумывай. Нет данных — поле в missing_fields. "
+        "Никакого markdown, только валидный JSON."
+    ),
+    model=_MODEL,
+    model_settings=_MODEL_SETTINGS,
+    output_type=AgentOutputSchema(SupplierFacts, strict_json_schema=False),
 )
 
+generator_agent = Agent(
+    name="Generator",
+    instructions=(
+        "Ты — копирайтер маркетплейса. Из фактов о товаре сделай черновик карточки.\n"
+        "Верни СТРОГО JSON с этими полями и никаких других:\n"
+        "- title (string): заголовок до 60 символов\n"
+        "- description (string): описание на 3-4 предложения, продающее, без воды\n"
+        "- characteristics (object): характеристики ключ-значение, ТОЛЬКО из фактов\n"
+        "- benefits (array of string): 3-5 преимуществ\n"
+        "- seo (object): {title, description, keywords}\n"
+        "- sources (array): пока пустой — заполняется системой\n"
+        "- missing_fields (array of string): чего нет в фактах (например: гарантия) — "
+        "НЕ выдумывай, честно перечисли\n"
+        "- confidence (number 0.0-1.0): насколько данные полны для карточки\n"
+        "Используй только предоставленные факты. Если есть замечания критика "
+        "(feedback) — учти их. Никакого markdown, только валидный JSON."
+    ),
+    model=_MODEL,
+    model_settings=_MODEL_SETTINGS,
+    output_type=AgentOutputSchema(CardDraft, strict_json_schema=False),
+)
 
-def extractor_prompt(supplier_text: str) -> tuple[str, str]:
-    """Extract-роль: (system, user)."""
-    system = (
-        "Ты извлекаешь факты о товаре из текста поставщика.\n"
-        "Выдели только то, что есть в тексте. Ничего не выдумывай: если важного "
-        "для карточки (гарантия, цвет, страна-производитель и т.п.) нет — "
-        "внеси это поле в missing_fields.\n"
-        f"Схема ответа:\n{_schema_text(schemas.SupplierFacts)}\n"
-        + f"Пример заполненной формы:\n{_example_text(schemas.SupplierFacts)}\n"
-        + JSON_ONLY
-    )
-    return system, f"Текст поставщика:\n\n{supplier_text}"
+context_generator_agent = Agent(
+    name="CardGenerator",
+    # Контекст длиннее сырого текста: запас на reasoning + полный JSON с sources
+    model_settings=ModelSettings(max_tokens=8192, temperature=0.4),
+    instructions=(
+        "Ты — копирайтер маркетплейса. Генерируй черновик карточки товара\n"
+        "НА ОСНОВЕ КОНТЕКСТА — фрагментов документов поставщика с метками [chunk_id].\n"
+        "Верни СТРОГО JSON с этими полями и никаких других:\n"
+        "- title (string): заголовок до 60 символов\n"
+        "- description (string): описание на 3-4 предложения, продающее, без воды\n"
+        "- characteristics (object): характеристики ключ-значение ТОЛЬКО из контекста\n"
+        "- benefits (array of string): 3-5 преимуществ, каждое из контекста\n"
+        "- seo (object): {title, description, keywords}\n"
+        "- sources (array of object): {chunk_id, page} — чанки, на которые опирался;\n"
+        "  каждое значение characteristics должно опираться на источник\n"
+        "- missing_fields (array of string): чего НЕТ в контексте (гарантия, цвет и т.п.)\n"
+        "  — НЕ выдумывай, честно перечисли\n"
+        "- confidence (number 0.0-1.0): доля полноты данных\n"
+        "Не используй знания вне контекста. Если есть замечания критика (feedback) — учти.\n"
+        "Формат ответа — ТОЛЬКО валидный JSON-объект с перечисленными ключами, например:\n"
+        '{"title": "Блендер МиксерПро 800 — 800 Вт", "description": "Погружной блендер...", '
+        '"characteristics": {"Мощность": "800 Вт"}, "benefits": ["..."], '
+        '"seo": {"title": "...", "description": "...", "keywords": ["..."]}, '
+        '"sources": [{"chunk_id": "abc123", "page": 1}], '
+        '"missing_fields": ["Гарантия"], "confidence": 0.85}\n'
+        "Никакого markdown и пояснений, никакого python-формата (title=...)."
+    ),
+    model=_MODEL,
+    output_type=AgentOutputSchema(CardDraft, strict_json_schema=False),
+)
 
+fixer_agent = Agent(
+    name="Fixer",
+    instructions=(
+        "Ты — корректор JSON-карточки товара. Тебе дают черновик и ошибку валидации "
+        "конкретного поля. Исправь ТОЛЬКО указанное поле, остальное верни без изменений.\n"
+        "Ответ — полный JSON карточки по тому же контракту. "
+        "Никакого markdown и пояснений, только валидный JSON."
+    ),
+    model=_MODEL,
+    model_settings=_MODEL_SETTINGS,
+    output_type=AgentOutputSchema(CardDraft, strict_json_schema=False),
+)
 
-def generator_prompt(facts: schemas.SupplierFacts, feedback: list[str] | None) -> tuple[str, str]:
-    """Generate-роль: черновик карточки из фактов."""
-    system = (
-        "Ты копирайтер маркетплейса. Из фактов о товаре составь черновик карточки.\n"
-        f"Правила:\n- заголовок не длиннее {settings.card_title_max_len} символов\n"
-        "- используй ТОЛЬКО факты; чего нет в фактах — не выдумывай, а впиши имя поля в missing_fields\n"
-        "- значения характеристик не пустые\n"
-        "- confidence (0..1) отражает полноту фактов: всё ключевое есть — выше "
-        f"{settings.confidence_human_threshold}; многого не хватает — ниже\n"
-        + JSON_ONLY
-    )
-    feedback_text = ""
-    if feedback:
-        feedback_text = "\n\nЗамечания предыдущей проверки, учти:\n" + "\n".join(
-            f"- {i}" for i in feedback
-        )
-    schema = {
-        "title": "str, <=60",
-        "description": "str, 3-5 предложений",
-        "characteristics": {"ключ": "значение"},
-        "benefits": ["str"],
-        "seo": {"keywords": ["str"], "meta_description": "str"},
-        "missing_fields": ["имя отсутствующего поля"],
-        "confidence": "0..1",
-    }
-    user = (
-        "Факты о товаре:\n"
-        + facts.model_dump_json(indent=1)
-        + "\n\nФорма ответа:\n"
-        + json.dumps(schema, ensure_ascii=False, indent=1)
-        + feedback_text
-    )
-    return system, user
-
-
-def critic_prompt(facts: schemas.SupplierFacts, draft: schemas.CardDraft) -> tuple[str, str]:
-    """Critic-роль: проверка черновика против фактов без придирок."""
-    system = (
-        "Ты редактор карточек маркетплейса. Проверь черновик против фактов. Нарушения:\n"
-        f"1. Заголовок длиннее {settings.card_title_max_len} символов\n"
-        "2. Конкретное ЗНАЧЕНИЕ (число, вес, объём, цена, материал), которого нет в фактах,\n"
-        "   и которого нельзя вывести из фактов — это выдумка. Нарушение.\n"
-        "3. Пустое значение в характеристиках\n"
-        "4. Поле и в характеристиках, и в missing_fields simultaneously\n"
-        "5. В тексте есть контакты (телефон, почта, ИНН, карта) — никогда не пиши их\n"
-        "ЧТО НЕ ВАЖНО (не нарушение):\n"
-        "- продающие формулировки и обобщения, ПОСТРОЕННЫЕ на фактах (без новых чисел)\n"
-        "- пустые seo/keywords\n"
-        "- низкий confidence при неполных фактах — это честность, а не ошибка\n"
-        "- преимущества (benefits), выведенные из фактов\n"
-        'Верди "approve", только если есть ПРЯМОЕ нарушение из списка 1-4.\n'
-        f"Схема ответа:\n{_schema_text(schemas.CritiqueReport)}\n"
-        + f"Пример:\n{_example_text(schemas.CritiqueReport)}\n"
-        + JSON_ONLY
-    )
-    user = (
-        "Факты:\n"
-        + facts.model_dump_json(indent=1)
-        + "\n\nЧерновик карточки:\n"
-        + draft.model_dump_json(indent=1)
-    )
-    return system, user
-
-
-def generator_with_context_prompt(
-    context: str, hint: str | None = None, feedback: list[str] | None = None
-) -> tuple[str, str]:
-    system = (
-        "Ты копирайтер маркетплейса. Составь черновик карточки товара ИСКЛЮЧИТЕЛЬНО "
-        "по приведённым фрагментам-источникам.\n"
-        f"Правила:\n- заголовок не длиннее {settings.card_title_max_len} символов\n"
-        "- используй только факты из контекста; не выдумывай\n"
-        "- в missing_fields перечисли, чего в источниках нет\n"
-        "- значения характеристик не пустые\n"
-        "- confidence отражает полноту найденного\n"
-        "- в sources верни fragment_id каждого использованного фрагмента из контекста "
-        "(строго те, что реально видел в [S#])\n"
-        + JSON_ONLY
-    )
-    feedback_text = ""
-    if feedback:
-        feedback_text = "\n\nЗамечания проверки ссылок:\n" + "\n".join(f"- {i}" for i in feedback)
-    schema = {
-        "title": "str, <=60",
-        "description": "str, 3-5 предложений",
-        "characteristics": {"ключ": "значение"},
-        "benefits": ["str"],
-        "seo": {"keywords": ["str"], "meta_description": "str"},
-        "missing_fields": ["имя отсутствующего поля"],
-        "confidence": "0..1",
-        "sources": [{"fragment_id": "int"}],
-    }
-    user = (
-        ("Подсказка: " + (hint or "товар из документов") + "\n\n")
-        + "Контекст (источники):\n"
-        + context
-        + "\n\nФорма ответа:\n"
-        + json.dumps(schema, ensure_ascii=False, indent=1)
-        + feedback_text
-    )
-    return system, user
-
-
-# Алиасы
-generator_from_context_prompt = generator_with_context_prompt
-
-
-def judge_prompt(card, fragments_text: str) -> tuple[str, str]:
-    system = (
-        "Ты судья. Проверь, подтверждаются ли утверждения карточки "
-        "приведёнными фрагментами источников.\n"
-        "Верни JSON с полями verdict (grounded/ungrounded), "
-        "unsupported_statements (список), justification (строка).\n"
-        + JSON_ONLY
-    )
-    user = (
-        "Карточка:\n"
-        + (card.model_dump_json(indent=1) if hasattr(card, "model_dump_json") else str(card))
-        + "\n\nИсточники:\n"
-        + fragments_text
-    )
-    return system, user
-
-
-# алиасы
-judge_with_sources_prompt = judge_prompt
-critic_with_sources_prompt = critic_prompt
-generator_context_prompt = generator_with_context_prompt
-contextual_generator_prompt = generator_with_context_prompt
-generator_from_documents_prompt = generator_with_context_prompt
+critic_agent = Agent(
+    name="Critic",
+    instructions=(
+        "Ты — строгий редактор карточек маркетплейса. Проверь черновик по правилам:\n"
+        "1. title не длиннее 60 символов\n"
+        "2. Нет характеристик, которых нет в фактах (выдуманные)\n"
+        "3. description и benefits не пустые\n"
+        "4. Нет воды («высокое качество», «лучшая цена») без конкретики\n"
+        "Верни СТРОГО JSON:\n"
+        '- verdict (string): "approve" если всё ок, иначе "regenerate"\n'
+        "- issues (array of string): список проблем; при approve — пустой\n"
+        "Никакого markdown, только валидный JSON."
+    ),
+    model=_MODEL,
+    model_settings=_MODEL_SETTINGS,
+    output_type=AgentOutputSchema(CritiqueReport, strict_json_schema=False),
+)

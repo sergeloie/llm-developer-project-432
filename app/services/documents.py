@@ -1,47 +1,68 @@
-"""Сервис документа: разбор по формату → нормализация → резка → сохранение.
+"""Сервис ingestion: parse → normalize → chunk → save.
 
-Разбор — шаг блокирующий (CPU/диск) и исполняется вне песочницы в потоке.
-Состояния документа: new → parsing → indexed | failed(причина).
+Статусная машина документа: new → parsing → indexed | failed.
+Скен-PDF без текстового слоя честно помечается failed: no text layer.
 """
-from pathlib import Path
+from app.core.logging import get_logger
+from app.parsers import normalizer
+from app.parsers.chunker import chunk_blocks
+from app.parsers.docx import parse_docx
+from app.parsers.pdf import PdfNoTextLayer, parse_pdf
+from app.parsers.xlsx import parse_xlsx
+from app.repositories import documents as docs_repo
 
-from app.core.config import settings
-from app.parsing import chunking
-from app.parsing.base import DocumentParseError, ParsedDocument
-from app.parsing.docx import parse_docx
-from app.parsing.pdf import parse_pdf
-from app.parsing.xlsx import parse_xlsx
+log = get_logger(__name__)
 
-PARSERS = {".pdf": parse_pdf, ".docx": parse_docx, ".xlsx": parse_xlsx}
-
-
-def parse_file(path: str) -> tuple[ParsedDocument, str]:
-    """Разобрать файл по расширению. Возврат (units, kind)."""
-    ext = Path(path).suffix.lower()
-    parser = PARSERS.get(ext)
-    if parser is None:
-        raise DocumentParseError(f"формат {ext} не поддерживается")
-    doc = parser(path)
-    kind = ext.lstrip(".")
-    return doc, kind
+ALLOWED_EXTENSIONS = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 МБ
 
 
-def fragments_from_file(path: str, brand: str | None = None) -> list[dict]:
-    """Полный конвейер разбора до фрагментов (без записи в базу)."""
-    doc, _kind = parse_file(path)
-    return chunking.make_fragments(
-        doc,
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
-        brand=brand,
-    )
+def parse_to_chunks(content: bytes, kind: str, doc_id: str) -> list[dict]:
+    """Файл → нормализованные чанки с метаданными. Без БД — чистая функция."""
+    if kind == "pdf":
+        blocks = parse_pdf(content)
+    elif kind == "docx":
+        blocks = parse_docx(content)
+    elif kind == "xlsx":
+        blocks = parse_xlsx(content)
+    else:
+        raise ValueError(f"неподдерживаемый формат: {kind}")
+    blocks = normalizer.normalize(blocks)
+    return chunk_blocks(blocks, doc_id)
 
 
-def brand_from_filename(filename: str) -> str | None:
-    """Бренд из имени файла: blender_kp.docx → blender (до первого '_' или '.')."""
-    stem = Path(filename).stem
-    part = stem.split("_")[0]
-    part = part.split("-")[0]
-    return part or None
+def ingest(conn, doc_id: str, content: bytes, kind: str, *, embed: bool = True) -> int:
+    """Полный ingestion одного документа. Возвращает число чанков.
 
-parse_to_chunks = fragments_from_file
+    embed=True: после сохранения чанков сразу считать embeddings.
+    Если эмбеддинг упал — документ остаётся indexed (чанки валидны),
+    статус понижается до embed_failed: поиск его не увидит, пока
+    не прогонят make reindex.
+    """
+    docs_repo.set_status(conn, doc_id, "parsing")
+    try:
+        chunks = parse_to_chunks(content, kind, doc_id)
+    except PdfNoTextLayer:
+        docs_repo.set_status(conn, doc_id, "failed", error="no text layer (скан? нужен OCR)")
+        log.warning("document_no_text_layer", doc_id=doc_id)
+        return 0
+
+    docs_repo.delete_chunks(conn, doc_id)
+    docs_repo.insert_chunks(conn, chunks)
+    docs_repo.set_chunks_count(conn, doc_id, len(chunks))
+    docs_repo.set_status(conn, doc_id, "indexed")
+    log.info("document_indexed", doc_id=doc_id, kind=kind, chunks=len(chunks))
+
+    if embed and chunks:
+        try:
+            from app.rag.reindex import index_pending_chunks
+
+            indexed = index_pending_chunks(conn, doc_id)
+            log.info("document_embedded", doc_id=doc_id, vectors=indexed)
+        except Exception as exc:
+            docs_repo.set_status(
+                conn, doc_id, "embed_failed", error=f"embedding: {exc!r}"
+            )
+            log.error("document_embed_failed", doc_id=doc_id, error=repr(exc))
+            # не роняем ingestion: чанки сохранены, эмбеддинги досчитает make reindex
+    return len(chunks)

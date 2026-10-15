@@ -1,140 +1,99 @@
-"""Контракты результата и входных данных.
-
-CardDraft — строгий контракт карточки (шаг 4):
-валидаторы охраняют форму; валидация/лечение живут в services/pipeline.
-"""
-from typing import Any, Literal
-from uuid import uuid4
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class SourceRef(BaseModel):
-    """Ссылка карточки на источник: фрагмент, из которого взято значение."""
-
-    fragment_id: int = Field(description="Идентификатор фрагмента в базе")
-    label: str | None = Field(default=None, description="К какой характеристике относится")
-    quote: str | None = Field(default=None, description="Ассоциированный текст источника")
-
-
-class SeoBlock(BaseModel):
-    """SEO-блок карточки."""
-
-    keywords: list[str] = Field(default_factory=list, max_length=15)
-    meta_description: str = Field(default="", max_length=300)
-
-
 class SupplierFacts(BaseModel):
-    """Результат extractor-агента: структурированные факты из текста."""
+    """Результат extractor-агента: структурированные факты из текста поставщика."""
 
-    product_name: str
-    brand: str | None = None
-    article: str | None = None
-    characteristics: dict[str, str] = Field(default_factory=dict)
-    missing_fields: list[str] = Field(default_factory=list)
+    product_name: str = Field(description="Название товара из текста поставщика")
+    characteristics: dict[str, str] = Field(
+        default_factory=dict, description="Характеристики: ключ-значение"
+    )
+    missing_fields: list[str] = Field(
+        default_factory=list,
+        description="Что не найдено в тексте (например: гарантия, цвет)",
+    )
+
+
+class SourceRef(BaseModel):
+    """Ссылка на источник утверждения: конкретный чанк документа."""
+
+    chunk_id: str = Field(description="Идентификатор чанка в БД")
+    doc_id: str = Field(default="", description="Идентификатор документа")
+    page: int | None = Field(default=None, description="Страница источника")
+    score: float | None = Field(default=None, description="Релевантность чанка")
+
+
+class Seo(BaseModel):
+    title: str = Field(default="", description="SEO-заголовок до 100 символов")
+    description: str = Field(default="", description="SEO-описание до 200 символов")
+    keywords: list[str] = Field(default_factory=list)
 
 
 class CardDraft(BaseModel):
-    """Черновик карточки товара. Поля и ограничения — контракт шага 4."""
+    """Результат generator-агента: черновик карточки товара.
 
-    title: str = Field(description="Заголовок карточки, <=card_title_max_len")
-    description: str = Field(description="Описание на 3-5 предложений")
+    Полный контракт карточки: контент-поля, SEO-блок, цитирование источников
+    (заполняется на шаге retrieval-генерации), честность о неполноте данных
+    и самооценка уверенности модели.
+    """
+
+    title: str = Field(description="Заголовок карточки, до 60 символов")
+    description: str = Field(description="Описание на 3-4 предложения")
     characteristics: dict[str, str] = Field(default_factory=dict)
     benefits: list[str] = Field(default_factory=list)
-    seo: SeoBlock = Field(default_factory=SeoBlock)
+    seo: Seo = Field(default_factory=Seo)
+    sources: list[SourceRef] = Field(
+        default_factory=list,
+        description="Источники утверждений: chunk_id + doc_id + page",
+    )
     missing_fields: list[str] = Field(
         default_factory=list,
-        description="Чего нет в источниках: имя поля вместо выдуманного значения",
+        description="Что важно для карточки, но данных нет; поле НЕ выдумывать",
     )
-    confidence: float = Field(ge=0, le=1, description="Уверенность 0..1")
-    sources: list[SourceRef] = Field(default_factory=list)
+    confidence: float = Field(
+        default=0.5,
+        description="Самооценка модели: 0.0 — данных нет, 1.0 — всё подтверждено",
+    )
 
     @field_validator("title")
     @classmethod
-    def title_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("title пустой")
-        return v.strip()
+    def title_max_length(cls, v: str) -> str:
+        if len(v) > 60:
+            raise ValueError(f"заголовок длиннее 60 символов ({len(v)}): сократи")
+        return v
+
+    @field_validator("confidence")
+    @classmethod
+    def confidence_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("confidence должен быть в [0.0, 1.0]")
+        return v
 
     @field_validator("characteristics")
     @classmethod
-    def no_empty_values(cls, v: dict[str, str]) -> dict[str, str]:
-        cleaned = {k: val.strip() for k, val in v.items()}
-        bad = [k for k, val in cleaned.items() if not val]
-        if bad:
-            raise ValueError(f"пустые значения характеристик: {bad[:5]}")
-        return cleaned
-
-    @field_validator("benefits")
-    @classmethod
-    def benefits_not_empty_str(cls, v: list[str]) -> list[str]:
-        for b in v:
-            if not b.strip():
-                raise ValueError("пустой элемент benefits")
-        return [b.strip() for b in v]
+    def no_empty_characteristics(cls, v: dict[str, str]) -> dict[str, str]:
+        return {k: val for k, val in v.items() if str(val).strip()}
 
     @model_validator(mode="after")
-    def field_not_in_two_lists(self) -> "CardDraft":
-        missing = {m.lower() for m in self.missing_fields}
-        clash = [k for k in self.characteristics if k.lower() in missing]
-        if clash:
+    def missing_fields_not_in_characteristics(self) -> "CardDraft":
+        dupes = set(self.missing_fields) & set(self.characteristics.keys())
+        if dupes:
             raise ValueError(
-                f"поле одновременно в характеристиках и в недостающих: {clash[:5]}"
+                f"поля одновременно в characteristics и missing_fields: {sorted(dupes)}"
             )
         return self
 
-    def check_title_limit(self, max_len: int) -> bool:
-        return len(self.title) <= max_len
-
 
 class CritiqueReport(BaseModel):
-    """Результат critic-агента: вердикт и список нарушений."""
+    """Результат critic-агента: вердикт и список проблем."""
 
-    verdict: Literal["approve", "regenerate"]
-    issues: list[str] = Field(default_factory=list)
-
-
-class JudgeVerdict(BaseModel):
-    """Модель-судья (шаг 8): подтверждаются ли утверждения карточки источниками."""
-
-    verdict: Literal["grounded", "ungrounded"]
-    unsupported_statements: list[str] = Field(default_factory=list)
-    justification: str = ""
-
-
-class JobIn(BaseModel):
-    supplier_text: str = Field(min_length=1, max_length=50000)
-
-
-class CardIn(BaseModel):
-    """Синхронная генерация по тексту (шаг 3/4)."""
-
-    supplier_text: str
-    hint: str | None = Field(default=None, description="Подсказка: что за товар")
-
-
-class GenerateIn(BaseModel):
-    """Генерация по документам (шаг 7)."""
-
-    document_ids: list[int] | None = Field(
-        default=None, description="Все документы, если не указано"
+    verdict: Literal["approve", "regenerate"] = Field(
+        description="approve — карточка годится; regenerate — переделать"
     )
-    hint: str | None = None
-
-
-class JobOut(BaseModel):
-    id: str
-    status: str
-    attempts: int = 0
-    result: dict[str, Any] | None = None
-    error: str | None = None
-
-
-class IdempotentResponse(BaseModel):
-    id: str
-    status: str
-
-
-def new_id(prefix: str = "job") -> str:
-    return f"{prefix}-{uuid4().hex[:12]}"
-Seo = SeoBlock
+    issues: list[str] = Field(
+        default_factory=list,
+        description="Список проблем: заголовок длиннее 60 символов, "
+        "выдуманные характеристики, пустые поля и т.п.",
+    )

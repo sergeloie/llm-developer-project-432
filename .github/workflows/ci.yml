@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: card
+          POSTGRES_PASSWORD: card
+          POSTGRES_DB: card
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U card -d card"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Установить зависимости из файла блокировки
+        run: make install
+
+      - name: Применить миграции
+        run: make migrate
+
+      - name: Линтер
+        run: make lint
+
+      - name: Тесты
+        run: make test

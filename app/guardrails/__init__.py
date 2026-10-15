@@ -1,45 +1,76 @@
-﻿from app.guards import pii, injection, output
-from app.guards.pii import *
-from app.guards.injection import *
-from app.guards.output import *
+"""Guardrails-фасад: единая точка применения защиты к контексту и карточке."""
+from dataclasses import dataclass, field
+
+from app.core.logging import get_logger
+from app.guardrails.injection import detect_injection_llm, detect_injection_regex
+from app.guardrails.pii import contains_pii, mask_pii
+
+log = get_logger(__name__)
 
 
+@dataclass
 class GuardReport:
-    """Отчёт защиты; итерируется как (sanitized, self) для unpacking."""
+    """Что сделала защита — попадает в результат job'а."""
+    masked_pii: int = 0
+    suspicious_chunks: list[str] = field(default_factory=list)
+    blocked_reasons: list[str] = field(default_factory=list)
 
-    def __init__(self, payload=None, findings=None, text=None, categories=None):
-        self.payload = payload
-        self.sanitized = payload
-        self.sanitized_text = payload if isinstance(payload, str) else None
-        self.findings = findings or []
-        self.text = text
-        self.categories = categories or []
-        self.suspicious = bool(self.findings)
+    @property
+    def needs_review(self) -> bool:
+        from app.core.config import settings
 
-    def __iter__(self):
-        yield self.payload
-        yield self
-
-    def __len__(self):
-        return 2
-
-    def __getitem__(self, idx):
-        return (self.payload, self)[idx]
+        return len(self.suspicious_chunks) > settings.suspicious_chunk_limit
 
 
-def guard_context(context, **kwargs):
-    text = context if isinstance(context, str) else str(context)
-    sanitized, cats = pii.mask(text)
-    reasons = injection.rule_reasons(text)
-    findings = [f"pii:{c}" for c in cats] + reasons
-    return GuardReport(payload=sanitized, findings=findings, text=text, categories=cats)
+async def guard_context(chunks: list[dict]) -> tuple[list[dict], GuardReport]:
+    """Три рубежа ДО LLM: PII-маскирование → regex-детект → LLM-детект.
+
+    Возвращает (безопасные чанки, отчёт). Подозрительные чанки исключаются;
+    если их больше лимита — отчёт требует ручной проверки документа.
+    """
+    report = GuardReport()
+    safe: list[dict] = []
+
+    for ch in chunks:
+        # 1. PII маскируется всегда — до LLM и логов
+        masked, entities = mask_pii(ch["text"])
+        if entities:
+            report.masked_pii += len(entities)
+            ch = {**ch, "text": masked}
+
+        # 2. regex: дёшево, на каждом чанке
+        verdict = detect_injection_regex(masked)
+        if verdict.suspicious:
+            # 3. LLM: только по подозрительным (экономия вызовов); fail-closed
+            try:
+                llm_verdict = await detect_injection_llm(masked)
+                confirmed = llm_verdict.suspicious
+                reason = llm_verdict.reason or verdict.reason
+            except Exception as exc:
+                log.warning("injection_llm_failed", chunk=ch["chunk_id"], error=repr(exc))
+                confirmed = True
+                reason = verdict.reason
+            if confirmed:
+                report.suspicious_chunks.append(ch["chunk_id"])
+                report.blocked_reasons.append(f"{ch['chunk_id']}: {reason}")
+                continue  # чанк исключается из контекста
+        safe.append(ch)
+
+    return safe, report
 
 
-def guard_output(card_or_text, **kwargs):
-    if hasattr(card_or_text, "title"):
-        _card, findings = output.filter_card(card_or_text)
-        payload = card_or_text
-    else:
-        findings = output.check_text(str(card_or_text))
-        payload = card_or_text
-    return GuardReport(payload=payload, findings=findings, text=str(card_or_text))
+def guard_output(card_json: str) -> tuple[str, list[str]]:
+    """Фильтр выхода: PII не должно просочиться в карточку.
+
+    Возвращает (очищенный JSON, список замечаний).
+    """
+    issues: list[str] = []
+    cleaned = card_json
+    if contains_pii(card_json):
+        cleaned, entities = mask_pii(card_json)
+        issues.append(f"в карточке найдено и замаскировано PII: {len(entities)}")
+    # Следы выполнения инъекции из датасета
+    for marker in ("1 рубль", "1 руб.", "promo@spammlot.example"):
+        if marker in card_json:
+            issues.append(f"в карточке след инъекции: {marker!r}")
+    return cleaned, issues

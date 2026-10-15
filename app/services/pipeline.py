@@ -1,145 +1,73 @@
-"""Пайплайн генерации карточки на тексте (шаги 3-4).
+"""Стадии пайплайна: extract → generate → critique.
 
-extract → (generate → validate → critique → feedback)*, петля переделки
-ограничена (max_pipeline_rounds). Ответ модели разбирается из грязного
-JSON; невалидный по схеме ответ лечится повторным запросом с текстом
-ошибки; одно сломанное поле переделывается точечно, без переделки
-всего черновика.
+Каждая функция — один агент-шаг. Один и тот же код работает в двух runtime:
+- FastAPI-эндпоинт,
+- шаг устойчивого процесса (activity).
+Это и есть выигрыш слоистой архитектуры: стадия не знает, кто её вызвал.
 
-Для тестов все шаги принимают подменяемую функцию `complete`
-(сигнатура как у llm.complete) — модель не нужна.
+generate идёт через validate_or_retry: ответ модели жёстко валидируется
+контрактом CardDraft, невалидный ответ чинится повторным запросом с ошибкой.
 """
-from collections.abc import Awaitable, Callable
-from typing import Any
-
-from pydantic import ValidationError
-
-from app import schemas
-from app.agents import prompts
-from app.core.config import settings
+from app.agents.prompts import critic_agent, extractor_agent
 from app.core.logging import get_logger
-from app.llm import client as llm
-from app.services import parse
+from app.llm.client import run_agent
+from app.schemas.cards import CardDraft, CritiqueReport, SupplierFacts
+from app.services.json_utils import parse_llm_json
+from app.services.structured import confidence_gate, validate_or_retry
 
 log = get_logger(__name__)
-CompleteFn = Callable[..., Awaitable[Any]]
 
 
-async def extract(
-    supplier_text: str, complete: CompleteFn = llm.complete
-) -> schemas.SupplierFacts:
-    system, user = prompts.extractor_prompt(supplier_text)
-    resp = await complete(user, role="cheap", system=system)
-    return schemas.SupplierFacts.model_validate(parse.extract_json(resp.text))
+async def extract(supplier_text: str) -> SupplierFacts:
+    log.info("step_extract_start")
+    out = await run_agent(extractor_agent, supplier_text)
+    if isinstance(out, SupplierFacts):
+        return out
+    return SupplierFacts.model_validate(parse_llm_json(out))
 
 
-async def generate(
-    facts: schemas.SupplierFacts,
-    feedback: list[str] | None = None,
-    complete: CompleteFn = llm.complete,
-) -> schemas.CardDraft:
-    system, user = prompts.generator_prompt(facts, feedback)
-    resp = await complete(user, role="main", system=system)
-    return await _card_with_repairs(resp.text, complete)
+async def generate(facts: SupplierFacts, feedback: list[str] | None = None) -> CardDraft:
+    prompt = "Факты о товаре:\n" + facts.model_dump_json(indent=2)
+    prefix = ""
+    if feedback:
+        prefix = "Замечания критика, учти:\n" + "\n".join(f"- {i}" for i in feedback) + "\n\n"
+    log.info("step_generate_start", feedback=bool(feedback))
+    return await validate_or_retry(prompt, feedback_prefix=prefix)
 
 
-async def critique(
-    facts: schemas.SupplierFacts,
-    draft: schemas.CardDraft,
-    complete: CompleteFn = llm.complete,
-) -> schemas.CritiqueReport:
-    system, user = prompts.critic_prompt(facts, draft)
-    resp = await complete(user, role="cheap", system=system)
-    return schemas.CritiqueReport.model_validate(parse.extract_json(resp.text))
-
-
-async def _card_with_repairs(
-    text: str, complete: CompleteFn, *, skip_role_probe: bool = False
-) -> schemas.CardDraft:
-    """Валидация с лечением: невалидный ответ уходит модели с текстом ошибки."""
-    last_error = ""
-    for attempt in range(1, settings.max_repair_attempts + 1):
-        try:
-            data = parse.extract_json(text)
-            return _strict_card(data)
-        except parse.ModelJsonError as exc:
-            last_error = str(exc)
-            log.warning("model_json_unparseable", attempt=attempt)
-            resp = await complete(
-                "Твой предыдущий ответ нельзя разобрать как JSON.\n"
-                f"{last_error}\n"
-                "Верни тот же ответ, но строго одним валидным JSON-объектом "
-                "без markdown и текста вокруг."
-            )
-            text = resp.text
-        except (ValidationError, ValueError) as exc:
-            errs = [
-                str(e.get("msg", e)) for e in exc.errors()
-            ] if isinstance(exc, ValidationError) else [str(exc)]
-            log.warning("card_validation_failed", attempt=attempt, errors=errs)
-            resp = await complete(
-                "Твой предыдущий ответ не прошёл валидацию.\nОшибки:\n- "
-                + "\n- ".join(errs)
-                + "\nИсправь ТОЛЬКО перечисленные ошибки и верни исправленный "
-                "ПОЛНЫЙ JSON в той же форме."
-            )
-            text = resp.text
-    raise parse.ModelJsonError(
-        f"лечение не помогло за {settings.max_repair_attempts} попыток: {last_error}"
-    )
-
-
-def _strict_card(data: dict[str, Any]) -> schemas.CardDraft:
-    """Валидация контракта + проектное ограничение длины заголовка."""
-    if not isinstance(data, dict):
-        raise parse.ModelJsonError("ответ не JSON-объект")
-    draft = schemas.CardDraft.model_validate(data)
-    if len(draft.title) > settings.card_title_max_len:
-        raise ValueError(f"заголовок длиннее {settings.card_title_max_len} символов")
-    return draft
-
-
-class TitleTooLong(ValidationError):  # маркер для точечной переделки в тестах
-    pass
-
-
-async def repair_field(
-    draft: schemas.CardDraft, field: str, facts: schemas.SupplierFacts
-) -> schemas.CardDraft:
-    """Точечная переделка одного поля: модель получает текущий черновик."""
-    system, _ = prompts.generator_prompt(facts, None)
+async def critique(facts: SupplierFacts, draft: CardDraft) -> CritiqueReport:
     prompt = (
-        "Текущий черновик карточки:\n"
-        + draft.model_dump_json(indent=1)
-        + f"\n\nИсправь ТОЛЬКО поле «{field}» — оно нарушает правила карточки."
-        " Остальные поля оставь без изменений. Верни ПОЛНЫЙ исправленный JSON."
+        "Факты о товаре:\n"
+        + facts.model_dump_json(indent=2)
+        + "\n\nЧерновик карточки для проверки:\n"
+        + draft.model_dump_json(indent=2)
     )
-    resp = await llm.complete(prompt, role="main", system=system)
-    fixed = _strict_card(parse.extract_json(resp.text))
-    log.info("spot_repair_done", field=field)
-    return fixed
+    log.info("step_critique_start")
+    out = await run_agent(critic_agent, prompt)
+    if isinstance(out, CritiqueReport):
+        return out
+    return CritiqueReport.model_validate(parse_llm_json(out))
 
 
-async def run_pipeline(
-    supplier_text: str, complete: CompleteFn = llm.complete
-) -> tuple[schemas.CardDraft | None, int, str, schemas.CritiqueReport | None]:
-    """extract → (generate → critique → feedback)* ≤ max_pipeline_rounds.
+async def run_pipeline(supplier_text: str, max_attempts: int = 3):
+    """Полный цикл: extract → (generate → critique → feedback)* → итог.
 
-    Возвращает (draft|None, попыток, вердикт, последний critique-report).
-    Вердикт:-approved | rejected_exhausted (петля исчерпана).
+    Возвращает (итоговый черновик, число генераций, вердикт, финальный статус).
+    Финальный статус учитывает confidence-gate: низкая уверенность → needs_review.
     """
-    facts = await extract(supplier_text, complete)
-    draft: schemas.CardDraft | None = None
-    report: schemas.CritiqueReport | None = None
-    verdict = "rejected_exhausted"
+    facts = await extract(supplier_text)
+    feedback: list[str] = []
     attempts = 0
-    for attempt in range(1, settings.max_pipeline_rounds + 1):
-        attempts = attempt
-        feedback = report.issues if report else None
-        draft = await generate(facts, feedback, complete)
-        report = await critique(facts, draft, complete)
+    draft = None
+    verdict = "rejected"
+    while attempts < max_attempts:
+        attempts += 1
+        draft = await generate(facts, feedback or None)
+        report = await critique(facts, draft)
         if report.verdict == "approve":
             verdict = "approved"
             break
-        log.info("pipeline_regenerate", attempt=attempt, issues=report.issues[:3])
-    return draft, attempts, verdict, report
+        feedback = report.issues
+        log.info("pipeline_regenerate", attempt=attempts, issues=report.issues)
+    status = confidence_gate(draft) if verdict == "approved" and draft else "rejected"
+    return draft, attempts, verdict, status

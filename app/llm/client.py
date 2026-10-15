@@ -1,156 +1,139 @@
-"""LLM-клиент — единственное место, которое знает про провайдера.
+"""LLM-клиент как слой: обёртка над OpenAI Agents SDK с таймаутом и ретраями.
 
-Ничего кроме политики доступа: адрес/ключ из настроек, таймаут, повтор
-только на исправимых ошибках (429/5xx/сеть/таймаут) с растущей задержкой
-и случайной примесью, учёт расхода токенов из ответа.
-
-Сервисы вызывают `complete()` и не знают про LM Studio/OpenAI/HTTP.
-Внутренний run-time повтора относится к ОДНОМУ вызову модели; повтор
-всего шага — работа движка устойчивого исполнения (Temporal).
+Единственное место в приложении, которое знает про LLM API:
+retry-политика, таймаут, различие ошибок 429/5xx/4xx — всё здесь.
+Сервисы вызывают run_agent() и не знают про провайдера.
 """
 import asyncio
-import json
 import random
 import time
-from dataclasses import dataclass
-from typing import Any
 
-import httpx
+from agents import (
+    Agent,
+    Runner,
+    set_default_openai_api,
+    set_default_openai_client,
+    set_tracing_disabled,
+)
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 
 from app.core.config import settings
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-_client: httpx.AsyncClient | None = None
+_client_configured = False
 
 
-@dataclass
-class LlmResponse:
-    text: str
-    model: str
-    role: str
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    duration_s: float = 0.0
-    duration_ms: float = 0.0
-    raw: dict | None = None
+def setup_llm() -> None:
+    """Инициализация OpenAI-compatible клиента (LM Studio / OpenRouter / Ollama).
+
+    Вызывается один раз на процесс. Идемпотентна.
+    """
+    global _client_configured
+    if _client_configured:
+        return
+    client = AsyncOpenAI(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        timeout=settings.llm_timeout_s,
+    )
+    set_default_openai_client(client)
+    # LM Studio / Ollama / OpenRouter говорят на Chat Completions, а не Responses API.
+    set_default_openai_api("chat_completions")
+    # Иначе SDK шлёт спаны на api.openai.com и падает с 401 на не-OpenAI ключе.
+    set_tracing_disabled(True)
+    _client_configured = True
 
 
-class LlmError(Exception):
-    """Все ошибки вызова модели — один тип, различаем retryable-флагом."""
+def _retryable(exc: Exception) -> bool:
+    """Ретраим только транспортные и серверные ошибки: 429, 5xx, таймаут, сеть.
 
-    def __init__(self, message: str, retryable: bool = False, status: int | None = None):
-        super().__init__(message)
-        self.retryable = retryable
-        self.status = status
-
-
-def role_model(role: str) -> str:
-    """Политика двух моделей: main-роли — дорогая, служебные — дешёвая."""
-    return settings.llm_model_main if role == "main" else settings.llm_model_cheap
+    4xx (кроме 429) — ошибка запроса, повтор бессмыслен.
+    """
+    if isinstance(exc, (APIConnectionError, APITimeoutError)):
+        return True
+    if isinstance(exc, APIStatusError):
+        return exc.status_code == 429 or exc.status_code >= 500
+    return False
 
 
-def setup_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(
-            base_url=settings.llm_base_url,
-            timeout=httpx.Timeout(settings.llm_timeout_s, connect=10.0),
-        )
-    return _client
+async def run_agent(agent: Agent, prompt: str):
+    """Запустить агента с ретраями: экспоненциальная задержка + jitter.
 
-
-async def aclose_client() -> None:
-    global _client
-    if _client is not None and not _client.is_closed:
-        await _client.aclose()
-    _client = None
-
-
-def messages(prompt: str, system: str | None = None) -> list[dict[str, str]]:
-    msgs = []
-    if system:
-        msgs.append({"role": "system", "content": system})
-    msgs.append({"role": "user", "content": prompt})
-    return msgs
-
-
-def _classify_status(status: int) -> bool:
-    return status == 429 or status >= 500
-
-
-async def complete(
-    prompt: str,
-    *,
-    role: str = "main",
-    system: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-) -> LlmResponse:
-    """Один вызов модели с политикой ретраев. role выбирает модель из настроек."""
-    client = setup_client()
-    model = role_model(role)
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": messages(prompt, system),
-        "temperature": settings.llm_temperature if temperature is None else temperature,
-        "max_tokens": max_tokens or settings.llm_max_tokens,
-    }
-    last_exc: LlmError | None = None
-    for attempt in range(1, settings.llm_max_retries + 1):
+    Ретраится только вызов LLM — не вся бизнес-задача (это работа очереди/workflow).
+    Каждый успешный вызов пишется в llm_calls (токены, цена, латентность).
+    """
+    setup_llm()
+    max_retries = settings.llm_max_retries
+    for attempt in range(1, max_retries + 1):
         started = time.monotonic()
         try:
-            resp = await client.post("/chat/completions", json=payload)
-            duration_s = time.monotonic() - started
-            if resp.status_code != 200:
-                raise LlmError(
-                    f"llm http {resp.status_code}: {resp.text[:300]}",
-                    retryable=_classify_status(resp.status_code),
-                    status=resp.status_code,
+            result = await asyncio.wait_for(
+                Runner.run(agent, prompt), timeout=settings.llm_timeout_s
+            )
+            _log_call(agent, result, started)
+            return result.final_output
+        except Exception as exc:
+            if attempt == max_retries or not _retryable(exc):
+                log.error(
+                    "llm_call_failed",
+                    agent=agent.name,
+                    attempt=attempt,
+                    error=repr(exc),
                 )
-            data = resp.json()
-            choice = data.get("choices") or [{}]
-            message = choice[0].get("message") or {}
-            text = message.get("content") or ""
-            usage = data.get("usage") or {}
-            out = LlmResponse(
-                text=text,
-                model=data.get("model", model),
-                role=role,
-                prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
-                completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-                total_tokens=int(usage.get("total_tokens", 0) or 0),
-                duration_s=duration_s,
-                duration_ms=duration_s * 1000,
-                raw=data,
+                raise
+            delay = min(2**attempt * 0.5, 8.0) * (1 + random.random() * 0.25)
+            log.warning(
+                "llm_call_retry",
+                agent=agent.name,
+                attempt=attempt,
+                delay_s=round(delay, 2),
+                error=repr(exc),
             )
-            if out.total_tokens == 0:
-                # сервер не отдал usage — грубая оценка 4 символа = 1 токен
-                out.prompt_tokens = len(prompt) // 4
-                out.completion_tokens = len(text) // 4
-                out.total_tokens = out.prompt_tokens + out.completion_tokens
-            log.info(
-                "llm_call",
-                model=out.model,
-                role=role,
-                prompt_tokens=out.prompt_tokens,
-                completion_tokens=out.completion_tokens,
-                duration_ms=round(out.duration_ms, 1),
+            await asyncio.sleep(delay)
+
+
+def _log_call(agent: Agent, result, started: float) -> None:
+    """Учёт вызова в llm_calls. Ошибки учёта не должны ронять пайплайн."""
+    try:
+        import structlog
+
+        from app.core import db
+        from app.llm.cost import calculate_cost
+        from app.repositories import llm_calls as repo
+
+        usage = getattr(result, "raw_responses", None)
+        usage = getattr(usage[-1], "usage", None) if usage else None
+        prompt_tokens = getattr(usage, "input_tokens", None) if usage else None
+        completion_tokens = getattr(usage, "output_tokens", None) if usage else None
+        model = getattr(agent, "model", "") or ""
+        cost = float(
+            calculate_cost(model, prompt_tokens or 0, completion_tokens or 0)
+        )
+        latency_ms = int((time.monotonic() - started) * 1000)
+        # job_id пробрасывается через structlog-контекст воркером
+        ctx = structlog.contextvars.get_contextvars() or {}
+        job_id = ctx.get("job_id")
+        with db.connection() as conn:
+            repo.insert_call(
+                conn,
+                job_id=job_id,
+                agent=getattr(agent, "name", ""),
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost=cost,
+                latency_ms=latency_ms,
             )
-            return out
-        except LlmError as exc:
-            last_exc = exc
-        except httpx.TimeoutException as exc:
-            duration_s = time.monotonic() - started
-            last_exc = LlmError(f"timeout after {duration_s:.1f}s: {exc}", retryable=True)
-        except (httpx.TransportError, json.JSONDecodeError) as exc:
-            last_exc = LlmError(f"transport/json error: {exc}", retryable=True)
-        if attempt == settings.llm_max_retries or not last_exc.retryable:
-            log.error("llm_call_failed", role=role, model=model, attempt=attempt, error=str(last_exc))
-            raise last_exc
-        delay = min(2**attempt * 0.5, 8.0) * (1 + random.random() * 0.25)
-        log.warning("llm_call_retry", role=role, model=model, attempt=attempt, delay_s=round(delay, 2), error=str(last_exc))
-        await asyncio.sleep(delay)
-    raise LlmError("unreachable retries state", retryable=False)
+        log.info(
+            "llm_call",
+            agent=getattr(agent, "name", ""),
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost=cost,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:
+        log.warning("llm_call_accounting_failed", error=repr(exc))

@@ -1,101 +1,73 @@
-"""SQL живёт только здесь. Таблица jobs: статусная машина, идемпотентность."""
+"""Repository-слой: таблица jobs в Postgres. Единственный владелец SQL."""
 import json
 import uuid
-from typing import Any
+from datetime import UTC, datetime
 
 import psycopg
 
-# Состояния фоновых задач (шаги 3-4).
-# pending → running → done | needs_human (низкая уверенность)
-#                    ↘ failed_rejected (петля исчерпана) | failed_error
-STATUSES = {
-    "pending",
-    "running",
-    "done",
-    "needs_human",
-    "failed_rejected",
-    "failed_error",
-    "parsing",
-    "indexing",
-    "searching",
-    "generating",
-    "verifying",
-    "awaiting_human",
-    "approved",
-    "rejected",
-}
+from app.schemas.cards import CardDraft
 
 
-def create_job(
-    conn: psycopg.Connection,
-    payload: dict[str, Any],
-    idempotency_key: str | None = None,
-    kind: str = "generate_text",
-) -> tuple[str, bool]:
-    """Создать задачу. Вернёт (id, freshly_created).
-
-    Повторный запрос с тем же ключом идемпотентности возвращает первую задачу,
-    новую не создаёт (нет двойного клика — нет двойной генерации и счёта).
-    """
-    if idempotency_key:
-        row = conn.execute(
-            "SELECT id, status FROM jobs WHERE idempotency_key = %s", (idempotency_key,)
-        ).fetchone()
-        if row:
-            return row[0], False
-    job_id = f"job-{uuid.uuid4().hex[:12]}"
-    conn.execute(
-        "INSERT INTO jobs (id, idempotency_key, kind, status, payload)"
-        " VALUES (%s, %s, %s, 'pending', %s)",
-        (job_id, idempotency_key, kind, json.dumps(payload, ensure_ascii=False)),
-    )
-    return job_id, True
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
-def get_job(conn: psycopg.Connection, job_id: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        "SELECT id, status, attempts, result, error, created_at, updated_at"
-        " FROM jobs WHERE id = %s",
-        (job_id,),
-    ).fetchone()
+def create_job(conn: psycopg.Connection, payload: dict, idempotency_key: str | None) -> str:
+    """INSERT pending. При повторном idempotency_key возвращает существующий id."""
+    with conn.cursor() as cur:
+        if idempotency_key:
+            cur.execute(
+                "SELECT id FROM jobs WHERE idempotency_key = %s", (idempotency_key,)
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        job_id = uuid.uuid4().hex[:12]
+        cur.execute(
+            "INSERT INTO jobs (id, idempotency_key, payload) VALUES (%s, %s, %s)",
+            (job_id, idempotency_key, json.dumps(payload, ensure_ascii=False)),
+        )
+        return job_id
+
+
+def set_status(
+    conn: psycopg.Connection, job_id: str, status: str, *, result: CardDraft | None = None,
+    error: str | None = None, bump_attempts: bool = False,
+) -> None:
+    sets = ["status = %s", "updated_at = %s"]
+    args: list = [status, _now()]
+    if result is not None:
+        sets.append("result = %s")
+        args.append(result.model_dump_json())
+    if error is not None:
+        sets.append("error = %s")
+        args.append(error)
+    if bump_attempts:
+        sets.append("attempts = attempts + 1")
+    args.append(job_id)
+    with conn.cursor() as cur:
+        cur.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = %s", args)
+
+
+def get_job(conn: psycopg.Connection, job_id: str) -> dict | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, status, attempts, result, error FROM jobs WHERE id = %s",
+            (job_id,),
+        )
+        row = cur.fetchone()
     if not row:
         return None
-    return {
-        "id": row[0],
-        "status": row[1],
-        "attempts": row[2],
-        "result": row[3],
-        "error": row[4],
-        "created_at": row[5].isoformat() if row[5] else None,
-        "updated_at": row[6].isoformat() if row[6] else None,
-    }
-
-
-def update_status(
-    conn: psycopg.Connection,
-    job_id: str,
-    status: str,
-    *,
-    result: dict[str, Any] | None = None,
-    error: str | None = None,
-    attempts: int | None = None,
-) -> None:
-    if status not in STATUSES:
-        raise ValueError(f"неизвестный статус: {status}")
-    conn.execute(
-        "UPDATE jobs SET status = %s, result = COALESCE(%s, result),"
-        " error = %s, attempts = COALESCE(%s, attempts + 1),"
-        " updated_at = now() WHERE id = %s",
-        (status, json.dumps(result, ensure_ascii=False) if result else None, error, attempts, job_id),
-    )
-
-
-def set_result(conn: psycopg.Connection, job_id: str, result: dict[str, Any], status: str) -> None:
-    """Финальная запись результата (атtempt не наращивается — это не ретрай)."""
-    if status not in STATUSES:
-        raise ValueError(f"неизвестный статус: {status}")
-    conn.execute(
-        "UPDATE jobs SET status = %s, result = %s, error = NULL, updated_at = now()"
-        " WHERE id = %s",
-        (status, json.dumps(result, ensure_ascii=False), job_id),
-    )
+    job = {"id": row[0], "status": row[1], "attempts": row[2], "error": row[4]}
+    if row[3]:
+        # psycopg3 возвращает JSONB уже как dict, а не строку
+        try:
+            draft = (
+                CardDraft.model_validate(row[3])
+                if isinstance(row[3], dict)
+                else CardDraft.model_validate_json(row[3])
+            )
+            job["result"] = draft.model_dump()
+        except Exception:
+            job["result"] = None
+    return job

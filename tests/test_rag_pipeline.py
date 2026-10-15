@@ -1,0 +1,150 @@
+"""E2E-тест RAG-пайплайна: чанки в БД → retrieval → генерация (мок LLM) → sources."""
+import asyncio
+import os
+
+import pytest
+
+from app.core import db
+from app.rag.context import build_context, context_chunk_ids
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("PCA_SKIP_DB_TESTS") == "1", reason="PCA_SKIP_DB_TESTS=1"
+)
+
+DOC_ID = "tstrag1"
+CHUNK_TEXTS = {
+    "tstragc1": "Блендер МиксерПро 800. Мощность: 800 Вт. Скоростей: 6. Артикул: BLD-800.",
+    "tstragc2": "Гарантия 24 месяца. Цвет графитовый. Комплект: венчик, стакан 1,5 л.",
+}
+
+
+@pytest.fixture(scope="module")
+def rag_setup():
+    with db.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM chunks WHERE doc_id = %s", (DOC_ID,))
+            cur.execute("DELETE FROM documents WHERE id = %s", (DOC_ID,))
+            cur.execute(
+                "INSERT INTO documents (id, filename, content_hash, kind, status) "
+                "VALUES (%s, 'blender_test.pdf', 'hash-rag-test', 'pdf', 'indexed')",
+                (DOC_ID,),
+            )
+            for i, (cid, text) in enumerate(CHUNK_TEXTS.items()):
+                cur.execute(
+                    "INSERT INTO chunks (id, doc_id, ordinal, text, metadata) VALUES (%s,%s,%s,%s,%s)",
+                    (cid, DOC_ID, i, text, f'{{"doc_id": "{DOC_ID}", "page": 1}}'),
+                )
+        yield conn
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM chunks WHERE doc_id = %s", (DOC_ID,))
+            cur.execute("DELETE FROM documents WHERE id = %s", (DOC_ID,))
+
+
+def test_build_context_headers(rag_setup):
+    chunks = [
+        {"chunk_id": cid, "text": txt, "metadata": {"doc_id": DOC_ID, "page": 2, "section": "Характеристики"}, "filename": "f.pdf"}
+        for cid, txt in CHUNK_TEXTS.items()
+    ]
+    ctx = build_context(chunks)
+    # Подписи в шапке («стр.», «page») на любом языке, важны сами данные источника
+    header = next(line for line in ctx.splitlines() if line.startswith("[tstragc1"))
+    for part in ("f.pdf", "2", "Характеристики"):
+        assert part in header
+    assert "Мощность: 800 Вт" in ctx
+    assert context_chunk_ids(ctx) == set(CHUNK_TEXTS)
+
+
+def test_build_context_limit(rag_setup):
+    chunks = [
+        {"chunk_id": f"c{i}", "text": "x" * 4000, "metadata": {}, "filename": "f.pdf"}
+        for i in range(5)
+    ]
+    ctx = build_context(chunks, max_chars=6000)
+    assert len(ctx) < 6000 + 100  # жёсткий потолок соблюдён (хвост не рвём)
+
+
+def _fake_retrieve(context: str):
+    from app.guardrails import GuardReport
+
+    async def _retrieve(q, doc_ids=None):
+        return context, GuardReport()
+    return _retrieve
+
+
+def _patch_llm(monkeypatch, card_json: str, verdict="approve"):
+    from app.services import rag_pipeline as rp
+
+    calls = {"n": 0}
+
+    async def fake_run(agent, prompt):
+        calls["n"] += 1
+        if agent.name == "Critic":
+            from app.schemas.cards import CritiqueReport
+
+            return CritiqueReport(verdict=verdict).model_dump_json()
+        return card_json
+
+    monkeypatch.setattr(rp, "run_agent", fake_run)
+    return calls
+
+
+def _card_json(chunk_id="tstragc1", confidence=0.9):
+    import json
+
+    return json.dumps(
+        {
+            "title": "МиксерПро 800 — блендер 800 Вт",
+            "description": "Погружной блендер.",
+            "characteristics": {"Мощность": "800 Вт"},
+            "benefits": ["Металлическая ножка"],
+            "seo": {"title": "Блендер", "description": "Мощный", "keywords": ["блендер"]},
+            "sources": [{"chunk_id": chunk_id, "page": 1}],
+            "missing_fields": [],
+            "confidence": confidence,
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_rag_pipeline_happy_path(rag_setup, monkeypatch):
+    from app.services import rag_pipeline as rp
+
+    _patch_llm(monkeypatch, _card_json())
+    # retrieval мокаем на уровне retrieve_context — гибрид с gemma тут не нужен
+    monkeypatch.setattr(
+        rp, "retrieve_context_async",
+        _fake_retrieve("[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]),
+    )
+    draft, attempts, verdict, status, _guard = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+    assert verdict == "approved" and attempts == 1
+    assert status == "done"
+    assert draft.sources[0].chunk_id == "tstragc1"
+    # источник реально существует в БД
+    from app.repositories import chunks as chunks_repo
+
+    assert "tstragc1" in chunks_repo.get_chunks_by_ids(rag_setup, ["tstragc1"])
+
+
+def test_rag_pipeline_hallucinated_source_rejected(rag_setup, monkeypatch):
+    """Модель сослалась на выдуманный chunk_id → ретрай → финальная ошибка."""
+    from app.services import rag_pipeline as rp
+
+    _patch_llm(monkeypatch, _card_json(chunk_id="deadbeef0000"))
+    monkeypatch.setattr(
+        rp, "retrieve_context_async",
+        _fake_retrieve("[tstragc1 | blender_test.pdf]\n" + CHUNK_TEXTS["tstragc1"]),
+    )
+    with pytest.raises(rp.SourceValidationError):
+        asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+
+
+def test_rag_pipeline_low_confidence_needs_review(rag_setup, monkeypatch):
+    from app.services import rag_pipeline as rp
+
+    _patch_llm(monkeypatch, _card_json(confidence=0.3))
+    monkeypatch.setattr(
+        rp, "retrieve_context_async",
+        _fake_retrieve("[tstragc1 | blender_test.pdf]\n" + CHUNK_TEXTS["tstragc1"]),
+    )
+    _draft, _a, _v, status, _g = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+    assert status == "needs_review"

@@ -1,9 +1,9 @@
 .venv/
-uploads/
+.ruff_cache/
 __pycache__/
 *.pyc
 .pytest_cache/
-.ruff_cache/
 .env
-reports/
-*.log
+
+# отчёт прогона метрик — результат, а не исходник
+evals/report.json

@@ -1,104 +1,82 @@
-# ИИ-генератор карточки товара
+# product-card-ai
 
-[![hexlet-check](https://github.com/sergeloie/llm-developer-project-432/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/sergeloie/llm-developer-project-432/actions)
+Сервис принимает документы поставщиков (pdf, docx, xlsx), строит по ним поисковый индекс
+и генерирует черновик карточки товара — с указанием источников, списком недостающих
+данных и уровнем уверенности.
 
-Соберите бэкенд-сервис, который принимает документы поставщиков в форматах pdf, docx и xlsx, строит по ним поисковый индекс и генерирует черновик карточки товара — с указанием источников, списком недостающих данных и уровнем уверенности.
+## Требования
 
-Учебный проект Хекслета: https://ru.hexlet.io/programs/llm-developer
+- Python 3.12
+- Docker и Docker Compose
+- OpenAI-совместимый сервер моделей: LM Studio, Ollama или OpenRouter
 
-## Стек
+Модель эмбеддингов `google/embeddinggemma-300m` скачивается с Hugging Face при первом
+запуске, примерно 600 МБ.
 
-- Python 3.11+
-- FastAPI, Pydantic, psycopg
-- PostgreSQL + pgvector
-- Temporal
-- LM Studio (OpenAI-compatible API) — локальные модели
-
-## Установка с нуля (≈15 минут)
-
-```bash
-git clone <repo>
-cd llm-developer-project-432
-python -m venv .venv
-# Windows: .venv\Scripts\activate ; Unix: source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-cp .env.example .env   # при необходимости подправьте LM Studio base URL / модели
-make infra             # postgres(pgvector) + temporal + ui
-make migrate           # применить миграции (идемпотентно)
-```
-
-Проверка готовности:
+## Запуск
 
 ```bash
-make api               # FastAPI на :8000
-curl http://localhost:8000/ready
-make temporal-worker   # воркер Temporal
+cp .env.example .env # и вписать адрес своего сервера моделей
+make infra           # postgres с pgvector и движок процессов
+make setup           # зависимости и миграции
+make api             # http://localhost:8000
+make worker          # разбор документов и генерация карточек
 ```
 
-## Использование
-
-Загрузка документа (202 + идентификатор):
+Проверка, что всё поднялось:
 
 ```bash
-curl -F "file=@data/blender_passport.pdf" http://localhost:8000/documents
+curl localhost:8000/health # жив ли процесс
+curl localhost:8000/ready  # доступна ли база и включено ли расширение vector
 ```
 
-Статус и число фрагментов:
+## Работа с сервисом
 
 ```bash
-curl http://localhost:8000/documents/1
+# загрузить документ
+curl -F file=@data/blender_passport.pdf localhost:8000/documents/
+
+# сгенерировать карточку по загруженным документам
+curl -X POST localhost:8000/generate-card \
+	-H 'Content-Type: application/json' \
+	-d '{"document_ids": ["<id>"], "product_hint": "блендер"}'
+
+# посмотреть статус и результат
+curl localhost:8000/jobs/$JOB_ID
 ```
 
-Поиск:
+## Разработка
 
 ```bash
-curl "http://localhost:8000/search?q=мощность%20блендера&mode=hybrid"
+make test     # pytest
+make lint     # ruff
+make lint-fix # ruff с правкой
+make eval     # метрики генерации на золотом датасете (FULL=1 — весь датасет)
+make reindex  # досчитать эмбеддинги для чанков без векторов
 ```
 
-Генерация карточки по документам:
+## Структура
 
-```bash
-curl -X POST http://localhost:8000/generators \
-  -H "Content-Type: application/json" \
-  -d '{"document_ids":[1],"hint":"блендер 800 Вт"}'
-
-curl http://localhost:8000/generators/<job-id>
+```text
+app/
+├── main.py            приложение и сквозной request_id
+├── core/              конфигурация, база, логи, раннер миграций
+├── routers/           HTTP: cards, jobs, documents, generate, workflows, health
+├── services/          сценарии: пайплайн генерации, разбор документов, контракт результата
+├── agents/            промпты extractor, generator, critic
+├── llm/               клиент модели и учёт стоимости вызовов
+├── rag/               эмбеддинги, поиск, сборка контекста
+├── parsers/           pdf, docx, xlsx, нормализация, чанкинг
+├── guardrails/        PII и детектор инъекций
+├── repositories/      SQL — только здесь
+├── schemas/           контракты между слоями
+└── temporal/          процессы: разбор, карточка, модерация
+db/migrations/         SQL-миграции
+evals/                 прогон метрик на золотом датасете
+tests/                 тесты
+data/                  документы поставщиков и золотой датасет
 ```
 
-Досчёт векторов после сбоя/смены модели:
+## Документы для разработки
 
-```bash
-make backfill
-```
-
-Тесты и линтер:
-
-```bash
-make lint
-make tests
-```
-
-## Отчёт по прогону
-
-- Порог релевантности поиска: `0.45` (калиброван по своим запросам; верные попадания 0.48–0.54, мусор 0.26–0.36).
-- Релевантный запрос «мощность блендера» находит нужную страницу (vector/hybrid); артикул `KTL-1700` — через words/hybrid.
-- Полный прогон карточки на `blender_passport.pdf` проходит: статус `awaiting_human`, confidence `0.9`, ссылка на существующий фрагмент (fragment_id=1), невалидных ссылок нет.
-- Стоимость тарифицируется как 0 копеек в текущей конфигурации (цены в `.env` по умолчанию нулевые); учёт вызовов идёт в таблицу `model_calls`.
-- Самая слабая метрика — точность цитирования на «хвостовых» документах: качество зависит от полноты чанкинга таблиц и от того, попал ли нужный фрагмент в топ-к. Улучшать через увеличение `search_top_k` и калибровку чанков.
-
-## Архитектура и принятые решения
-
-См. `PLAN.md` и `PROGRESS.md`. Вопросы защиты:
-
-1. Повтор вызова модели — в activity/пайплайне (ретраи на 429/5xx/сеть); повтор задачи — через восстановление workflow из истории и статуса в БД.
-2. Гибридный поиск находит артикулы, потому что лексический поиск (ts_rank + LIKE по словам) ранжирует точное вхождение; поиск по смыслу теряет артикулы как бессмысленные строки. RRF объединяет ранги, поднимая фрагмент, найденный обоими.
-3. Маскирование PII стоит до вызова модели, чтобы персональные данные не уходили во внешний API и логи; выходной фильтр ловит случаи, когда модель всё-таки просочила чувствительные следы.
-4. Проверка ссылок проверяет не только существование фрагмента, но и то, что он был в поданном контексте: иначе модель может ссылаться на реальный, но невиденный фрагмент (выдумывание с правдоподобным видом).
-5. Низкая уверенность: код не помечает карточку как done, отправляет в `needs_human`/`awaiting_human`; процесс фиксируется в БД и переживает рестарт воркера, человек подтверждает или отклоняет сигналом.
-6. Стоимость: таблица `model_calls` (job_id, role, model, токены, копейки, длительность, request_id) + middleware request_id; поиск по job_id или request_id.
-7. Состояние задачи в БД (`jobs`), а не только в истории движка: при рестарте воркера статус и результат остаются, а workflow восстанавливается по истории Temporal.
-8. При недоступности модели детектор инъекций работает fail-closed: фрагмент считается подозрительным (не пропускается).
-
-## О Хекслете
-
-[Хекслет](https://ru.hexlet.io/) — школа программирования. Этот репозиторий — один из учебных проектов.
+- `docs/adr/` — принятые архитектурные решения

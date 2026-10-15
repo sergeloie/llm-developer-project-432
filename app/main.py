@@ -1,42 +1,39 @@
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, Request
 
 from app.core import db
-from app.core.logging import get_logger, setup_logging
-from app.routers import cards, documents, generators, jobs, search, workflows
-
-log = get_logger(__name__)
+from app.core.logging import setup_logging
+from app.routers import cards, documents, generate, health, jobs, workflows
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    db.init_pool()
-    log.info("app_started", database=db.ping()["database"])
+    with db.connection() as conn:  # проверка БД и прогрев пула
+        conn.execute("SELECT 1")
     yield
     db.close_pool()
-    log.info("app_stopped")
 
 
-app = FastAPI(title="card-service", lifespan=lifespan)
+app = FastAPI(title="product-card-ai", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Сквозной request_id: из заголовка клиента или новый — в логи и ответ."""
+    rid = request.headers.get("X-Request-ID") or uuid4().hex[:12]
+    structlog.contextvars.bind_contextvars(request_id=rid)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+app.include_router(health.router)
 app.include_router(cards.router)
 app.include_router(jobs.router)
-app.include_router(documents.router)
-app.include_router(search.router)
-app.include_router(generators.router, prefix="/generators")
-app.include_router(generators.router, prefix="/generate")
 app.include_router(workflows.router)
-# Роутеры шагов 7+ (генерация по документам, поиск) подключаются на своих шагах.
-
-
-@app.get("/health")
-async def health():
-    """Живость процесса: отвечает без базы."""
-    return {"status": "ok"}
-
-
-@app.get("/ready")
-async def ready():
-    """Готовность: база отвечает, расширение vector активно."""
-    return {"status": "ok", **db.ping()}
+app.include_router(documents.router)
+app.include_router(generate.router)

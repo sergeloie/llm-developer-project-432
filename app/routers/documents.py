@@ -1,69 +1,62 @@
-"""Загрузка документов поставщиков (шаг 5): файл → 202 + id, статус по чтению."""
-import hashlib
-import shutil
-from pathlib import Path
-
+"""Роутер документов поставщиков: multipart-загрузка → разбор процессом → статус."""
 from fastapi import APIRouter, HTTPException, UploadFile
 
 from app.core import db
 from app.core.config import settings
 from app.repositories import documents as docs_repo
+from app.services.documents import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from app.temporal.client import temporal_client
+from app.temporal.workflows import ParseDocumentWorkflow
 
-router = APIRouter(tags=["documents"])
-
-UPLOAD_DIR = Path("uploads")
-
-
-def _save_upload(upload: UploadFile) -> tuple[Path, str]:
-    """Сохранить файл на диск; вернуть (путь, sha256)."""
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    hasher = hashlib.sha256()
-    tmp = UPLOAD_DIR / f".tmp-{upload.filename}"
-    with tmp.open("wb") as f:
-        while chunk := upload.file.read(1 << 20):
-            hasher.update(chunk)
-            f.write(chunk)
-    sha = hasher.hexdigest()
-    final = UPLOAD_DIR / f"{sha[:16]}-{Path(upload.filename).name}"
-    shutil.move(str(tmp), str(final))
-    return final, sha
+router = APIRouter(tags=["documents"], prefix="/documents")
 
 
-@router.post("/documents", status_code=202)
-async def upload_document(upload: UploadFile) -> dict:
-    filename = upload.filename or "file"
-    ext = Path(filename).suffix.lower()
-    if ext not in settings.upload_allowed_ext:
-        raise HTTPException(415, f"формат {ext} не поддерживается")
-    file_path, sha = _save_upload(upload)
-    size = file_path.stat().st_size
-    if size > settings.upload_max_mb << 20:
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(413, "файл слишком большой")
+@router.post("/", status_code=202, include_in_schema=True)
+async def upload_document(file: UploadFile):
+    ext = "." + (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(415, f"поддерживаются: {sorted(ALLOWED_EXTENSIONS)}")
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(413, "файл больше 10 МБ")
+    if not content:
+        raise HTTPException(400, "пустой файл")
+
     with db.connection() as conn:
         doc_id, created = docs_repo.create_document(
-            conn, filename, sha, size, str(file_path)
+            conn, file.filename, content, ALLOWED_EXTENSIONS[ext]
         )
-        existing = docs_repo.get_document_with_count(conn, doc_id)
-    if not created:
-        return {"id": doc_id, "status": existing["status"], "duplicate": True}
-    from app.temporal.doc_kickoff import start_document_parse
 
-    await start_document_parse(doc_id, str(file_path))
-    return {"id": doc_id, "status": "new"}
+    if created:  # дубликат по хэшу не парсим повторно
+        # Файл пишем во временное хранилище: воркер прочитает по пути.
+        # В историю процесса уходит путь, а не содержимое файла.
+        import tempfile
+        from pathlib import Path
+
+        tmp_dir = Path(tempfile.gettempdir()) / "product-card-ai"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / doc_id
+        tmp_path.write_bytes(content)
+        client = await temporal_client()
+        await client.start_workflow(
+            ParseDocumentWorkflow.run,
+            args=[doc_id, str(tmp_path), ALLOWED_EXTENSIONS[ext]],
+            id=f"parse-{doc_id}",
+            task_queue=settings.temporal_task_queue,
+        )
+    return {"id": doc_id, "status": "new" if created else "already indexed"}
 
 
-@router.get("/documents/{doc_id}")
-async def document_status(doc_id: int) -> dict:
+@router.get("")
+async def list_documents():
     with db.connection() as conn:
-        info = docs_repo.get_document_with_count(conn, doc_id)
-    if not info:
-        raise HTTPException(404, "документ не найден")
-    return info
+        return docs_repo.list_documents(conn)
 
 
-@router.get("/documents")
-async def documents_list() -> dict:
+@router.get("/{doc_id}")
+async def get_document(doc_id: str):
     with db.connection() as conn:
-        docs = docs_repo.list_documents(conn)
-    return {"documents": docs}
+        doc = docs_repo.get_document(conn, doc_id)
+    if not doc:
+        raise HTTPException(404, "document not found")
+    return doc

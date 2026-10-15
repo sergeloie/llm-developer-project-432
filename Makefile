@@ -1,45 +1,46 @@
-PY = python
-RUN = $(PY) -m
-
-.PHONY: help infra down migrate setup code-setup api temporal-worker lint tests
+.PHONY: help install setup lint lint-fix test infra migrate api worker reindex eval
 
 help:
-	@echo "make infra           - поднять postgres(pgvector) + temporal + ui"
-	@echo "make down            - остановить контейнеры"
-	@echo "make migrate         - применить миграции (идемпотентно)"
-	@echo "make api             - FastAPI на :8000 (uvicorn --reload)"
-	@echo "make temporal-worker - воркер Temporal (workflows + activities)"
-	@echo "make lint            - ruff check"
-	@echo "make tests           - pytest"
+	@echo "make install         - установить зависимости из uv.lock"
+	@echo "make setup           - install + миграции"
+	@echo "make lint            - ruff"
+	@echo "make lint-fix        - ruff с правкой"
+	@echo "make test            - pytest"
+	@echo "make infra           - поднять postgres(pgvector) + temporal (docker compose)"
+	@echo "make migrate         - применить db/migrations/*.sql"
+	@echo "make api             - FastAPI на :8000"
+	@echo "make worker          - воркер устойчивых процессов (workflows + activities)"
+	@echo "make reindex         - досчитать embeddings для чанков без векторов"
+	@echo "make eval            - прогон evals (2 документа; FULL=1 - весь датасет)"
 
-infra:
-	docker compose up -d
+install:
+	uv sync --frozen
 
-down:
-	docker compose down
-
-migrate:
-	$(RUN) migrations.runner
-
-setup: migrate
-	@echo "setup done"
-
-code-setup: setup
-
-api:
-	$(RUN) uvicorn app.main:app --reload --port 8000
-
-temporal-worker:
-	$(RUN) app.temporal_worker
-
-backfill:
-	$(RUN) app.services.backfill
-
-metrics:
-	$(RUN) app.services.metrics
+setup: install migrate
 
 lint:
-	ruff check app tests migrations
+	uv run ruff check .
 
-tests:
-	$(PY) -m pytest -q
+lint-fix:
+	uv run ruff check --fix .
+
+test:
+	uv run pytest -q
+
+infra:
+	docker compose -p product-card-ai up -d
+
+migrate:
+	uv run python -m app.core.migrate
+
+api:
+	uv run uvicorn app.main:app --reload --port 8000
+
+worker:
+	uv run python -m app.temporal_worker
+
+reindex:
+	uv run python -m app.rag.reindex
+
+eval:
+	uv run python -m evals.runner $(if $(FULL),--full,)

@@ -1,178 +1,174 @@
-"""Пайплайн с подменённым клиентом модели:	success / переделка / петля исчерпана.
-
-Тесты не ходят в LM Studio и не требуют сети.
-"""
-import json
+"""Тесты пайплайна с mock-агентами: без LM Studio и без сети."""
+import asyncio
 
 import pytest
-from pydantic import ValidationError
 
-from app import schemas
-from app.services import pipeline
-from app.services.parse import ModelJsonError
-
-
-def _resp(text: str):
-    class R:
-        pass
-
-    r = R()
-    r.text = text
-    return r
+from app.llm import client as llm_client
+from app.schemas.cards import CardDraft, CritiqueReport, SupplierFacts
+from app.services import pipeline as steps
+from app.services.json_utils import LLMJsonError, parse_llm_json
 
 
-GOOD_FACTS = schemas.SupplierFacts(
-    product_name="МиксерПро 800",
-    characteristics={"Мощность": "800 Вт"},
-    missing_fields=["Гарантия"],
-)
-GOOD_CARD = schemas.CardDraft(
-    title="МиксерПро 800",
-    description="Погружной блендер на 800 Вт.",
-    characteristics={"Мощность": "800 Вт"},
-    benefits=["турбо"],
-    missing_fields=["Гарантия"],
-    confidence=0.8,
-)
-
-
-class ScriptedClient:
-    """Подмена llm.complete: выдаёт ответы по порядку, запоминает вызовы."""
-
-    def __init__(self, scripted_prompts: dict[str, list[str]]):
-        self.answers = dict(scripted_prompts)  # key: role → очередь ответов
-        self.calls: list[tuple[str, str]] = []
-
-    async def __call__(self, prompt: str, *, role: str = "main", system: str = "", **kw):
-        self.calls.append((role, prompt[:80]))
-        text = self.answers.get(role, [])
-        if text:
-            return _resp(text.pop(0))
-        return _resp(json.dumps({}, ensure_ascii=False))
-
-
-def test_pipeline_success():
-    c = ScriptedClient(
-        {
-            "cheap": [GOOD_FACTS.model_dump_json(), '{"verdict": "approve", "issues": []}'],
-            "main": [GOOD_CARD.model_dump_json()],
-        }
+def _facts() -> SupplierFacts:
+    return SupplierFacts(
+        product_name="Блендер погружной «МиксерПро 800»",
+        characteristics={"Мощность": "800 Вт", "Питание": "220 В"},
     )
-    draft, rounds, verdict, report = _run(c)
+
+
+def _draft(title="МиксерПро 800 — блендер 800 Вт") -> CardDraft:
+    return CardDraft(
+        title=title,
+        description="Погружной блендер с металлической ножкой и турбо-режимом.",
+        characteristics={"Мощность": "800 Вт"},
+        benefits=["Металлическая ножка", "6 скоростей"],
+    )
+
+
+@pytest.fixture
+def fake_llm(monkeypatch):
+    """Подменяем run_agent: сценарий задаётся тестом.
+
+    Патчим оба модуля: pipeline зовёт run_agent напрямую (extract/critique),
+    а generate — через app.services.structured.validate_or_retry.
+    """
+    calls = {"n": 0}
+    scenario: list = []
+
+    async def fake_run(agent, prompt):
+        result = scenario[calls["n"]]
+        calls["n"] += 1
+        if isinstance(result, Exception):
+            raise result
+        if isinstance(result, str):
+            return result
+        return result.model_dump_json()
+
+    from app.services import structured as structured_mod
+
+    monkeypatch.setattr(steps, "run_agent", fake_run)
+    monkeypatch.setattr(structured_mod, "run_agent", fake_run)
+    return {"scenario": scenario, "calls": calls}
+
+
+def test_extract_parses_json_with_markdown_fencing(fake_llm):
+    fake_llm["scenario"].append("```json\n" + _facts().model_dump_json() + "\n```")
+    facts = asyncio.run(steps.extract("текст поставщика"))
+    assert facts.product_name.startswith("Блендер")
+    assert facts.characteristics["Мощность"] == "800 Вт"
+
+
+def test_pipeline_approves_on_first_critique(fake_llm):
+    fake_llm["scenario"] += [_facts(), _draft(), CritiqueReport(verdict="approve")]
+    draft, attempts, verdict, status = asyncio.run(steps.run_pipeline("текст"))
+    assert status == "done"
     assert verdict == "approved"
-    assert rounds == 1
-    assert report is not None
-    assert draft.title == "МиксерПро 800"
+    assert attempts == 1
+    assert draft.title.startswith("МиксерПро")
 
 
-def _run(c):
-    import asyncio
-
-    return asyncio.run(pipeline.run_pipeline("текст поставщика", complete=c))
-
-
-def test_pipeline_regenerate_once():
-    bad_card = GOOD_CARD.model_dump()
-    fine_card = GOOD_CARD.model_dump()
-    # плохой вариант: без преимуществ
-    bad_card["benefits"] = []
-    c = ScriptedClient(
-        {
-            "cheap": [GOOD_FACTS.model_dump_json(), '{"verdict": "regenerate", "issues": ["нет benefits"]}', '{"verdict": "approve", "issues": []}'],
-            "main": [json.dumps(bad_card), json.dumps(fine_card)],
-        }
-    )
-    _draft, rounds, verdict, _report = _run(c)
-    assert verdict == "approved"
-    assert rounds == 2
+def test_pipeline_regenerates_until_max_attempts(fake_llm):
+    fake_llm["scenario"] += [
+        _facts(),
+        _draft(), CritiqueReport(verdict="regenerate", issues=["заголовок длинный"]),
+        _draft(), CritiqueReport(verdict="regenerate", issues=["много воды"]),
+        _draft(), CritiqueReport(verdict="regenerate", issues=["всё ещё вода"]),
+    ]
+    draft, attempts, verdict, status = asyncio.run(steps.run_pipeline("текст", max_attempts=3))
+    assert status == "rejected"
+    assert verdict == "rejected"
+    assert attempts == 3
+    assert draft is not None
 
 
-def test_pipeline_exhausted():
-    regen = '{"verdict": "regenerate", "issues": ["вода"]}'
-    c = ScriptedClient(
-        {
-            "cheap": [GOOD_FACTS.model_dump_json(), regen, regen, regen],
-            "main": list([GOOD_CARD.model_dump_json()] * 3),
-        }
-    )
-    _draft, rounds, verdict, _report = _run(c)
-    assert verdict == "rejected_exhausted"
-    assert rounds == 3
+def test_run_agent_retries_on_429(monkeypatch):
+    """429 → пауза → повтор. 4xx без повтора — см. test_run_agent_no_retry_on_4xx."""
+    from openai import APIStatusError
+
+    class FakeResult:
+        final_output = "ok"
+
+    err = APIStatusError.__new__(APIStatusError)
+    err.status_code = 429
+
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise err
+            return FakeResult()
+
+    async def fake_sleep(sec):
+        sleeps.append(sec)
+
+    class FakeAgent:
+        name = "test"
+
+    monkeypatch.setattr(llm_client, "setup_llm", lambda: None)
+    monkeypatch.setattr(llm_client, "Runner", FakeRunner)
+    monkeypatch.setattr(llm_client.asyncio, "sleep", fake_sleep)
+
+    out = asyncio.run(llm_client.run_agent(FakeAgent(), "x"))
+    assert out == "ok"
+    assert calls["n"] == 2
+    assert len(sleeps) == 1
 
 
-def test_parse_four_kinds():
-    # чистый JSON
-    p = {"a": 1}
-    assert pipeline.parse.extract_json(json.dumps(p)) == p
-    # json в заборах
-    fence = "```json\n" + json.dumps(p) + "\n```"
-    assert pipeline.parse.extract_json(fence) == p
-    # JSON с текстом вокруг
-    ringing = "Вот ваш JSON:\n" + json.dumps(p) + "\nНадеюсь, хватит"
-    assert pipeline.parse.extract_json(ringing) == p
-    # мусор
-    with pytest.raises(ModelJsonError):
-        pipeline.parse.extract_json("я вообще не JSON")
-    # пустой
-    with pytest.raises(ModelJsonError):
-        pipeline.parse.extract_json("")
+def test_run_agent_no_retry_on_4xx(monkeypatch):
+    from openai import APIStatusError
+
+    err = APIStatusError.__new__(APIStatusError)
+    err.status_code = 400
+
+    calls = {"n": 0}
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt):
+            calls["n"] += 1
+            raise err
+
+    class FakeAgent:
+        name = "test"
+
+    monkeypatch.setattr(llm_client, "setup_llm", lambda: None)
+    monkeypatch.setattr(llm_client, "Runner", FakeRunner)
+
+    with pytest.raises(APIStatusError):
+        asyncio.run(llm_client.run_agent(FakeAgent(), "x"))
+    assert calls["n"] == 1  # без повторов
 
 
-def test_card_contract_validation():
-    # поле в двух списках сразу
-    with pytest.raises(ValidationError):
-        schemas.CardDraft(
-            title="x",
-            description="y",
-            characteristics={"Гарантия": "12"},
-            benefits=[],
-            missing_fields=["Гарантия"],
-            confidence=0.9,
-        )
-    with pytest.raises(ValidationError):
-        schemas.CardDraft(title="x", description="y", characteristics={"Мощность": ""}, confidence=0.1)
-    with pytest.raises(ValidationError):
-        schemas.CardDraft(title="x", description="y", confidence=2)
+def test_retryable_classification():
+    assert llm_client._retryable(Exception("x")) is False
+    assert llm_client._retryable(ValueError("x")) is False
 
 
-def test_scarce_data_low_confidence_needs_human_fixture():
-    import asyncio
+# --- парсер «грязного» JSON ---
 
-    """Скудный текст → непустой missing_fields + низкий confidence (эта логика закоплена в генераторе)."""
-    scarce = schemas.SupplierFacts(
-        product_name="Чайник Вода К1",
-        characteristics={"Мощность": "1800 Вт"},
-        missing_fields=["Объём", "Материал", "Гарантия"],
-    )
-    low = GOOD_CARD.model_dump()
-    low["characteristics"] = {"Мощность": "1800 Вт"}
-    low["missing_fields"] = ["Объём", "Материал", "Гарантия"]
-    low["confidence"] = 0.4
-    c = ScriptedClient(
-        {
-            "cheap": [scarce.model_dump_json(), '{"verdict": "approve", "issues": []}'],
-            "main": [json.dumps(low, ensure_ascii=False)],
-        }
-    )
-    draft, _rounds, verdict, _r = asyncio.run(pipeline.run_pipeline("Чайник 1800 Вт", complete=c))
-    assert draft.missing_fields
-    assert draft.confidence < 0.7
-    assert draft.confidence < 0.7 or verdict == "approved"
+def test_parse_llm_json_plain():
+    assert parse_llm_json('{"a": 1}') == {"a": 1}
 
 
-def test_validation_repair_loop():
-    """Невалидная карточка → повторный запрос с текстом ошибки → исправился."""
-    long_title = GOOD_CARD.model_dump()
-    long_title["title"] = "x" * 100
-    fixed = GOOD_CARD.model_dump()
-    c = ScriptedClient(
-        {
-            "cheap": [GOOD_FACTS.model_dump_json(), '{"verdict": "approve", "issues": []}'],
-            "main": [json.dumps(long_title), json.dumps(fixed)],
-        }
-    )
-    draft, _rounds, verdict, _r = _run(c)
-    # лечение: первый вызов generate не прошёл, второй с текстом ошибки принял
-    assert any("валидацию" in pr or "валидации" in pr for _, pr in c.calls)
-    assert draft.title == "МиксерПро 800"
-    assert verdict == "approved"
+def test_parse_llm_json_fenced():
+    raw = "```json\n{\"a\": 1}\n```"
+    assert parse_llm_json(raw) == {"a": 1}
+
+
+def test_parse_llm_json_with_chatter():
+    raw = 'Вот ваша карточка:\n{"a": 1}\nЕсли есть вопросы — обращайтесь!'
+    assert parse_llm_json(raw) == {"a": 1}
+
+
+def test_parse_llm_json_empty_raises():
+    with pytest.raises(LLMJsonError):
+        parse_llm_json("")
+
+
+def test_parse_llm_json_garbage_raises():
+    with pytest.raises(LLMJsonError):
+        parse_llm_json("Простите, я не могу выполнить запрос")
