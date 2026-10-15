@@ -99,3 +99,4 @@ def find_pii(text: str) -> list[str]:
 
 def detect_pii(text: str):
     return mask(text)
+_inn_checksum = _inn_checksum_ok

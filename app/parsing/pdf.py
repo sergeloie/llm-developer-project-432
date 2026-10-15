@@ -110,3 +110,5 @@ def _merge_adjacent(units: list[TextUnit]) -> list[TextUnit]:
                 continue
         out.append(TextUnit(page=u.page, section=u.section, text=u.text))
     return out
+
+PdfNoTextLayer = DocumentParseError
