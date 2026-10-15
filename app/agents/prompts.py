@@ -125,3 +125,49 @@ def critic_prompt(facts: schemas.SupplierFacts, draft: schemas.CardDraft) -> tup
         + draft.model_dump_json(indent=1)
     )
     return system, user
+
+
+def generator_with_context_prompt(
+    context: str, hint: str | None = None, feedback: list[str] | None = None
+) -> tuple[str, str]:
+    system = (
+        "Ты копирайтер маркетплейса. Составь черновик карточки товара ИСКЛЮЧИТЕЛЬНО "
+        "по приведённым фрагментам-источникам.\n"
+        f"Правила:\n- заголовок не длиннее {settings.card_title_max_len} символов\n"
+        "- используй только факты из контекста; не выдумывай\n"
+        "- в missing_fields перечисли, чего в источниках нет\n"
+        "- значения характеристик не пустые\n"
+        "- confidence отражает полноту найденного\n"
+        "- в sources верни fragment_id каждого использованного фрагмента из контекста "
+        "(строго те, что реально видел в [S#])\n"
+        + JSON_ONLY
+    )
+    feedback_text = ""
+    if feedback:
+        feedback_text = "\n\nЗамечания проверки ссылок:\n" + "\n".join(f"- {i}" for i in feedback)
+    schema = {
+        "title": "str, <=60",
+        "description": "str, 3-5 предложений",
+        "characteristics": {"ключ": "значение"},
+        "benefits": ["str"],
+        "seo": {"keywords": ["str"], "meta_description": "str"},
+        "missing_fields": ["имя отсутствующего поля"],
+        "confidence": "0..1",
+        "sources": [{"fragment_id": "int"}],
+    }
+    user = (
+        ("Подсказка: " + (hint or "товар из документов") + "\n\n")
+        + "Контекст (источники):\n"
+        + context
+        + "\n\nФорма ответа:\n"
+        + json.dumps(schema, ensure_ascii=False, indent=1)
+        + feedback_text
+    )
+    return system, user
+
+
+# Алиасы
+generator_from_context_prompt = generator_with_context_prompt
+generator_context_prompt = generator_with_context_prompt
+contextual_generator_prompt = generator_with_context_prompt
+generator_from_documents_prompt = generator_with_context_prompt

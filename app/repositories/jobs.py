@@ -15,6 +15,14 @@ STATUSES = {
     "needs_human",
     "failed_rejected",
     "failed_error",
+    "parsing",
+    "indexing",
+    "searching",
+    "generating",
+    "verifying",
+    "awaiting_human",
+    "approved",
+    "rejected",
 }
 
 

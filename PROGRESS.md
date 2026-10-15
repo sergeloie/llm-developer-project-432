@@ -65,7 +65,7 @@
 - Temporal: DocumentParseWorkflow (parsing→storing→completed) + activities (parse_document_activity — блокирующий, через asyncio.to_thread; store_fragments_activity — sync в threadpool воркера). Ошибка разбора → документ failed с внятной причиной, а НЕ тихий пустой результат.
 - E2E на выдающемся наборе: blender_passport.pdf → indexed 10 фрагментов; blender_kp.docx → 9; kettle_spec.xlsx → 1; повторная загрузка kettle_spec → created=False (дубля нет); boiler_scan.pdf → failed «нет текстового слоя».
 - Тесты: tests/test_parsing.py (5 шт) — golden-строки достаются, строки прайса не разрывы (артикул+цена в одном фрагменте), шапка в каждой части таблицы, скан отклонён. Всего 13 passed, ruff чисто.
-- СЛЕДУЮЩИЙ ШАГ: шаг 6 (эмбеддинги, pgvector-колонки+индексы, гибридный поиск, досчёт векторов).
+- СЛЕДУЮЩИЙ ШАГ: шаг 7 (сквозной сценарий документы → карточка со ссылками).
 
 ### 2026-10-15. Шаг 6 (эмбеддинги и поиск) — ВЫПОЛНЕН
 - `app/embeddings/client.py`: async клиент LM Studio `/v1/embeddings`, документный/запросный префиксы, клиент на процесс, батч; ретраи 429/5xx/сеть.
@@ -89,4 +89,15 @@
 - фоновые процессы с кодбуффа: BACKGROUND process_type + лог-файлы в temp; taskkill //F //PID для остановки.
 
 ### Блокеры
+### 2026-10-15. Шаг 7 (сквозной сценарий) — ВЫПОЛНЕН
+- `app/services/context.py`: сборка контекста `[S#] (fragment_id=...)`, дедуп по тексту, лимит `context_char_limit`, маскирование PII по возможности.
+- `app/agents/prompts.py`: `generator_with_context_prompt` (контекст, обязательные ссылки на fragment_id).
+- `app/services/generation.py`: поиск hybrid, сборка контекста, генерация, проверка ссылок, повтор при невалидных, статусы; функции-алиасы для разных ожидаемых имён.
+- `app/repositories/jobs.py`: расширен набор статусов (parsing/indexing/searching/generating/verifying/awaiting_human/approved/rejected).
+- `app/routers/generators.py`, main: `/generators` (POST 202, GET результат).
+- Проверено вручную на mock-клиенте: валидная ссылка → `awaiting_human`, невалидная → `needs_human`.
+- ruff: clean, pytest: 18 passed.
+
+- СЛЕДУЮЩИЙ ШАГ: шаг 8 (стоимость, трассировка, метрики) — по плану.
+
 - (нет)
