@@ -1,4 +1,4 @@
-PY = .venv/Scripts/python.exe
+PY = python
 RUN = $(PY) -m
 
 .PHONY: help infra down migrate api temporal-worker lint tests
@@ -34,7 +34,7 @@ metrics:
 	$(RUN) app.services.metrics
 
 lint:
-	.venv/Scripts/ruff.exe check app tests migrations
+	ruff check app tests migrations
 
 tests:
 	$(PY) -m pytest -q
