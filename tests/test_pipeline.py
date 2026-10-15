@@ -135,6 +135,31 @@ def test_card_contract_validation():
         schemas.CardDraft(title="x", description="y", confidence=2)
 
 
+def test_scarce_data_low_confidence_needs_human_fixture():
+    import asyncio
+
+    """Скудный текст → непустой missing_fields + низкий confidence (эта логика закоплена в генераторе)."""
+    scarce = schemas.SupplierFacts(
+        product_name="Чайник Вода К1",
+        characteristics={"Мощность": "1800 Вт"},
+        missing_fields=["Объём", "Материал", "Гарантия"],
+    )
+    low = GOOD_CARD.model_dump()
+    low["characteristics"] = {"Мощность": "1800 Вт"}
+    low["missing_fields"] = ["Объём", "Материал", "Гарантия"]
+    low["confidence"] = 0.4
+    c = ScriptedClient(
+        {
+            "cheap": [scarce.model_dump_json(), '{"verdict": "approve", "issues": []}'],
+            "main": [json.dumps(low, ensure_ascii=False)],
+        }
+    )
+    draft, _rounds, verdict, _r = asyncio.run(pipeline.run_pipeline("Чайник 1800 Вт", complete=c))
+    assert draft.missing_fields
+    assert draft.confidence < 0.7
+    assert draft.confidence < 0.7 or verdict == "approved"
+
+
 def test_validation_repair_loop():
     """Невалидная карточка → повторный запрос с текстом ошибки → исправился."""
     long_title = GOOD_CARD.model_dump()
