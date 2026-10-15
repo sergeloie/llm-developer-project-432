@@ -19,6 +19,13 @@ from app.temporal.activities import (
     generate_activity,
     set_job_status_activity,
 )
+from app.temporal.doc_activities import (
+    doc_info_activity,
+    parse_document_activity,
+    set_doc_status_activity,
+    store_fragments_activity,
+)
+from app.temporal.doc_workflows import DocumentParseWorkflow
 from app.temporal.workflows import GenerationWorkflow
 
 log = get_logger(__name__)
@@ -32,13 +39,17 @@ async def main() -> None:
         worker = Worker(
             client,
             task_queue=settings.temporal_task_queue,
-            workflows=[GenerationWorkflow],
+            workflows=[GenerationWorkflow, DocumentParseWorkflow],
             activities=[
                 extract_activity,
                 generate_activity,
                 critique_activity,
                 # sync-activity: пул потоков обязателен
                 set_job_status_activity,
+                parse_document_activity,
+                store_fragments_activity,
+                set_doc_status_activity,
+                doc_info_activity,
             ],
             activity_executor=ThreadPoolExecutor(max_workers=8),
         )

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.core import db
 from app.core.logging import get_logger, setup_logging
-from app.routers import cards, jobs, workflows
+from app.routers import cards, documents, jobs, workflows
 
 log = get_logger(__name__)
 
@@ -22,8 +22,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="card-service", lifespan=lifespan)
 app.include_router(cards.router)
 app.include_router(jobs.router)
+app.include_router(documents.router)
 app.include_router(workflows.router)
-# Роутеры шагов 5+ (документы, генерация по документам) подключаются на своих шагах.
+# Роутеры шагов 7+ (генерация по документам, поиск) подключаются на своих шагах.
 
 
 @app.get("/health")
