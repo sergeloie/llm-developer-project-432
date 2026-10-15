@@ -63,11 +63,11 @@ def test_build_context_limit(rag_setup):
     assert len(ctx) < 6000 + 100  # жёсткий потолок соблюдён (хвост не рвём)
 
 
-def _fake_retrieve(context: str):
+def _fake_retrieve(context: str, scores: dict[str, float] | None = None):
     from app.guardrails import GuardReport
 
     async def _retrieve(q, doc_ids=None):
-        return context, GuardReport()
+        return context, GuardReport(retrieval_scores=scores or {})
     return _retrieve
 
 
@@ -152,3 +152,43 @@ def test_rag_pipeline_low_confidence_needs_review(rag_setup, monkeypatch):
     )
     _draft, _a, _v, status, _g, _context = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
     assert status == "needs_review"
+
+
+def test_sources_carry_document_page_and_retrieval_score(rag_setup, monkeypatch):
+    """Источник — это пара «документ + фрагмент» плюс оценка retrieval.
+
+    Модель doc_id и score не видит и выдумывать их не должна: подставляет их
+    пайплайн из БД и из результата поиска.
+    """
+    from app.services import rag_pipeline as rp
+
+    _patch_llm(monkeypatch, _card_json())
+    monkeypatch.setattr(
+        rp, "retrieve_context_async",
+        _fake_retrieve(
+            "[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"],
+            {"tstragc1": 0.5123},
+        ),
+    )
+    draft, *_rest = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+
+    source = draft.sources[0]
+    assert source.doc_id == DOC_ID
+    assert source.chunk_id == "tstragc1"
+    assert source.page == 1
+    assert source.score == 0.5123
+
+
+def test_mark_chunks_suspicious_persists_guard_verdict(rag_setup):
+    """Заблокированный фрагмент помечается в БД иначе он неотличим от обычного."""
+    from app.repositories import documents as docs_repo
+
+    docs_repo.mark_chunks_suspicious(rag_setup, ["tstragc2"])
+    with rag_setup.cursor() as cur:
+        cur.execute(
+            "SELECT id, suspicious FROM chunks WHERE doc_id = %s ORDER BY id", (DOC_ID,)
+        )
+        flags = dict(cur.fetchall())
+    assert flags["tstragc2"] is True
+    assert flags["tstragc1"] is False
+    docs_repo.mark_chunks_suspicious(rag_setup, ["tstragc1", "tstragc2"])

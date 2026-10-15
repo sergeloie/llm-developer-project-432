@@ -68,6 +68,21 @@ def insert_chunks(conn: psycopg.Connection, chunks: list[dict]) -> None:
         )
 
 
+def mark_chunks_suspicious(conn: psycopg.Connection, chunk_ids: list[str]) -> int:
+    """Пометить чанки, которые guardrails заблокировали. Возвращает число обновленных.
+
+    Флаг переживает перезапуск воркера: по нему видно, что конкретный фрагмент
+    документа не дошёл до модели, даже когда отчёт давно уже потерян.
+    """
+    if not chunk_ids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE chunks SET suspicious = TRUE WHERE id = ANY(%s)", (list(chunk_ids),)
+        )
+        return cur.rowcount
+
+
 def get_document(conn: psycopg.Connection, doc_id: str) -> dict | None:
     with conn.cursor() as cur:
         cur.execute(

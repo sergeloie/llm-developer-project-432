@@ -165,3 +165,90 @@ def test_retry_policy_keeps_three_attempts():
 def test_failure_reason_is_truncated():
     error = activity_error("extract_activity", "x" * 5000)
     assert len(wf.failure_reason(error)) == wf.MAX_ERROR_LEN
+
+
+# --- временный файл разбора живёт до терминального состояния ---
+
+
+class _CallLog(_Recorder):
+    """_Recorder, который запоминает ВСЕ вызовы activity, а не только статусы."""
+
+    def __init__(self, failing: str, results: dict[str, object] | None = None):
+        super().__init__(failing, results)
+        self.calls: list[tuple[str, list]] = []
+
+    async def __call__(self, fn, args=None, **kwargs):
+        self.calls.append((self.activity_name(fn), list(args) if args is not None else []))
+        return await super().__call__(fn, args, **kwargs)
+
+    def order(self) -> list[str]:
+        return [name for name, _args in self.calls]
+
+
+def test_parse_file_deleted_only_after_terminal_failure(stub_activity):
+    recorder = stub_activity(_CallLog(failing="parse_document_activity"))
+    with pytest.raises(ActivityError):
+        asyncio.run(wf.ParseDocumentWorkflow().run("doc-10", "C:/tmp/doc-10", "docx"))
+
+    order = recorder.order()
+    assert order.index("delete_document_file_activity") > order.index("parse_document_activity")
+    assert order[-1] == "delete_document_file_activity"
+
+
+def test_parse_file_deleted_after_success(stub_activity):
+    recorder = stub_activity(
+        _CallLog(failing="none", results={"parse_document_activity": 3})
+    )
+    assert asyncio.run(
+        wf.ParseDocumentWorkflow().run("doc-11", "C:/tmp/doc-11", "pdf")
+    ) == 3
+    assert recorder.order() == ["parse_document_activity", "delete_document_file_activity"]
+
+
+def test_parse_activity_keeps_file_so_retry_can_read_it(monkeypatch, tmp_path):
+    """Падение попытки не удаляет файл: вторая попытка читает те же байты."""
+    from contextlib import nullcontext
+
+    from app.temporal import activities as acts
+
+    path = tmp_path / "doc-12.bin"
+    path.write_bytes(b"%PDF-1.4 payload")
+
+    def boom(conn, doc_id, content, kind):
+        raise RuntimeError("parse boom")
+
+    monkeypatch.setattr(acts.docs_service, "ingest", boom)
+    monkeypatch.setattr(acts.db, "connection", lambda: nullcontext(object()))
+
+    with pytest.raises(RuntimeError):
+        acts.parse_document_activity("doc-12", str(path), "pdf")
+    assert path.exists()
+
+
+def test_delete_document_file_activity_removes_the_file(tmp_path):
+    from app.temporal import activities as acts
+
+    path = tmp_path / "doc-13.bin"
+    path.write_bytes(b"x")
+    acts.delete_document_file_activity(str(path))
+    assert not path.exists()
+    acts.delete_document_file_activity(str(path))  # повторный вызов не падает
+
+
+def test_worker_registers_every_declared_activity():
+    """Activity, забытый при регистрации, падает в рантайме как NotFoundError.
+
+    Workflow может быть готов, а шаг — не зарегистрирован: проверка ставится на
+    импорт, а не на первый запуск в проде.
+    """
+    from app import temporal_worker
+    from app.temporal import activities as acts
+
+    def declared(module) -> set[str]:
+        return {
+            name
+            for name, obj in vars(module).items()
+            if getattr(obj, "__temporal_activity_definition", None) is not None
+        }
+
+    assert declared(acts) == declared(temporal_worker)

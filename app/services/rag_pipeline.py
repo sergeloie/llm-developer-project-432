@@ -30,10 +30,16 @@ async def retrieve_context_async(
     """Retrieval → guardrails → сборка контекста. Возвращает (контекст, отчёт)."""
     chunks = search(query, mode="hybrid", doc_ids=doc_ids, top_k=settings.retrieval_top_k)
     chunks, report = await guard_context(chunks)
+    report.retrieval_scores = {
+        ch["chunk_id"]: ch.get("score") if ch.get("score") is not None else ch.get("rrf_score")
+        for ch in chunks
+    }
     return build_context(chunks), report
 
 
-async def generate_from_context(context: str, feedback: list[str] | None = None) -> CardDraft:
+async def generate_from_context(
+    context: str, feedback: list[str] | None = None, scores: dict[str, float] | None = None
+) -> CardDraft:
     """Генерация карточки по контексту с ретраями валидации и источников."""
     prefix = ""
     if feedback:
@@ -47,7 +53,8 @@ async def generate_from_context(context: str, feedback: list[str] | None = None)
         out = await run_agent(context_generator_agent, current_prompt)
         try:
             draft = _coerce_card(out)
-            _validate_sources(draft, allowed)
+            known = _validate_sources(draft, allowed)
+            _enrich_sources(draft, known, scores or {})
             return draft
         except (LLMJsonError, ValidationError, SourceValidationError) as exc:
             last_error = exc
@@ -72,10 +79,14 @@ def _coerce_card(out) -> CardDraft:
     return CardDraft.model_validate(data)
 
 
-def _validate_sources(draft: CardDraft, allowed: set[str]) -> None:
-    """Источники карточки: существуют в БД и были в контексте."""
+def _validate_sources(draft: CardDraft, allowed: set[str]) -> dict[str, dict]:
+    """Источники карточки: существуют в БД и были в контексте.
+
+    Возвращает chunk_id → строка документа, чтобы источник можно было дополнить
+    без повторного запроса.
+    """
     if not draft.sources:
-        return  # пустые sources допустимы (модель не обязана цитировать всё)
+        return {}  # пустые sources допустимы (модель не обязана цитировать всё)
     claimed = {s.chunk_id for s in draft.sources}
     unknown = claimed - allowed
     if unknown:
@@ -83,10 +94,35 @@ def _validate_sources(draft: CardDraft, allowed: set[str]) -> None:
             f"выдуманные источники (не было в контексте): {sorted(unknown)}"
         )
     with db.connection() as conn:
-        existing = set(chunks_repo.get_chunks_by_ids(conn, sorted(claimed)).keys())
-    missing = claimed - existing
+        known = chunks_repo.get_chunks_by_ids(conn, sorted(claimed))
+    missing = claimed - set(known)
     if missing:
         raise SourceValidationError(f"источники не существуют в БД: {sorted(missing)}")
+    return known
+
+
+def _enrich_sources(
+    draft: CardDraft, known: dict[str, dict], scores: dict[str, float]
+) -> None:
+    """Дополнить источники парой «документ + фрагмент» и оценкой retrieval.
+
+    Модель не видит ни doc_id, ни score, и выдумывать их не должна: их берём из
+    БД и из результата retrieval. Источник, у которого чанк не принадлежит
+    документу, таким образом больше нельзя выдать за настоящий.
+    """
+    for ref in draft.sources:
+        info = known.get(ref.chunk_id)
+        if info is None:
+            continue
+        if not ref.doc_id:
+            ref.doc_id = info["doc_id"]
+        page = (info.get("metadata") or {}).get("page")
+        if ref.page is None and page is not None:
+            ref.page = int(page)
+        if ref.score is None:
+            score = scores.get(ref.chunk_id)
+            if score is not None:
+                ref.score = round(float(score), 4)
 
 
 async def critique_with_context(context: str, draft: CardDraft) -> CritiqueReport:
@@ -125,7 +161,9 @@ async def run_rag_pipeline(
     verdict = "rejected"
     while attempts < rounds:
         attempts += 1
-        draft = await generate_from_context(context, feedback or None)
+        draft = await generate_from_context(
+            context, feedback or None, guard_report.retrieval_scores
+        )
         report = await critique_with_context(context, draft)
         if report.verdict == "approve":
             verdict = "approved"

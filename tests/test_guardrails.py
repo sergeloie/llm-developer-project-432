@@ -1,5 +1,6 @@
 """Тесты guardrails: PII-маскирование, ИНН-контрольная сумма, инъекции."""
 import asyncio
+from pathlib import Path
 
 from app.guardrails import GuardReport, guard_context, guard_output
 from app.guardrails.injection import detect_injection_regex
@@ -151,3 +152,80 @@ def test_guard_report_needs_review_threshold():
         assert not r.needs_review
     r2 = GuardReport(suspicious_chunks=["a", "b", "c"])
     assert r2.needs_review
+
+
+# --- реальная полезная нагрузка из data/kettle_manual.pdf ---
+# Защита обязана работать сама по себе. Если бы её проходил только retrieval
+# (порог отсекает чанк раньше), такая проверка была бы единственным местом,
+# где защита вообще исполняется.
+
+DATA = Path(__file__).resolve().parent.parent / "data"
+PAYLOAD_PROBES = ("+7 900 123-45-67", "promo@spammlot.example", "1 рубль")
+
+
+def _payload_chunks() -> list[dict]:
+    """Чанки настоящего документа-инъекции, как их видит retrieval."""
+    from app.services.documents import parse_to_chunks
+
+    chunks = parse_to_chunks(
+        (DATA / "kettle_manual.pdf").read_bytes(), "pdf", "kettle-manual-doc"
+    )
+    return [
+        {"chunk_id": c["id"], "text": c["text"], "metadata": c["metadata"]}
+        for c in chunks
+    ]
+
+
+def _payload_chunk(chunks: list[dict]) -> dict:
+    hit = [c for c in chunks if "игнорируй все предыдущие инструкции" in c["text"]]
+    assert hit, "в data/kettle_manual.pdf нет инъекции — тест проверяет не то"
+    return hit[0]
+
+
+def _context_of(safe: list[dict]) -> str:
+    from app.rag.context import build_context
+
+    return build_context(safe)
+
+
+def test_real_injection_chunk_never_reaches_the_context(monkeypatch):
+    import app.guardrails as g
+
+    async def confirm(text):
+        from app.guardrails.injection import InjectionVerdict
+
+        return InjectionVerdict(True, reason="подмена роли SYSTEM")
+
+    monkeypatch.setattr(g, "detect_injection_llm", confirm)
+
+    chunks = _payload_chunks()
+    payload = _payload_chunk(chunks)
+    safe, report = asyncio.run(guard_context(chunks))
+    context = _context_of(safe)
+
+    assert payload["chunk_id"] not in [c["chunk_id"] for c in safe]
+    assert report.suspicious_chunks == [payload["chunk_id"]]
+    for probe in PAYLOAD_PROBES:
+        assert probe not in context, probe
+    # остальной документ остался в работе
+    assert len(safe) >= 1
+
+
+def test_real_injection_chunk_blocked_when_detector_is_down(monkeypatch):
+    """R47, на настоящем фрагменте: детектор упал — фрагмент всё равно отброшен."""
+    import app.guardrails as g
+
+    async def broken(text):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(g, "detect_injection_llm", broken)
+
+    chunks = _payload_chunks()
+    payload = _payload_chunk(chunks)
+    safe, report = asyncio.run(guard_context(chunks))
+    context = _context_of(safe)
+
+    assert payload["chunk_id"] not in [c["chunk_id"] for c in safe]
+    assert report.suspicious_chunks == [payload["chunk_id"]]
+    for probe in PAYLOAD_PROBES:
+        assert probe not in context, probe

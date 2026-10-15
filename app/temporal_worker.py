@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.temporal.activities import (
     critique_activity,
+    delete_document_file_activity,
     extract_activity,
     generate_activity,
     parse_document_activity,
@@ -41,6 +42,7 @@ async def main():
                 set_document_status_activity,
                 parse_document_activity,
                 rag_card_activity,
+                delete_document_file_activity,
             ],
             activity_executor=pool,
         )

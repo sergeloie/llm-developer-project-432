@@ -81,7 +81,28 @@ def test_pipeline_regenerates_until_max_attempts(fake_llm):
     assert draft is not None
 
 
-def test_run_agent_retries_on_429(monkeypatch):
+@pytest.fixture
+def no_llm_accounting(monkeypatch):
+    """Тесты ретраев не пишут в боевую таблицу llm_calls.
+
+    run_agent честно учитывает каждый вызов, и тест на ретраи без заглушки
+    оставлял в /metrics строки agent="test" — метрика production смешивалась
+    с тестовым трафиком. Само поведение ретраев заглушка не трогает.
+    """
+    recorded: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        llm_client, "_log_call",
+        lambda agent, result, started: recorded.append(("ok", agent.name)),
+    )
+    monkeypatch.setattr(
+        llm_client, "_log_failure",
+        lambda agent, exc, started, attempt: recorded.append(("error", agent.name)),
+    )
+    return recorded
+
+
+def test_run_agent_retries_on_429(monkeypatch, no_llm_accounting):
     """429 → пауза → повтор. 4xx без повтора — см. test_run_agent_no_retry_on_4xx."""
     from openai import APIStatusError
 
@@ -116,9 +137,10 @@ def test_run_agent_retries_on_429(monkeypatch):
     assert out == "ok"
     assert calls["n"] == 2
     assert len(sleeps) == 1
+    assert no_llm_accounting == [("ok", "test")]
 
 
-def test_run_agent_no_retry_on_4xx(monkeypatch):
+def test_run_agent_no_retry_on_4xx(monkeypatch, no_llm_accounting):
     from openai import APIStatusError
 
     err = APIStatusError.__new__(APIStatusError)
@@ -141,6 +163,7 @@ def test_run_agent_no_retry_on_4xx(monkeypatch):
     with pytest.raises(APIStatusError):
         asyncio.run(llm_client.run_agent(FakeAgent(), "x"))
     assert calls["n"] == 1  # без повторов
+    assert no_llm_accounting == [("error", "test")]
 
 
 def test_retryable_classification():

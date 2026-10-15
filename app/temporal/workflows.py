@@ -26,6 +26,7 @@ with workflow.unsafe.imports_passed_through():
     # только ссылки на функции — исполнение всё равно вне песочницы.
     from app.temporal.activities import (
         critique_activity,
+        delete_document_file_activity,
         extract_activity,
         generate_activity,
         parse_document_activity,
@@ -61,25 +62,37 @@ def failure_reason(exc: ActivityError) -> str:
 
 @workflow.defn
 class ParseDocumentWorkflow:
-    """Загруженный файл → фрагменты в базе. Один шаг, но переживает рестарт."""
+    """Загруженный файл → фрагменты в базе. Один шаг, но переживает рестарт.
+
+    Временный файл живёт до терминального состояния: пока идут повторы activity,
+    файл на месте и вторая попытка читает те же байты, что и первая.
+    """
 
     @workflow.run
     async def run(self, doc_id: str, path: str, kind: str) -> int:
         try:
-            return await workflow.execute_activity(
-                parse_document_activity,
-                args=[doc_id, path, kind],
-                start_to_close_timeout=PARSE_TIMEOUT,
-                retry_policy=RETRY,
-            )
-        except ActivityError as exc:
+            try:
+                return await workflow.execute_activity(
+                    parse_document_activity,
+                    args=[doc_id, path, kind],
+                    start_to_close_timeout=PARSE_TIMEOUT,
+                    retry_policy=RETRY,
+                )
+            except ActivityError as exc:
+                await workflow.execute_activity(
+                    set_document_status_activity,
+                    args=[doc_id, "failed", failure_reason(exc)],
+                    start_to_close_timeout=STATUS_TIMEOUT,
+                    retry_policy=RETRY,
+                )
+                raise
+        finally:
             await workflow.execute_activity(
-                set_document_status_activity,
-                args=[doc_id, "failed", failure_reason(exc)],
+                delete_document_file_activity,
+                args=[path],
                 start_to_close_timeout=STATUS_TIMEOUT,
                 retry_policy=RETRY,
             )
-            raise
 
 
 @workflow.defn

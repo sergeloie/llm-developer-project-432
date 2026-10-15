@@ -85,13 +85,22 @@ def set_document_status_activity(doc_id: str, status: str, error: str | None = N
 
 @activity.defn
 def parse_document_activity(doc_id: str, path: str, kind: str) -> int:
-    """Разбор загруженного файла: parse → normalize → chunk → база."""
+    """Разбор загруженного файла: parse → normalize → chunk → база.
+
+    Временный файл здесь НЕ удаляется: activity может быть повторена, а на
+    второй попытке файла уже нет и падает FileNotFoundError вместо реальной
+    причины. Уборкой занимается delete_document_file_activity — после того,
+    как процесс достиг терминального состояния.
+    """
     structlog.contextvars.bind_contextvars(doc_id=doc_id)
-    try:
-        with db.connection() as conn:
-            return docs_service.ingest(conn, doc_id, Path(path).read_bytes(), kind)
-    finally:
-        Path(path).unlink(missing_ok=True)
+    with db.connection() as conn:
+        return docs_service.ingest(conn, doc_id, Path(path).read_bytes(), kind)
+
+
+@activity.defn
+def delete_document_file_activity(path: str) -> None:
+    """Удалить временный файл разбора. Вызывается процессом в терминальном состоянии."""
+    Path(path).unlink(missing_ok=True)
 
 
 @activity.defn
@@ -113,6 +122,13 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
         draft, attempts, _verdict, status, guard, _context = asyncio.run(
             rag_pipeline.run_rag_pipeline(query, document_ids or None)
         )
+        if guard.suspicious_chunks:
+            with db.connection() as conn:
+                blocked = docs_repo.mark_chunks_suspicious(conn, guard.suspicious_chunks)
+            log.info(
+                "guard_flagged_chunks", job_id=job_id, flagged=blocked,
+                chunk_ids=guard.suspicious_chunks,
+            )
         with db.connection() as conn:
             jobs_repo.set_status(conn, job_id, status, result=draft, bump_attempts=True)
         log.info(

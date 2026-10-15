@@ -14,6 +14,9 @@ class GuardReport:
     masked_pii: int = 0
     suspicious_chunks: list[str] = field(default_factory=list)
     blocked_reasons: list[str] = field(default_factory=list)
+    # Оценка retrieval по каждому чанку, реально дошедшему до модели: источник без
+    # doc_id и без score — это не источник, а голый идентификатор чанка.
+    retrieval_scores: dict[str, float] = field(default_factory=dict)
 
     @property
     def needs_review(self) -> bool:
