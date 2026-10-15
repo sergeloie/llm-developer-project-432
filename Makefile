@@ -1,7 +1,7 @@
 PY = python
 RUN = $(PY) -m
 
-.PHONY: help infra down migrate api temporal-worker lint tests
+.PHONY: help infra down migrate setup code-setup api temporal-worker lint tests
 
 help:
 	@echo "make infra           - поднять postgres(pgvector) + temporal + ui"
@@ -20,6 +20,11 @@ down:
 
 migrate:
 	$(RUN) migrations.runner
+
+setup: migrate
+	@echo "setup done"
+
+code-setup: setup
 
 api:
 	$(RUN) uvicorn app.main:app --reload --port 8000
