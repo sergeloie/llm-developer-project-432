@@ -52,6 +52,14 @@ def store_fragments_activity(document_id: int, fragments_json: str) -> int:
 
 
 @activity.defn
+async def backfill_vectors_activity(document_id: int) -> int:
+    """Досчёт векторов нового документа (шаг 6) — продолжение цепочки после разбора."""
+    from app.services.backfill import backfill
+
+    return await backfill(document_id)
+
+
+@activity.defn
 def set_doc_status_activity(document_id: int, status: str, error: str | None = None) -> None:
     with db.connection() as conn:
         docs_repo.set_document_status(conn, document_id, status, error)

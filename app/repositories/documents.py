@@ -168,15 +168,11 @@ def chunk_texts_for_embedding(conn: psycopg.Connection, doc_id: int | None = Non
     """(chunk_id, text) для досчёта векторов."""
     if doc_id is None:
         rows = conn.execute(
-            "SELECT c.id, c.text FROM chunks c"
-            " LEFT JOIN chunk_embs e ON e.chunk_id = c.id"
-            " WHERE e.chunk_id IS NULL ORDER BY c.id"
+            "SELECT id, text FROM chunks WHERE embedding IS NULL ORDER BY id"
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT c.id, c.text FROM chunks c"
-            " LEFT JOIN chunk_embs e ON e.chunk_id = c.id"
-            " WHERE e.chunk_id IS NULL AND c.document_id = %s ORDER BY c.id",
+            "SELECT id, text FROM chunks WHERE embedding IS NULL AND document_id = %s ORDER BY id",
             (doc_id,),
         ).fetchall()
     return [(r[0], r[1]) for r in rows]
@@ -208,3 +204,164 @@ def chunks_by_ids(conn: psycopg.Connection, ids: list[int]) -> list[dict[str, An
 
 def jdump(x: Any) -> str:
     return json.dumps(x, ensure_ascii=False)
+
+
+# ——— Шаг 6: векторы и три режима поиска ———
+
+
+def store_embeddings(
+    conn: psycopg.Connection,
+    vectors: list[tuple[int, list[float]]],
+    model: str,
+    dim: int,
+) -> int:
+    """Записать векторы пачкой: колонка chunks.embedding + зеркало chunk_embs."""
+    n = 0
+    for chunk_id, vec in vectors:
+        lit = "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
+        conn.execute(
+            "UPDATE chunks SET embedding = %s::vector WHERE id = %s", (lit, chunk_id)
+        )
+        if _has_chunk_embs(conn):
+            conn.execute(
+                "INSERT INTO chunk_embs (chunk_id, model, dim, vector)"
+                " VALUES (%s, %s, %s, %s::vector)"
+                " ON CONFLICT (chunk_id) DO UPDATE"
+                " SET vector = EXCLUDED.vector, model = EXCLUDED.model,"
+                " dim = EXCLUDED.dim, updated_at = now()",
+                (chunk_id, model, dim, lit),
+            )
+        n += 1
+    return n
+
+
+def pending_embed_count(conn: psycopg.Connection) -> int:
+    return int(
+        conn.execute(
+            "SELECT count(*) FROM chunks WHERE embedding IS NULL"
+        ).fetchone()[0]
+    )
+
+
+def search_vector(
+    conn: psycopg.Connection,
+    query_vec: list[float],
+    *,
+    top_k: int,
+    threshold: float,
+    document_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Поиск по векторам: cosine similarity = 1 - cosine distance.
+
+    threshold отсекает мусор ДО возврата; метрика выбирается один раз.
+    """
+    lit = "[" + ",".join(f"{x:.7f}" for x in query_vec) + "]"
+    sql = [
+        "SELECT id, document_id, page, section, kind, article, text,",
+        " 1 - (embedding <=> %s::vector) AS score",
+        "FROM chunks",
+        "WHERE embedding IS NOT NULL AND 1 - (embedding <=> %s::vector) >= %s",
+    ]
+    params: list[Any] = [lit, lit, threshold]
+    if document_ids is not None:
+        if not document_ids:
+            return []
+        sql.append("AND document_id = ANY(%s)")
+        params.append(document_ids)
+    sql.append("ORDER BY embedding <=> %s::vector LIMIT %s")
+    params.extend([lit, top_k])
+    rows = conn.execute(" ".join(sql), params).fetchall()
+    return [_row_to_hit(r) for r in rows]
+
+
+def search_words(
+    conn: psycopg.Connection,
+    query: str,
+    *,
+    top_k: int,
+    document_ids: list[int] | None = None,
+    min_score: float = 0.01,
+) -> list[dict[str, Any]]:
+    """Поиск по словам: ts_rank по tsv + досмотр сырым LIKE по словaм
+    (артикулы вида KTL-1700 ts-токенайзер рубит на части, LIKE их mantit).
+    """
+    words = [w for w in query.split() if len(w) >= 3]
+    like_parts = ["lower(text) LIKE %s" for _ in words]
+    conditions = ["tsv @@ plainto_tsquery('russian', %s)"]
+    conditions.extend(like_parts)
+    sql = [
+        ("SELECT id, document_id, page, section, kind, article, text,"
+         " ts_rank(tsv, plainto_tsquery('russian', %s)) AS score"),
+        "FROM chunks",
+        "WHERE (" + " OR ".join(conditions) + ")",
+    ]
+    params: list[Any] = [query, query]
+    params.extend([f"%{w.lower()}%" for w in words])
+    if document_ids is not None:
+        if not document_ids:
+            return []
+        sql.append("AND document_id = ANY(%s)")
+        params.append(document_ids)
+    sql.append("ORDER BY score DESC LIMIT %s")
+    params.extend([top_k])
+    rows = conn.execute(" ".join(sql), params).fetchall()
+    hits = [_row_to_hit(r) for r in rows]
+    # сырой LIKE не даёт score: посчитаем честный — доля слов запроса в тексте
+    for h in hits:
+        if h["score"] == 0:
+            lowered = h["text"].lower()
+            found = sum(1 for w in words if w.lower() in lowered)
+            h["score"] = found / len(words) if words else 0.0
+    return [h for h in hits if h["score"] >= min_score]
+
+
+def search_hybrid(
+    conn: psycopg.Connection,
+    query: str,
+    query_vec: list[float],
+    *,
+    top_k: int,
+    threshold: float,
+    document_ids: list[int] | None = None,
+    k_rrf: int = 60,
+) -> dict[str, Any]:
+    """Гибрид: векторный + лексический списки сливаются RRF.
+
+    Слияние по обратным позициям: фрагмент получает вклад 1/(k_rrf + rank)
+    каждый список, где нашёлся; найденный обоими — сверху. Возвращает
+    (hits, одинаковые для проверок): каждый hit с blended score.
+    """
+    vec_hits = search_vector(
+        conn, query_vec, top_k=top_k * 2, threshold=threshold, document_ids=document_ids
+    )
+    lex_hits = search_words(conn, query, top_k=top_k * 2, document_ids=document_ids)
+
+    contributions: dict[int, float] = {}
+    hit_by_id: dict[int, dict[str, Any]] = {}
+    for rank, hit in enumerate(vec_hits, start=1):
+        contributions[hit["id"]] = contributions.get(hit["id"], 0.0) + 1.0 / (k_rrf + rank)
+        hit_by_id.setdefault(hit["id"], hit)
+    for rank, hit in enumerate(lex_hits, start=1):
+        contributions[hit["id"]] = contributions.get(hit["id"], 0.0) + 1.0 / (k_rrf + rank)
+        hit_by_id.setdefault(hit["id"], hit)
+
+    ranked = sorted(contributions.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+    hits: list[dict[str, Any]] = []
+    for chunk_id, rrf in ranked:
+        hit = hit_by_id[chunk_id].copy()
+        hit["rrf_score"] = rrf
+        hits.append(hit)
+    return {"hits": hits, "vector_count": len(vec_hits), "lexical_count": len(lex_hits)}
+
+
+def _row_to_hit(r: tuple) -> dict[str, Any]:
+    return {
+        "id": r[0],
+        "document_id": r[1],
+        "page": r[2],
+        "section": r[3],
+        "kind": r[4],
+        "article": r[5],
+        "text": r[6],
+        "score": float(r[7]),
+    }

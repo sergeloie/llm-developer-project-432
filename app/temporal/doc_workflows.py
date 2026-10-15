@@ -9,6 +9,7 @@ from temporalio import workflow
 
 with workflow.unsafe.imports_passed_through():
     from app.temporal.doc_activities import (
+        backfill_vectors_activity,
         doc_info_activity,
         parse_document_activity,
         set_doc_status_activity,
@@ -43,7 +44,18 @@ class DocumentParseWorkflow:
             args=[document_id, fragments_json],
             start_to_close_timeout=STATUS_TIMEOUT,
         )
-        # статус already 'indexed' (ставит store_fragments); счётчик для отчёта
+        # индексация: векторы считаются сразу после записи фрагментов (шаг 6)
+        self._phase = "embedding"
+        try:
+            await workflow.execute_activity(
+                backfill_vectors_activity,
+                args=[document_id],
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+                heartbeat_timeout=timedelta(minutes=3),
+            )
+        except BaseException as exc:  # noqa: BLE001 — эмбеддинги недоступны: документ уже в базе, досчитает make backfill
+            workflow.logger.error("backfill_failed", document_id=document_id, error=str(exc))
+        # счётчик фрагментов для отчёта
         info = json.loads(
             await workflow.execute_activity(
                 doc_info_activity,

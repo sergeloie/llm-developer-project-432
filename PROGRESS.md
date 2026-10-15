@@ -67,6 +67,18 @@
 - Тесты: tests/test_parsing.py (5 шт) — golden-строки достаются, строки прайса не разрывы (артикул+цена в одном фрагменте), шапка в каждой части таблицы, скан отклонён. Всего 13 passed, ruff чисто.
 - СЛЕДУЮЩИЙ ШАГ: шаг 6 (эмбеддинги, pgvector-колонки+индексы, гибридный поиск, досчёт векторов).
 
+### 2026-10-15. Шаг 6 (эмбеддинги и поиск) — ВЫПОЛНЕН
+- `app/embeddings/client.py`: async клиент LM Studio `/v1/embeddings`, документный/запросный префиксы, клиент на процесс, батч; ретраи 429/5xx/сеть.
+- `migrations/0003_vectors.sql`: `chunks.embedding vector(768)`, `chunks.tsv` (generated, GIN), HNSW на `chunks.embedding`; таблица `chunk_embs` сохранена для совместимости.
+- `app/repositories/documents.py`: `store_embeddings`, `pending_embed_count`, `chunk_texts_for_embedding` (по `chunks.embedding IS NULL`), `search_vector`, `search_words` (ts_rank + LIKE по артикулам, исправлена расстановка скобок), `search_hybrid` (RRF), фильтры по документам и порог.
+- `app/services/backfill.py`: досчёт пачками, повторный запуск — 0; `make backfill`.
+- Индексация после разбора: `DocumentParseWorkflow` → `backfill_vectors_activity` (fail-soft: документ уже в базе, досчёт вручную).
+- `app/services/search.py`, `app/routers/search.py`: `/search` с mode vector/words/hybrid и `/chunks/{id}`.
+- Калибровка: threshold=0.45 — на своих запросах релевантные фрагменты показывают cosine 0.48–0.54, мусор — 0.26–0.36; порог отсекает мусор и сохраняет попадания. Префиксы взяты из карточки embeddinggemma.
+- Тесты: `tests/test_search.py` (18 всего: функции RRF/cosine, репозиторий на синтетических векторах, гибрид как объединение, отсечение порогом). LLM не грузится.
+- Проверено живьём: backfill 20 фрагментов за один проход, повторный — 0; запрос «мощность блендера» находит нужную страницу через vector/hybrid, «KTL-1700» — только words/hybrid.
+- ruff: All checks passed; pytest: 18 passed.
+
 ### Грабли/заметки
 - Temporal image auto-setup 1.29.7: HTTP `/health` на 7233 не существует — живость через UI :8233 (200) и логи.
 - psycopg3 `conn.execute(multi-statement)` работает — раннер гоняет файл в одной транзакции.

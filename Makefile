@@ -27,6 +27,9 @@ api:
 temporal-worker:
 	$(RUN) app.temporal_worker
 
+backfill:
+	$(RUN) app.services.backfill
+
 lint:
 	.venv/Scripts/ruff.exe check app tests migrations
 

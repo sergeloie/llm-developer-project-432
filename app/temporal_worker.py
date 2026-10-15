@@ -20,6 +20,7 @@ from app.temporal.activities import (
     set_job_status_activity,
 )
 from app.temporal.doc_activities import (
+    backfill_vectors_activity,
     doc_info_activity,
     parse_document_activity,
     set_doc_status_activity,
@@ -48,6 +49,7 @@ async def main() -> None:
                 set_job_status_activity,
                 parse_document_activity,
                 store_fragments_activity,
+                backfill_vectors_activity,
                 set_doc_status_activity,
                 doc_info_activity,
             ],
