@@ -43,3 +43,5 @@ def brand_from_filename(filename: str) -> str | None:
     part = stem.split("_")[0]
     part = part.split("-")[0]
     return part or None
+
+parse_to_chunks = fragments_from_file
