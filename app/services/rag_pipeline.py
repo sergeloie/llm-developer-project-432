@@ -3,6 +3,8 @@
 Второй уровень анти-галлюцинаций: валидация sources — каждый chunk_id
 обязан существовать в БД и входить в поданный контекст.
 """
+from collections.abc import Mapping
+
 from pydantic import ValidationError
 
 from app.agents.prompts import context_generator_agent, critic_agent
@@ -171,6 +173,53 @@ async def critique_with_context(context: str, draft: CardDraft) -> CritiqueRepor
     return CritiqueReport.model_validate(parse_llm_json(out))
 
 
+def cited_chunk_texts(draft: CardDraft) -> dict[str, str]:
+    """Тексты фрагментов, на которые ссылается карточка: chunk_id → текст.
+
+    Нужен, чтобы посчитать покрытие: значение характеристики подтверждает
+    именно текст чанка, а не сам факт ссылки на него.
+    """
+    ids = sorted({ref.chunk_id for ref in draft.sources})
+    if not ids:
+        return {}
+    with db.connection() as conn:
+        known = chunks_repo.get_chunks_by_ids(conn, ids)
+    return {chunk_id: chunk["text"] for chunk_id, chunk in known.items()}
+
+
+def decide_status(
+    draft: CardDraft | None,
+    verdict: str,
+    guard_report: GuardReport,
+    chunk_texts: Mapping[str, str] | None = None,
+) -> str:
+    """Терминальный статус карточки: rejected / needs_review / done.
+
+    Нулевое покрытие источников — не готовая работа ни при какой самооценке
+    модели: карточка без ссылок и без missing_fields утверждает, что не
+    нашлось ни данных, ни пробелов, а это обратное тому, что обещает контракт.
+    Дальше решают guardrails, покрытие источников и уверенность модели.
+    """
+    if draft is None or verdict != "approved":
+        return "rejected"
+    coverage = draft.derived_source_coverage(chunk_texts)
+    log.info(
+        "rag_source_coverage",
+        coverage=round(coverage, 3),
+        threshold=settings.source_coverage_threshold,
+        characteristics=len(draft.characteristics),
+        sources=len(draft.sources),
+    )
+    if (
+        not draft.sources
+        or guard_report.needs_review
+        or coverage < settings.source_coverage_threshold
+        or draft.confidence < settings.confidence_human_threshold
+    ):
+        return "needs_review"
+    return "done"
+
+
 async def run_rag_pipeline(
     query: str, doc_ids: list[str] | None = None, max_attempts: int | None = None
 ):
@@ -207,10 +256,10 @@ async def run_rag_pipeline(
             log.warning("guard_output_issues", issues=issues)
         draft = CardDraft.model_validate_json(cleaned)
 
-    status = "rejected"
-    if verdict == "approved" and draft is not None:
-        if guard_report.needs_review or draft.confidence < settings.confidence_human_threshold:
-            status = "needs_review"
-        else:
-            status = "done"
+    status = decide_status(
+        draft,
+        verdict,
+        guard_report,
+        cited_chunk_texts(draft) if draft is not None and verdict == "approved" else None,
+    )
     return draft, attempts, verdict, status, guard_report, context

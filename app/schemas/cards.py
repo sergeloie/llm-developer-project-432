@@ -1,8 +1,19 @@
+import re
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings
+
+
+def evidence_key(text: str) -> str:
+    """Текст → ключ сверки источника: регистр, пробелы и пунктуация не важны.
+
+    «800 Вт», «800 вт.» и «800Вт» — одно и то же значение, и именно эта
+    разница в записи не должна выглядеть как неподтверждённая характеристика.
+    """
+    return re.sub(r"[^\w]+", "", str(text).lower().replace("\u00a0", " "))
 
 
 class SupplierFacts(BaseModel):
@@ -88,6 +99,35 @@ class CardDraft(BaseModel):
                 f"поля одновременно в characteristics и missing_fields: {sorted(dupes)}"
             )
         return self
+
+    def derived_source_coverage(
+        self, chunk_texts: Mapping[str, str] | None = None
+    ) -> float:
+        """Покрытие источников — производная величина, модель её не заполняет.
+
+        Доля characteristics, значения которых встречаются в тексте чанка,
+        на который карточка сослалась. chunk_texts — chunk_id → текст фрагмента;
+        без текстов подтвердить нечего, поэтому покрытие 0.0.
+
+        Покрытие — свойство системы, а не ответ модели: поэтому это метод, а не
+        поле контракта. Просить у модели такое поле бессмысленно — единственный
+        честный источник значений о покрытии это сами документы.
+        """
+        if not self.characteristics or not self.sources:
+            return 0.0
+        corpus = [
+            key
+            for ref in self.sources
+            if chunk_texts and (key := evidence_key(chunk_texts.get(ref.chunk_id, "")))
+        ]
+        if not corpus:
+            return 0.0
+        covered = sum(
+            1
+            for value in self.characteristics.values()
+            if (value_key := evidence_key(value)) and any(value_key in chunk for chunk in corpus)
+        )
+        return covered / len(self.characteristics)
 
 
 class CritiqueReport(BaseModel):

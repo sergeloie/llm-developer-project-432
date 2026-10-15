@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     context_char_limit: int = 6000
     card_title_max_len: int = 60
     confidence_human_threshold: float = 0.5
+    # Доля характеристик, для которых нашёлся источник, ниже которой карточка
+    # уходит человеку. 0.8 прощает одну неподтверждённую характеристику из
+    # пяти и не прощает карточку, где половина атрибутов ничем не подкреплена.
+    source_coverage_threshold: float = 0.8
     max_fix_attempts: int = 2
     max_pipeline_rounds: int = 3
 

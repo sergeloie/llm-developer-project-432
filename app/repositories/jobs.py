@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import psycopg
 
+from app.repositories import chunks as chunks_repo
 from app.schemas.cards import CardDraft
 
 
@@ -74,7 +75,21 @@ def get_job(conn: psycopg.Connection, job_id: str) -> dict | None:
                 if isinstance(row[3], dict)
                 else CardDraft.model_validate_json(row[3])
             )
-            job["result"] = draft.model_dump()
         except Exception:
             job["result"] = None
+        else:
+            job["result"] = draft.model_dump()
+            job["source_coverage"] = source_coverage(conn, draft)
     return job
+
+
+def source_coverage(conn: psycopg.Connection, draft: CardDraft) -> float:
+    """Покрытие источников карточки — рядом с ней, а не внутри её контракта.
+
+    Карточка в jobs.result остаётся ровно тем, что сгенерировала модель; доля
+    подтверждённых характеристик — вывод системы, и клиент должен видеть её
+    рядом с карточкой, а не внутри неё.
+    """
+    ids = sorted({ref.chunk_id for ref in draft.sources})
+    texts = chunks_repo.get_chunks_by_ids(conn, ids) if ids else {}
+    return round(draft.derived_source_coverage(texts), 3)
