@@ -192,3 +192,80 @@ def test_mark_chunks_suspicious_persists_guard_verdict(rag_setup):
     assert flags["tstragc2"] is True
     assert flags["tstragc1"] is False
     docs_repo.mark_chunks_suspicious(rag_setup, ["tstragc1", "tstragc2"])
+
+
+def test_critic_prompt_declares_system_filled_source_fields(rag_setup, monkeypatch):
+    """Контракт критика: doc_id/page/score заполняет система — дефектом не является.
+
+    Промпт снимается с реального вызова critique_with_context, поэтому тест
+    падает, если контракт убрать из того промпта, который уходит модели.
+    Проверяется владение полями, а не формулировка: системные поля названы
+    и объявлены заполняемыми системой, chunk_id остаётся за моделью,
+    missing_fields — ожидаемо непустой. Вердикт модели не проверяется.
+    """
+    import json
+
+    from app.schemas.cards import CardDraft, CritiqueReport
+    from app.services import rag_pipeline as rp
+
+    data = json.loads(_card_json())
+    data["sources"] = [{"chunk_id": "tstragc1", "page": 1, "doc_id": DOC_ID, "score": 0.51}]
+    data["missing_fields"] = ["Гарантия"]
+    draft = CardDraft.model_validate(data)
+
+    captured = {}
+
+    async def fake_run(agent, prompt):
+        captured["agent"] = agent
+        captured["prompt"] = prompt
+        return CritiqueReport(verdict="approve")
+
+    monkeypatch.setattr(rp, "run_agent", fake_run)
+    asyncio.run(
+        rp.critique_with_context(
+            "[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"], draft
+        )
+    )
+
+    assert captured["agent"] is rp.critic_agent
+    prompt = captured["prompt"]
+    instructions, _, body = prompt.partition("КОНТЕКСТ:")
+    for system_field in ("doc_id", "page", "score"):
+        assert system_field in instructions, system_field
+    assert "chunk_id" in instructions
+    assert "missing_fields" in instructions
+    assert DOC_ID in body and "0.51" in body, "критик видит обогащённый источник"
+
+
+def test_run_rag_pipeline_gives_critic_the_source_contract(rag_setup, monkeypatch):
+    """Критик внутри петли получает тот же контракт: иначе петля не завершится.
+
+    Проверяется присутствие контракта в промпте, а не вердикт: approve от
+    локальной модели — её суждение, оно не должно быть предметом теста.
+    """
+    from app.core.config import settings
+    from app.schemas.cards import CritiqueReport
+    from app.services import rag_pipeline as rp
+
+    critic_prompts = []
+
+    async def fake_run(agent, prompt):
+        if agent.name == "Critic":
+            critic_prompts.append(prompt)
+            return CritiqueReport(verdict="regenerate", issues=["переделай"]).model_dump_json()
+        return _card_json()
+
+    monkeypatch.setattr(rp, "run_agent", fake_run)
+    monkeypatch.setattr(
+        rp,
+        "retrieve_context_async",
+        _fake_retrieve("[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]),
+    )
+    _draft, attempts, verdict, _status, _g, _context = asyncio.run(
+        rp.run_rag_pipeline("блендер", [DOC_ID])
+    )
+    assert verdict == "rejected"
+    assert attempts == settings.max_pipeline_rounds, "петля остаётся ограниченной"
+    assert len(critic_prompts) == settings.max_pipeline_rounds
+    for prompt in critic_prompts:
+        assert rp.CRITIC_CONTRACT in prompt

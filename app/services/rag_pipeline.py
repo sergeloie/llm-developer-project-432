@@ -125,18 +125,47 @@ def _enrich_sources(
                 ref.score = round(float(score), 4)
 
 
-async def critique_with_context(context: str, draft: CardDraft) -> CritiqueReport:
-    """Critic: каждое утверждение опирается на заявленный источник."""
-    prompt = (
+CRITIC_CONTRACT = (
+    "КОНТРАКТ: что заполняет система, а за что отвечаешь ты.\n"
+    "- sources: doc_id, page и score подставляет система после генерации "
+    "(модель их не видит). Их наличие и любые их значения НЕ дефект; "
+    "исправить их генератор не может — не пиши их в issues.\n"
+    "- sources: твоя ответственность только chunk_id, и он должен "
+    "встречаться в КОНТЕКСТЕ как [chunk_id | ...]. Дефект — chunk_id, "
+    "которого в контексте нет.\n"
+    "- missing_fields: непустой список ожидаем, если чего-то нет в контексте; "
+    "пустой список сам по себе не дефект.\n"
+    "- Не пиши проблемой то, что правилу соответствует (например длину title, "
+    "котая укладывается в 60 символов).\n"
+    "Дефектов нет — verdict approve."
+)
+
+
+def critic_prompt(context: str, draft: CardDraft) -> str:
+    """Промпт критика: правила + контракт + контекст + черновик."""
+    return (
         "Проверь черновик карточки против КОНТЕКСТА с источниками [chunk_id].\n"
         "Правила:\n"
         "1. title не длиннее 60 символов\n"
         "2. Характеристики подтверждаются контекстом (сверяй значения)\n"
         "3. description и benefits не содержат воды и фактов вне контекста\n"
-        "4. sources указывают на чанки, где данные реально есть\n\n"
-        "КОНТЕКСТ:\n" + context + "\n\nЧерновик:\n" + draft.model_dump_json(indent=2)
+        "4. sources указывают на чанки, где данные реально есть\n"
+        + CRITIC_CONTRACT
+        + "\n\nКОНТЕКСТ:\n"
+        + context
+        + "\n\nЧерновик:\n"
+        + draft.model_dump_json(indent=2)
     )
-    out = await run_agent(critic_agent, prompt)
+
+
+async def critique_with_context(context: str, draft: CardDraft) -> CritiqueReport:
+    """Critic: каждое утверждение опирается на заявленный источник.
+
+    Контракт из CRITIC_CONTRACT обязателен: без него критик считает
+    дефектом то, что подставила система, и петля переделки выжигает
+    все круги на споре с самим собой, а карточка уходит в rejected.
+    """
+    out = await run_agent(critic_agent, critic_prompt(context, draft))
     if isinstance(out, CritiqueReport):
         return out
     return CritiqueReport.model_validate(parse_llm_json(out))
