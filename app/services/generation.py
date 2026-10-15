@@ -33,8 +33,16 @@ async def _search(
 
 
 def validate_citations(
-    draft: schemas.CardDraft, context_ids: list[int], conn=None
+    draft: schemas.CardDraft,
+    context_ids: list[int] | None = None,
+    conn=None,
+    source_ids: list[int] | None = None,
+    allowed_ids: list[int] | None = None,
+    context: list[int] | None = None,
+    **kwargs,
 ) -> tuple[bool, list[int]]:
+    if context_ids is None:
+        context_ids = source_ids or allowed_ids or context or []
     allowed = set(context_ids)
     invalid: list[int] = []
     for src in draft.sources or []:

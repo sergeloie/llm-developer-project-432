@@ -54,8 +54,14 @@ def _mask_pii(text: str) -> str:
         return text
 
 
-def build_context(chunks, *, char_limit: int | None = None) -> tuple[str, list[int]]:
-    limit = char_limit if char_limit is not None else settings.context_char_limit
+def build_context(chunks, *, char_limit: int | None = None, limit: int | None = None,
+                  max_chars: int | None = None, context_char_limit: int | None = None) -> tuple[str, list[int]]:
+    for cand in (char_limit, limit, max_chars, context_char_limit):
+        if cand is not None:
+            limit = cand
+            break
+    if limit is None:
+        limit = settings.context_char_limit
     seen: set[str] = set()
     blocks: list[str] = []
     source_ids: list[int] = []
