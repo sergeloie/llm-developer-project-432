@@ -168,6 +168,28 @@ def generator_with_context_prompt(
 
 # Алиасы
 generator_from_context_prompt = generator_with_context_prompt
+
+
+def judge_prompt(card, fragments_text: str) -> tuple[str, str]:
+    system = (
+        "Ты судья. Проверь, подтверждаются ли утверждения карточки "
+        "приведёнными фрагментами источников.\n"
+        "Верни JSON с полями verdict (grounded/ungrounded), "
+        "unsupported_statements (список), justification (строка).\n"
+        + JSON_ONLY
+    )
+    user = (
+        "Карточка:\n"
+        + (card.model_dump_json(indent=1) if hasattr(card, "model_dump_json") else str(card))
+        + "\n\nИсточники:\n"
+        + fragments_text
+    )
+    return system, user
+
+
+# алиасы
+judge_with_sources_prompt = judge_prompt
+critic_with_sources_prompt = critic_prompt
 generator_context_prompt = generator_with_context_prompt
 contextual_generator_prompt = generator_with_context_prompt
 generator_from_documents_prompt = generator_with_context_prompt

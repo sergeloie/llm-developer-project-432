@@ -3,7 +3,8 @@
 Зависит от подменяемого ``complete`` (как и пайплайн), поэтому тестируется
 без модели и без Temporal.
 """
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app import schemas
 from app.agents import prompts
@@ -14,14 +15,15 @@ from app.llm import client as llm
 from app.repositories import documents as docs_repo
 from app.repositories import jobs as jobs_repo
 from app.services import context as ctx
-from app.services import parse, search as search_svc
+from app.services import parse
+from app.services import search as search_svc
 
 log = get_logger(__name__)
 CompleteFn = Callable[..., Awaitable[Any]]
 
 
 async def _search(
-    document_ids: Optional[list[int]], hint: Optional[str], search_fn: Optional[Callable]
+    document_ids: list[int] | None, hint: str | None, search_fn: Callable | None
 ) -> list[dict]:
     query = hint or "товар"
     fn = search_fn
@@ -42,20 +44,19 @@ def validate_citations(
     if conn is not None:
         existing = {r["id"] for r in docs_repo.chunks_by_ids(conn, list(allowed | set(invalid)))}
         for src in draft.sources or []:
-            if src.fragment_id not in existing:
-                if src.fragment_id not in invalid:
-                    invalid.append(src.fragment_id)
+            if src.fragment_id not in existing and src.fragment_id not in invalid:
+                invalid.append(src.fragment_id)
     return len(invalid) == 0, invalid
 
 
 async def generate_for_documents(
-    document_ids: Optional[list[int]] = None,
-    hint: Optional[str] = None,
+    document_ids: list[int] | None = None,
+    hint: str | None = None,
     *,
-    job_id: Optional[str] = None,
+    job_id: str | None = None,
     complete: CompleteFn = llm.complete,
-    search_fn: Optional[Callable] = None,
-    context_limit: Optional[int] = None,
+    search_fn: Callable | None = None,
+    context_limit: int | None = None,
 ) -> dict[str, Any]:
     """Главная функция сценария. Возвращает словарь с карточкой, источниками и статусом."""
     # статусы пишем в базу, если есть job_id
@@ -74,7 +75,7 @@ async def generate_for_documents(
     _set("searching")
     try:
         hits = await _search(document_ids, hint, search_fn)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _set("failed_error", error=str(exc))
         raise
 

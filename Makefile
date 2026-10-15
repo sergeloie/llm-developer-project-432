@@ -30,6 +30,9 @@ temporal-worker:
 backfill:
 	$(RUN) app.services.backfill
 
+metrics:
+	$(RUN) app.services.metrics
+
 lint:
 	.venv/Scripts/ruff.exe check app tests migrations
 
