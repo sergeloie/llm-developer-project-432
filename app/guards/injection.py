@@ -75,3 +75,6 @@ def detect(text: str) -> list[str]:
 
 
 detect_rules = rule_reasons
+
+def detect_injection_regex(text):
+    return rule_reasons(text)
