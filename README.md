@@ -43,6 +43,9 @@ curl -X POST localhost:8000/generate-card \
 
 # посмотреть статус и результат
 curl localhost:8000/jobs/$JOB_ID
+
+# метрики: токены, стоимость, latency, доля невалидных ответов, статусы
+curl localhost:8000/metrics
 ```
 
 ## Разработка
@@ -53,6 +56,7 @@ make lint     # ruff
 make lint-fix # ruff с правкой
 make eval     # метрики генерации на золотом датасете (FULL=1 — весь датасет)
 make reindex  # досчитать эмбеддинги для чанков без векторов
+make bulk     # загрузить все файлы из data/ через POST /documents
 ```
 
 ## Структура
@@ -61,7 +65,7 @@ make reindex  # досчитать эмбеддинги для чанков бе
 app/
 ├── main.py            приложение и сквозной request_id
 ├── core/              конфигурация, база, логи, раннер миграций
-├── routers/           HTTP: cards, jobs, documents, generate, workflows, health
+├── routers/           HTTP: cards, jobs, documents, generate, workflows, health, metrics
 ├── services/          сценарии: пайплайн генерации, разбор документов, контракт результата
 ├── agents/            промпты extractor, generator, critic
 ├── llm/               клиент модели и учёт стоимости вызовов
@@ -73,6 +77,7 @@ app/
 └── temporal/          процессы: разбор, карточка, модерация
 db/migrations/         SQL-миграции
 evals/                 прогон метрик на золотом датасете
+scripts/               массовая загрузка данных через API (make bulk)
 tests/                 тесты
 data/                  документы поставщиков и золотой датасет
 ```

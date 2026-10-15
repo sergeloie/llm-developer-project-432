@@ -11,7 +11,7 @@ from app.temporal.workflows import ParseDocumentWorkflow
 router = APIRouter(tags=["documents"], prefix="/documents")
 
 
-@router.post("/", status_code=202, include_in_schema=True)
+@router.post("", status_code=202)
 async def upload_document(file: UploadFile):
     ext = "." + (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -44,7 +44,9 @@ async def upload_document(file: UploadFile):
             id=f"parse-{doc_id}",
             task_queue=settings.temporal_task_queue,
         )
-    return {"id": doc_id, "status": "new" if created else "already indexed"}
+    with db.connection() as conn:
+        doc = docs_repo.get_document(conn, doc_id)
+    return {"id": doc_id, "status": doc["status"] if doc else "new"}
 
 
 @router.get("")

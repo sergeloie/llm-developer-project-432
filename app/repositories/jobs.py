@@ -12,8 +12,15 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def create_job(conn: psycopg.Connection, payload: dict, idempotency_key: str | None) -> str:
-    """INSERT pending. При повторном idempotency_key возвращает существующий id."""
+def create_job(
+    conn: psycopg.Connection, payload: dict, idempotency_key: str | None
+) -> tuple[str, bool]:
+    """INSERT pending. Возвращает (id, created?).
+
+    created=False — строка с таким idempotency_key уже была, вернулся её id.
+    Роутер по флагу решает, запускать ли процесс: у процесса тот же id,
+    повторный старт упал бы с WorkflowAlreadyStartedError.
+    """
     with conn.cursor() as cur:
         if idempotency_key:
             cur.execute(
@@ -21,13 +28,13 @@ def create_job(conn: psycopg.Connection, payload: dict, idempotency_key: str | N
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], False
         job_id = uuid.uuid4().hex[:12]
         cur.execute(
             "INSERT INTO jobs (id, idempotency_key, payload) VALUES (%s, %s, %s)",
             (job_id, idempotency_key, json.dumps(payload, ensure_ascii=False)),
         )
-        return job_id
+        return job_id, True
 
 
 def set_status(

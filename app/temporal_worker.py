@@ -17,6 +17,7 @@ from app.temporal.activities import (
     generate_activity,
     parse_document_activity,
     rag_card_activity,
+    set_document_status_activity,
     set_job_status_activity,
 )
 from app.temporal.workflows import CardWorkflow, ParseDocumentWorkflow, RagCardWorkflow
@@ -37,6 +38,7 @@ async def main():
                 generate_activity,
                 critique_activity,
                 set_job_status_activity,
+                set_document_status_activity,
                 parse_document_activity,
                 rag_card_activity,
             ],

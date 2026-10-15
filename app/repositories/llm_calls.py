@@ -12,12 +12,25 @@ def insert_call(
     completion_tokens: int | None,
     cost: float,
     latency_ms: int | None,
+    outcome: str = "ok",
+    error: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO llm_calls (job_id, agent, model, prompt_tokens, completion_tokens, cost, latency_ms) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (job_id, agent, model, prompt_tokens, completion_tokens, cost, latency_ms),
+            "INSERT INTO llm_calls (job_id, agent, model, prompt_tokens, completion_tokens, "
+            "cost, latency_ms, outcome, error) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                job_id,
+                agent,
+                model,
+                prompt_tokens,
+                completion_tokens,
+                cost,
+                latency_ms,
+                outcome,
+                error,
+            ),
         )
 
 

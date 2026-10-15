@@ -21,6 +21,7 @@ from temporalio import activity
 
 from app.core import db
 from app.core.logging import get_logger
+from app.repositories import documents as docs_repo
 from app.repositories import jobs as jobs_repo
 from app.schemas.cards import CardDraft, SupplierFacts
 from app.services import documents as docs_service
@@ -69,6 +70,17 @@ def set_job_status_activity(
             error=error,
             bump_attempts=status == "generating",
         )
+
+
+@activity.defn
+def set_document_status_activity(doc_id: str, status: str, error: str | None = None) -> None:
+    """Состояние документа в таблице documents: его читает клиент через GET /documents/{id}.
+
+    Ставится из workflow при исчерпании попыток разбора, иначе документ
+    навсегда остаётся в new/parsing.
+    """
+    with db.connection() as conn:
+        docs_repo.set_status(conn, doc_id, status, error=error)
 
 
 @activity.defn

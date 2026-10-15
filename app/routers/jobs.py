@@ -3,10 +3,9 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.core import db
-from app.core.config import settings
 from app.repositories import jobs as jobs_repo
 from app.schemas.jobs import CardRequest
-from app.temporal.client import temporal_client
+from app.services.jobs import submit_job
 from app.temporal.workflows import CardWorkflow
 
 router = APIRouter(tags=["jobs"])
@@ -17,18 +16,13 @@ async def create_job(
     body: CardRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    with db.connection() as conn:
-        job_id = jobs_repo.create_job(
-            conn, {"supplier_text": body.supplier_text}, idempotency_key
-        )
-    client = await temporal_client()
-    await client.start_workflow(
+    answer = await submit_job(
+        {"supplier_text": body.supplier_text},
+        idempotency_key,
         CardWorkflow.run,
-        args=[job_id, body.supplier_text, 3],
-        id=job_id,  # по нему же идут сигналы: POST /workflows/{id}/approve
-        task_queue=settings.temporal_task_queue,
+        lambda job_id: [job_id, body.supplier_text, 3],
     )
-    return JSONResponse({"id": job_id, "status": "pending"}, status_code=202)
+    return JSONResponse(answer, status_code=202)
 
 
 @router.get("/jobs/{job_id}")

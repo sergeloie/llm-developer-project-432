@@ -10,6 +10,7 @@ import time
 
 from agents import (
     Agent,
+    OpenAIChatCompletionsModel,
     Runner,
     set_default_openai_api,
     set_default_openai_client,
@@ -23,27 +24,58 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 _client_configured = False
+_client: AsyncOpenAI | None = None
+_models: dict[str, OpenAIChatCompletionsModel] = {}
 
 
-def setup_llm() -> None:
+def setup_llm() -> AsyncOpenAI:
     """Инициализация OpenAI-compatible клиента (LM Studio / OpenRouter / Ollama).
 
-    Вызывается один раз на процесс. Идемпотентна.
+    Вызывается один раз на процесс. Идемпотентна. Возвращает тот самый клиент,
+    на котором дальше строятся модели (model_for).
     """
-    global _client_configured
-    if _client_configured:
-        return
-    client = AsyncOpenAI(
+    global _client_configured, _client
+    if _client_configured and _client is not None:
+        return _client
+    _client = AsyncOpenAI(
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
         timeout=settings.llm_timeout_s,
     )
-    set_default_openai_client(client)
+    set_default_openai_client(_client)
     # LM Studio / Ollama / OpenRouter говорят на Chat Completions, а не Responses API.
     set_default_openai_api("chat_completions")
     # Иначе SDK шлёт спаны на api.openai.com и падает с 401 на не-OpenAI ключе.
     set_tracing_disabled(True)
     _client_configured = True
+    return _client
+
+
+def model_for(name: str) -> OpenAIChatCompletionsModel:
+    """Модель по имени из конфига как объект SDK, а не как строка.
+
+    Строка в Agent(model=...) уходит в MultiProvider, который читает
+    `префикс/имя` как provider-qualified идентификатор и падает с
+    UserError("Unknown prefix: qwen") до какого-либо HTTP-запроса.
+    Объект модели с явным клиентом этого разбора не проходит, а имя
+    (`qwen/qwen3.5-9b`) уходит на сервер ровно тем же текстом, каким его
+    объявили в GET /v1/models. По одному имени на процесс кешируется
+    один объект.
+    """
+    existing = _models.get(name)
+    if existing is not None:
+        return existing
+    built = OpenAIChatCompletionsModel(model=name, openai_client=setup_llm())
+    _models[name] = built
+    return built
+
+
+def model_name(model: object) -> str:
+    """Имя модели для учёта в llm_calls: у объекта берём .model, строка — сама."""
+    if isinstance(model, str):
+        return model
+    inner = getattr(model, "model", None)
+    return inner if isinstance(inner, str) else ""
 
 
 def _retryable(exc: Exception) -> bool:
@@ -62,7 +94,9 @@ async def run_agent(agent: Agent, prompt: str):
     """Запустить агента с ретраями: экспоненциальная задержка + jitter.
 
     Ретраится только вызов LLM — не вся бизнес-задача (это работа очереди/workflow).
-    Каждый успешный вызов пишется в llm_calls (токены, цена, латентность).
+    Каждый успешный вызов пишется в llm_calls (токены, цена, латентность),
+    каждая исчерпанная попытка — тоже, с outcome='error': без этого доля
+    неудачных ответов модели считалась бы по логам, а не по таблице.
     """
     setup_llm()
     max_retries = settings.llm_max_retries
@@ -76,6 +110,7 @@ async def run_agent(agent: Agent, prompt: str):
             return result.final_output
         except Exception as exc:
             if attempt == max_retries or not _retryable(exc):
+                _log_failure(agent, exc, started, attempt)
                 log.error(
                     "llm_call_failed",
                     agent=agent.name,
@@ -94,6 +129,42 @@ async def run_agent(agent: Agent, prompt: str):
             await asyncio.sleep(delay)
 
 
+def _log_failure(agent: Agent, exc: Exception, started: float, attempt: int) -> None:
+    """Учёт неуспешной попытки в llm_calls. Ошибки учёта не роняют пайплайн."""
+    try:
+        import structlog
+
+        from app.core import db
+        from app.repositories import llm_calls as repo
+
+        model = model_name(getattr(agent, "model", None))
+        latency_ms = int((time.monotonic() - started) * 1000)
+        ctx = structlog.contextvars.get_contextvars() or {}
+        with db.connection() as conn:
+            repo.insert_call(
+                conn,
+                job_id=ctx.get("job_id"),
+                agent=getattr(agent, "name", ""),
+                model=model,
+                prompt_tokens=None,
+                completion_tokens=None,
+                cost=0.0,
+                latency_ms=latency_ms,
+                outcome="error",
+                error=repr(exc)[:500],
+            )
+        log.info(
+            "llm_call_error",
+            agent=getattr(agent, "name", ""),
+            model=model,
+            attempt=attempt,
+            latency_ms=latency_ms,
+            error=repr(exc)[:500],
+        )
+    except Exception as accounting_exc:
+        log.warning("llm_call_accounting_failed", error=repr(accounting_exc))
+
+
 def _log_call(agent: Agent, result, started: float) -> None:
     """Учёт вызова в llm_calls. Ошибки учёта не должны ронять пайплайн."""
     try:
@@ -107,7 +178,7 @@ def _log_call(agent: Agent, result, started: float) -> None:
         usage = getattr(usage[-1], "usage", None) if usage else None
         prompt_tokens = getattr(usage, "input_tokens", None) if usage else None
         completion_tokens = getattr(usage, "output_tokens", None) if usage else None
-        model = getattr(agent, "model", "") or ""
+        model = model_name(getattr(agent, "model", None))
         cost = float(
             calculate_cost(model, prompt_tokens or 0, completion_tokens or 0)
         )

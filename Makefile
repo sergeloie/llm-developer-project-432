@@ -1,4 +1,4 @@
-.PHONY: help install setup lint lint-fix test infra migrate api worker reindex eval
+.PHONY: help install setup lint lint-fix test infra migrate api worker reindex eval bulk
 
 help:
 	@echo "make install         - установить зависимости из uv.lock"
@@ -12,6 +12,7 @@ help:
 	@echo "make worker          - воркер устойчивых процессов (workflows + activities)"
 	@echo "make reindex         - досчитать embeddings для чанков без векторов"
 	@echo "make eval            - прогон evals (2 документа; FULL=1 - весь датасет)"
+	@echo "make bulk            - загрузить все файлы из data/ через POST /documents"
 
 install:
 	uv sync --frozen
@@ -44,3 +45,6 @@ reindex:
 
 eval:
 	uv run python -m evals.runner $(if $(FULL),--full,)
+
+bulk:
+	uv run python scripts/bulk_load.py

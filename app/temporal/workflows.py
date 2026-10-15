@@ -14,6 +14,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError
 
 with workflow.unsafe.imports_passed_through():
     # Pydantic-модели используются только для парсинга JSON внутри workflow:
@@ -29,6 +30,7 @@ with workflow.unsafe.imports_passed_through():
         generate_activity,
         parse_document_activity,
         rag_card_activity,
+        set_document_status_activity,
         set_job_status_activity,
     )
 
@@ -41,6 +43,21 @@ STATUS_TIMEOUT = timedelta(seconds=30)
 # Три попытки, дальше процесс падает с ошибкой и она видна в истории.
 RETRY = RetryPolicy(maximum_attempts=3)
 
+MAX_ERROR_LEN = 480
+
+
+def failure_reason(exc: ActivityError) -> str:
+    """Причина падения activity строкой для клиента.
+
+    Берётся из самой ошибки процесса (ActivityError), а не собирается в
+    workflow-коде, поэтому повторяется при реплее: и текст ошибки, и её
+    цепочка приходят из истории, где уже записаны.
+    """
+    cause = getattr(exc, "cause", None)
+    inner = cause if isinstance(cause, BaseException) else exc
+    kind = type(inner).__name__
+    return f"{exc.activity_type}: {kind}: {inner}"[:MAX_ERROR_LEN]
+
 
 @workflow.defn
 class ParseDocumentWorkflow:
@@ -48,12 +65,21 @@ class ParseDocumentWorkflow:
 
     @workflow.run
     async def run(self, doc_id: str, path: str, kind: str) -> int:
-        return await workflow.execute_activity(
-            parse_document_activity,
-            args=[doc_id, path, kind],
-            start_to_close_timeout=PARSE_TIMEOUT,
-            retry_policy=RETRY,
-        )
+        try:
+            return await workflow.execute_activity(
+                parse_document_activity,
+                args=[doc_id, path, kind],
+                start_to_close_timeout=PARSE_TIMEOUT,
+                retry_policy=RETRY,
+            )
+        except ActivityError as exc:
+            await workflow.execute_activity(
+                set_document_status_activity,
+                args=[doc_id, "failed", failure_reason(exc)],
+                start_to_close_timeout=STATUS_TIMEOUT,
+                retry_policy=RETRY,
+            )
+            raise
 
 
 @workflow.defn
@@ -62,12 +88,21 @@ class RagCardWorkflow:
 
     @workflow.run
     async def run(self, job_id: str, document_ids: list[str], product_hint: str = "") -> str:
-        return await workflow.execute_activity(
-            rag_card_activity,
-            args=[job_id, document_ids, product_hint],
-            start_to_close_timeout=RAG_TIMEOUT,
-            retry_policy=RETRY,
-        )
+        try:
+            return await workflow.execute_activity(
+                rag_card_activity,
+                args=[job_id, document_ids, product_hint],
+                start_to_close_timeout=RAG_TIMEOUT,
+                retry_policy=RETRY,
+            )
+        except ActivityError as exc:
+            await workflow.execute_activity(
+                set_job_status_activity,
+                args=[job_id, "failed", None, failure_reason(exc)],
+                start_to_close_timeout=STATUS_TIMEOUT,
+                retry_policy=RETRY,
+            )
+            raise
 
 
 @workflow.defn
@@ -82,17 +117,22 @@ class CardWorkflow:
         self._status = "starting"
         self._human_decision: str | None = None
 
-    async def _publish(self, job_id: str, status: str, draft_json: str | None = None) -> None:
+    async def _publish(
+        self,
+        job_id: str,
+        status: str,
+        draft_json: str | None = None,
+        error: str | None = None,
+    ) -> None:
         self._status = status
         await workflow.execute_activity(
             set_job_status_activity,
-            args=[job_id, status, draft_json, None],
+            args=[job_id, status, draft_json, error],
             start_to_close_timeout=STATUS_TIMEOUT,
             retry_policy=RETRY,
         )
 
-    @workflow.run
-    async def run(self, job_id: str, supplier_text: str, max_attempts: int = 3) -> str:
+    async def _stages(self, job_id: str, supplier_text: str, max_attempts: int) -> str:
         await self._publish(job_id, "extracting")
         facts_json = await workflow.execute_activity(
             extract_activity,
@@ -125,6 +165,15 @@ class CardWorkflow:
             if report.verdict == "approve":
                 break
             feedback = report.issues
+        return draft_json
+
+    @workflow.run
+    async def run(self, job_id: str, supplier_text: str, max_attempts: int = 3) -> str:
+        try:
+            draft_json = await self._stages(job_id, supplier_text, max_attempts)
+        except ActivityError as exc:
+            await self._publish(job_id, "failed", None, failure_reason(exc))
+            raise
 
         await self._publish(job_id, "awaiting_human", draft_json)
         await workflow.wait_condition(lambda: self._human_decision is not None)

@@ -2,9 +2,10 @@
 from agents import Agent, AgentOutputSchema, ModelSettings
 
 from app.core.config import settings
+from app.llm.client import model_for
 from app.schemas.cards import CardDraft, CritiqueReport, SupplierFacts
 
-_MODEL = settings.llm_model
+_MODEL = model_for(settings.llm_model)
 
 # Reasoning-модели тратят токены на «размышления» до ответа: без запаса
 # max_tokens бюджет кончается раньше content, и локальный стрим обрывается

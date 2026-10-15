@@ -3,10 +3,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.core import db
-from app.core.config import settings
-from app.repositories import jobs as jobs_repo
-from app.temporal.client import temporal_client
+from app.services.jobs import submit_job
 from app.temporal.workflows import RagCardWorkflow
 
 router = APIRouter(tags=["generate"])
@@ -24,17 +21,10 @@ async def generate_card(
     body: GenerateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    with db.connection() as conn:
-        job_id = jobs_repo.create_job(
-            conn,
-            {"document_ids": body.document_ids, "product_hint": body.product_hint},
-            idempotency_key,
-        )
-    client = await temporal_client()
-    await client.start_workflow(
+    answer = await submit_job(
+        {"document_ids": body.document_ids, "product_hint": body.product_hint},
+        idempotency_key,
         RagCardWorkflow.run,
-        args=[job_id, body.document_ids, body.product_hint],
-        id=job_id,  # идентификатор процесса = идентификатор задачи в базе
-        task_queue=settings.temporal_task_queue,
+        lambda job_id: [job_id, body.document_ids, body.product_hint],
     )
-    return JSONResponse({"id": job_id, "status": "pending"}, status_code=202)
+    return JSONResponse(answer, status_code=202)

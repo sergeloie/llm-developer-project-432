@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.llm.client import model_for
 from app.services.json_utils import parse_llm_json
 
 log = get_logger(__name__)
@@ -21,7 +22,7 @@ class JudgeVerdict(BaseModel):
 
 _judge_agent = Agent(
     name="Judge",
-    model=settings.llm_model_cheap,
+    model=model_for(settings.llm_model_cheap),
     model_settings=ModelSettings(max_tokens=4096, temperature=0.1),
     instructions=(
         "Ты — строгий оценщик карточек товара. Получаешь КОНТЕКСТ (фрагменты "
