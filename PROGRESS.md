@@ -35,10 +35,29 @@
 - ruff: All checks passed.
 - СЛЕДУЮЩИЙ ШАГ: шаг 3 (LLM-клиент, пайплайн, jobs-репозиторий, Temporal-процесс) — по PLAN.md раздел «Шаг 3».
 
+### 2026-10-15. Шаг 3 (LLM-клиент, пайплайн, фоновый job, Temporal) — ВЫПОЛНЕН
+- `app/llm/client.py`: `complete(prompt, role, system, ...)` — единственная граница провайдера. Ретраи ТОЛЬКО на 429/5xx/сеть/таймаут c экспонентой+jitter; 4xx не ретраим. Замер duration, токены из `usage` (fallback-оценка 4 симв/токен, если usage нулевой). role→модель: main/cheap.
+- `app/agents/prompts.py`: промпты — функции (extractor/generator/critic), JSON-схема + пример формы текстом (LM Studio strict mode не поддерживает).
+- `app/schemas.py`: SupplierFacts, CardDraft (валидаторы: пустые значения, поле в двух списках, confidence 0..1), CritiqueReport, SourceRef, SeoBlock, JudgeVerdict (на шаг 8).
+- `app/services/pipeline.py`: extract→(generate→critique→feedback)*≤3; валидация с лечением (невалидный ответ → повторный запрос с текстом ошибки, ≤3 попыток); точечная переделка `repair_field`; всё с инъекцией `complete` для тестов.
+- `app/services/parse.py`: разбор 4 видов ответа (чистый JSON / в заборах / с текстом вокруг / мусор) через первый сбалансированный объект.
+- `app/repositories/jobs.py`: create (идемпотентность по ключу — возвращает существующую), get, update_status, set_result; SQL только в репозитории.
+- Temporal: `app/temporal/{workflows,activities,kickoff}.py` + `app/temporal_worker.py` (пул потоков ThreadPoolExecutor(8) для sync-activity `set_job_status_activity`; статус в базу — ОТДЕЛЬНЫЙ шаг). Сигналы approve/reject, query phase, долгая пауза `wait_condition`. Порог уверенности передаётся АРГУМЕНТОМ workflow (не читается из Settings внутри песочницы).
+- Роутеры: `/cards` (sync), `/jobs` (202 + Idempotency-Key + GET), `/workflows` (старт/статус/сигналы/результат).
+- E2E ПРОВЕРЕНО на живой LM Studio: job → done за ~20с (extract 2.6s, generate 9.5s, critique 3.8s). Оба теста прогона скрыты в тестах (7 passed, mock-клиент, без модели).
+- УСТОЙЧИВОСТЬ ПРОВЕРЕНА: убил воркер на фазе generate r1, поднял нового — процесс дошёл до конца с того же места (phase generate r2), выполненные шаги не повторялись. Статус был pending до завершения. НАЙДЕННЫЙ ГРАБЛЬ: после смерти воркера запущенный activity ждал до start_to_close (900с) — добавлен heartbeat_timeout=3мин + activity.heartbeat() в LLM-activity, теперь переоткрытие через 3 минуты.
+- консоль Windows показывает кириллицу как mojibake (кодировка cp-консоли) — это только отображение; в БД/логах всё в порядке (utf-8).
+- Тесты: 7 passed (пайплайн успех/переделка/петля исчерпана, 4 вида разбора, контракт-валидация, репозиторий jobs на живой карточке test). ruff чисто.
+- СЛЕДУЮЩИЙ ШАГ: шаг 4 (строгий контракт — уже частично сделан: schema-валидаторы в schemas.py, лечение/парсинг/точечная переделка в pipeline.py) — добить: метаданные состояния needs_human по порогу уверенности уже в workflow; нужно (1) проверить точечную переделку логом вызовов, (2) тест скудных данных → needs_human, (3) tune критик (он слишком strict — см. грабли).
+
 ### Грабли/заметки
-- Temporal image auto-setup 1.29.7: HTTP `/health` на 7233 не существует (пустой ответ) — живость проверяем через UI :8233 (200) и логи контейнера; gRPC-коннект проверится на шаге 3 при подключении воркера.
-- psycopg3 `conn.execute(multi_statement_sql)` работает (без параметров) — раннер гоняет файл целиком в одной транзакции.
-- `.venv` в Windows: binaries в `.venv/Scripts/`, включая `ruff.exe` (в Makefile пути прописаны).
+- Temporal image auto-setup 1.29.7: HTTP `/health` на 7233 не существует — живость через UI :8233 (200) и логи.
+- psycopg3 `conn.execute(multi-statement)` работает — раннер гоняет файл в одной транзакции.
+- КРИТИК-МОДЕЛЬ qwen3-4b слишком строг: считает benefits (выведенные из фактов) выдуманными; треяет seo/confidence в фактах. На шаге 4 перерабатываем промпт критика: выдуманным считается только то, чего нет в фактах КАРДИНАЛЬНО (числа/характеристики), а выводы («сталь — практичный материал») разрешены.
+- после смерти воркера activity без heartbeat ждёт start_to_close — ОБязательно ставить heartbeat_timeout на LLM-activities.
+- `.venv` в Windows: binaries в `.venv/Scripts/` (ruff.exe и т.п.).
+- standalone-скрипты: `db.init_pool()` нужен вручную (в FastAPI это делает lifespan).
+- фоновые процессы с кодбуффа: BACKGROUND process_type + лог-файлы в temp; taskkill //F //PID для остановки.
 
 ### Блокеры
 - (нет)

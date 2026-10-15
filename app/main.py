@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.core import db
 from app.core.logging import get_logger, setup_logging
+from app.routers import cards, jobs, workflows
 
 log = get_logger(__name__)
 
@@ -19,6 +20,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="card-service", lifespan=lifespan)
+app.include_router(cards.router)
+app.include_router(jobs.router)
+app.include_router(workflows.router)
+# Роутеры шагов 5+ (документы, генерация по документам) подключаются на своих шагах.
 
 
 @app.get("/health")
@@ -31,6 +36,3 @@ async def health():
 async def ready():
     """Готовность: база отвечает, расширение vector активно."""
     return {"status": "ok", **db.ping()}
-
-
-# Роутеры подключаются на своих шагах.
