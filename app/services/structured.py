@@ -33,6 +33,8 @@ async def validate_or_retry(prompt: str, feedback_prefix: str = "") -> CardDraft
     last_error: Exception | None = None
     for attempt in range(MAX_FIX_ATTEMPTS + 1):
         out = await run_agent(generator_agent, current_prompt)
+        if isinstance(out, CardDraft):
+            return out
         try:
             data = parse_llm_json(out)
             return CardDraft.model_validate(data)
@@ -64,6 +66,8 @@ async def regenerate_field(draft: CardDraft, field: str, error: str) -> CardDraf
         "Ответ — полный JSON карточки."
     )
     out = await run_agent(fixer_agent, prompt)
+    if isinstance(out, CardDraft):
+        return out
     data = parse_llm_json(out)
     return CardDraft.model_validate(data)
 
