@@ -137,3 +137,4 @@ class IdempotentResponse(BaseModel):
 
 def new_id(prefix: str = "job") -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
+Seo = SeoBlock
