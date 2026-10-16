@@ -39,10 +39,17 @@ class FakeCursor:
             self.store["rows"][job_id] = {"idempotency_key": key, "status": "pending"}
             self.store["by_key"][key] = job_id
             self.store["inserts"] += 1
-        elif sql.startswith("SELECT id, status, attempts, result, error"):
+        elif sql.startswith("SELECT id, status, attempts, result, error, guard_report"):
             job_id = args[0]
             row = self.store["rows"].get(job_id)
-            self.pending = None if row is None else (job_id, row["status"], 0, None, None)
+            self.pending = None if row is None else (
+                job_id,
+                row["status"],
+                0,
+                None,
+                None,
+                None,
+            )
         else:
             raise AssertionError(f"неожиданный SQL: {sql}")
 
