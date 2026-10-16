@@ -1,0 +1,19 @@
+meta {
+  name: Upload document
+  type: http
+}
+
+post {
+  url: {{baseUrl}}/documents
+  body:multipart-form {
+    file: @file(../data/kettle_manual.pdf)
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("docId", res.getBody().id)
+}
+
+assert {
+  eq: {{res.status}} 202
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Generate card
+  type: http
+}
+
+post {
+  url: {{baseUrl}}/generate-card
+  body:json {
+    {
+      "document_ids": ["{{docId}}"],
+      "product_hint": ""
+    }
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("jobId", res.getBody().id)
+}
+
+assert {
+  eq: {{res.status}} 202
+}

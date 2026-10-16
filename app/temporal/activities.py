@@ -21,8 +21,10 @@ from temporalio import activity
 
 from app.core import db
 from app.core.logging import get_logger
+from app.repositories import chunks as chunks_repo
 from app.repositories import documents as docs_repo
 from app.repositories import jobs as jobs_repo
+from app.repositories import traces as traces_repo
 from app.schemas.cards import CardDraft, SupplierFacts
 from app.services import documents as docs_service
 from app.services import pipeline as steps
@@ -113,6 +115,21 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
     from app.services import rag_pipeline
 
     structlog.contextvars.bind_contextvars(job_id=job_id)
+    # Трасса пайплайна: чанки документа — то, что реально увидит модель.
+    try:
+        with db.connection() as conn:
+            traces_repo.insert_step(
+                conn,
+                job_id=job_id,
+                step="document_chunks",
+                agent="parser",
+                parsed_output={
+                    "document_ids": document_ids,
+                    "chunks": chunks_repo.get_chunks_by_doc_ids(conn, document_ids or []),
+                },
+            )
+    except Exception as trace_exc:
+        log.warning("trace_accounting_failed", error=repr(trace_exc))
     # Соединение берётся на каждую запись статуса, а не на весь пайплайн: держать
     # его занятым, пока отвечает модель, значит занять место в пуле на минуты.
     try:
@@ -131,6 +148,18 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
             )
         with db.connection() as conn:
             jobs_repo.set_status(conn, job_id, status, result=draft, bump_attempts=True)
+        # Трасса пайплайна: RAG-контекст, ушедший в генератор (с метками [chunk_id]).
+        try:
+            with db.connection() as conn:
+                traces_repo.insert_step(
+                    conn,
+                    job_id=job_id,
+                    step="rag_context",
+                    agent="retrieval",
+                    raw_completion=_context,
+                )
+        except Exception as trace_exc:
+            log.warning("trace_accounting_failed", error=repr(trace_exc))
         log.info(
             "rag_job_finished", job_id=job_id, status=status, attempts=attempts,
             masked_pii=guard.masked_pii, suspicious=len(guard.suspicious_chunks),

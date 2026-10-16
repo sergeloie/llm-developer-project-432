@@ -74,9 +74,12 @@ class Settings(BaseSettings):
     embed_device: str = "cpu"
 
     retrieval_top_k: int = 5
-    # embeddinggemma-300m даёт косинус 0.4-0.55 для релевантных пар:
-    # порог выше — режет нормальные результаты, ниже — пускает мусор
-    retrieval_threshold: float = 0.35
+    # embeddinggemma-300m даёт косинус 0.4-0.55 для релевантных пар.
+    # Для RAG важен recall: лучше подать лишний чанк, чем потерять спецификацию.
+    # Снижен с 0.35 до 0.25 — пускает умеренно-близкие (0.25-0.4), режет только
+    # мусор (<0.25). Путь генерации по явно заданным document_ids порог не
+    # использует вообще (берёт все чанки документа).
+    retrieval_threshold: float = 0.25
 
     suspicious_chunk_limit: int = 2
 

@@ -5,6 +5,7 @@ retry-политика, таймаут, различие ошибок 429/5xx/4x
 Сервисы вызывают run_agent() и не знают про провайдера.
 """
 import asyncio
+import json
 import random
 import time
 
@@ -107,6 +108,7 @@ async def run_agent(agent: Agent, prompt: str):
                 Runner.run(agent, prompt), timeout=settings.llm_timeout_s
             )
             _log_call(agent, result, started)
+            _trace_step(agent, prompt, result)
             return result.final_output
         except Exception as exc:
             if attempt == max_retries or not _retryable(exc):
@@ -208,3 +210,89 @@ def _log_call(agent: Agent, result, started: float) -> None:
         )
     except Exception as exc:
         log.warning("llm_call_accounting_failed", error=repr(exc))
+
+
+def _extract_raw_text(result) -> str | None:
+    """Сырой текст ответа модели из RunResult: лучшие усилия, не роняет пайплайн."""
+    try:
+        responses = getattr(result, "raw_responses", None)
+        if not responses:
+            return None
+        parts: list[str] = []
+        for resp in responses:
+            output = getattr(resp, "output", None)
+            if not output:
+                continue
+            for item in output:
+                content = getattr(item, "content", None)
+                if not content:
+                    continue
+                for block in content:
+                    text = getattr(block, "text", None)
+                    if text:
+                        parts.append(text)
+        return "\n".join(parts) if parts else None
+    except Exception:
+        return None
+
+
+def _normalize_parsed(out):
+    """final_output → JSON-совместимый объект для колонки jsonb."""
+    try:
+        if hasattr(out, "model_dump"):
+            return out.model_dump()
+        if isinstance(out, (dict, list)):
+            return out
+        if isinstance(out, str):
+            try:
+                return json.loads(out)
+            except Exception:
+                return {"text": out}
+    except Exception:
+        return None
+    return None
+
+
+def _trace_step(agent: Agent, prompt: str, result) -> None:
+    """Шаг трассы пайплайна в pipeline_traces: промпт, сырой ответ, распарсенный вывод.
+
+    Пишется только для вызовов внутри job (job_id есть в structlog-контексте) —
+    иначе смотреть не на что. Ошибки учёта не роняют пайплайн.
+    """
+    try:
+        import structlog
+
+        from app.core import db
+        from app.repositories import traces as repo
+
+        ctx = structlog.contextvars.get_contextvars() or {}
+        job_id = ctx.get("job_id")
+        if not job_id:
+            return
+        instructions = getattr(agent, "instructions", None)
+        prompt_text = (
+            f"# System\n{instructions}\n\n# User\n{prompt}" if instructions else prompt
+        )
+        usage = None
+        responses = getattr(result, "raw_responses", None)
+        if responses:
+            usage_obj = getattr(responses[-1], "usage", None)
+            if usage_obj:
+                usage = {
+                    "input_tokens": getattr(usage_obj, "input_tokens", None),
+                    "output_tokens": getattr(usage_obj, "output_tokens", None),
+                }
+        with db.connection() as conn:
+            repo.insert_step(
+                conn,
+                job_id=job_id,
+                step=getattr(agent, "name", "agent"),
+                agent=getattr(agent, "name", None),
+                model=model_name(getattr(agent, "model", None)),
+                prompt_text=prompt_text,
+                raw_completion=_extract_raw_text(result),
+                parsed_output=_normalize_parsed(getattr(result, "final_output", None)),
+                usage_json=usage,
+            )
+    except Exception as exc:
+        log.warning("trace_accounting_failed", error=repr(exc))

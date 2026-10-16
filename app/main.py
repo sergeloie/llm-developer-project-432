@@ -1,12 +1,15 @@
+import os
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core import db
 from app.core.logging import setup_logging
-from app.routers import cards, documents, generate, health, jobs, metrics, workflows
+from app.routers import cards, debug, documents, generate, health, jobs, metrics, workflows
 
 
 @asynccontextmanager
@@ -38,3 +41,13 @@ app.include_router(jobs.router)
 app.include_router(workflows.router)
 app.include_router(documents.router)
 app.include_router(generate.router)
+app.include_router(debug.router)
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+app.mount("/debug-ui", StaticFiles(directory=STATIC_DIR, html=True), name="debug-ui")
+
+
+@app.get("/debug", include_in_schema=False)
+async def debug_redirect():
+    return RedirectResponse("/debug-ui/")

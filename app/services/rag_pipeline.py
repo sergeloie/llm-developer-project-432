@@ -30,6 +30,17 @@ async def retrieve_context_async(
     query: str, doc_ids: list[str] | None = None
 ) -> tuple[str, GuardReport]:
     """Retrieval → guardrails → сборка контекста. Возвращает (контекст, отчёт)."""
+    if doc_ids:
+        # Генерация по явно заданным документам: берём ВСЕ их чанки, без порога
+        # сходства. Иначе similarity-top-k (threshold=0.35 + AND-FTS) отбрасывает
+        # до 75% текста, и модель достраивает карточку из имени файла (баг с
+        # heater_passport). Контекст режется по лимиту символов уже в build_context.
+        with db.connection() as conn:
+            chunks = chunks_repo.get_chunks_by_doc_ids(conn, doc_ids)
+        chunks, report = await guard_context(chunks)
+        report.retrieval_scores = {}
+        return build_context(chunks), report
+
     chunks = search(query, mode="hybrid", doc_ids=doc_ids, top_k=settings.retrieval_top_k)
     chunks, report = await guard_context(chunks)
     report.retrieval_scores = {

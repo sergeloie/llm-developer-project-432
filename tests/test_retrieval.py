@@ -114,9 +114,11 @@ def test_hybrid_threshold_cuts_vector_leg_but_keeps_fts_only(db_with_chunks):
             "VALUES ('tstc4', 'tstdoc1', 3, %s, '{}')",
             ("Мощность блендера 800 Вт, двойная стенка корпуса",),
         )
-    # 0.9: tstc1 (косинус 1.0) проходит, tstc3 (≈0.71) и tstc2 (0.0) — нет
+    # 0.9: tstc1 (косинус 1.0) проходит, tstc3 (≈0.71) и tstc2 (0.0) — нет.
+    # Scoped к фикстурному документу: иначе OR-FTS находит «Мощность» и в
+    # реальных документах БД, и тест становится недетерминированным.
     results = chunks_repo.search_hybrid(
-        db_with_chunks, "мощность блендера", top_k=5, threshold=0.9
+        db_with_chunks, "мощность блендера", top_k=5, threshold=0.9, doc_ids=["tstdoc1"]
     )
     ids = [r["chunk_id"] for r in results]
     assert "tstc1" in ids
@@ -140,3 +142,64 @@ def test_doc_filter(db_with_chunks):
         db_with_chunks, "мощность блендера", top_k=3, doc_ids=["другой-doc"]
     )
     assert results == []
+
+
+def test_fts_search_uses_or_semantics(db_with_chunks):
+    """Регрессия: FTS должен быть OR, а не AND.
+
+    Ни один чанок не содержит оба слова сразу («блендера» только в tstc1,
+    «гарантия» только в tstc3). При AND-семантике совпадений нет; при OR
+    должны найтись оба чанка, а «чайник» (tstc2) — ни по одному слову.
+    """
+    from app.repositories import chunks as chunks_repo
+
+    results = chunks_repo.search_fts(db_with_chunks, "блендера гарантия", top_k=50)
+    ids = {r["chunk_id"] for r in results}
+    assert "tstc1" in ids
+    assert "tstc3" in ids
+    assert "tstc2" not in ids
+
+
+def test_hybrid_fts_uses_or_semantics(db_with_chunks):
+    """То же, но через гибрид: OR-FTS должен подтянуть оба чанка в слияние."""
+    from app.repositories import chunks as chunks_repo
+
+    results = chunks_repo.search_hybrid(db_with_chunks, "блендера гарантия", top_k=50)
+    ids = {r["chunk_id"] for r in results}
+    assert "tstc1" in ids
+    assert "tstc3" in ids
+
+
+def test_hybrid_keeps_fts_match_with_low_vector_score(db_with_chunks):
+    """OR-FTS бесполезен, если чанк, найденный FTS, режется по векторному cosine.
+
+    Запрос без слова «блендер» → мок отдаёт E_KETTLE, поэтому tstc1 (E_BLENDER)
+    имеет cosine 0 и векторная нога его не держит; но tstc1 содержит «Мощность»,
+    значит FTS его находит. Гибрид обязан сохранить такой чанк.
+    """
+    from app.repositories import chunks as chunks_repo
+
+    results = chunks_repo.search_hybrid(db_with_chunks, "мощность", top_k=10)
+    ids = [r["chunk_id"] for r in results]
+    assert "tstc1" in ids
+
+
+def test_retrieve_context_returns_all_chunks_when_doc_ids_given(db_with_chunks):
+    """Регрессия на баг heater_passport: при явном doc_ids берём ВЕСЬ документ,
+    а не similarity-top-k. Иначе чанки спецификации (не проходящие порог cosine
+    по generic-запросу) отбрасывались, и модель достраивала карточку из имени
+    файла."""
+    import asyncio
+
+    from app.services.rag_pipeline import retrieve_context_async
+
+    ctx, report = asyncio.run(
+        retrieve_context_async("карточка товара характеристики", doc_ids=["tstdoc1"])
+    )
+    # Все три чанка документа должны попасть в контекст. tstc1 («Мощность
+    # блендера») по similarity отбрасывается (query → E_KETTLE, tstc1 → E_BLENDER,
+    # cosine 0 < 0.35) — именно этот чанк терялся до фикса.
+    assert "Мощность блендера 800 Вт" in ctx
+    assert "Чайник 2200 Вт" in ctx
+    assert "Гарантия 24 месяца" in ctx
+    assert report.suspicious_chunks == []

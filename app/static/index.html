@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Консоль пайплайна product-card-ai</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --fg:#e6e6e6;
+            --muted:#9aa3b2; --acc:#5aa9ff; --ok:#56d364; --warn:#e3b341; --bad:#f85149; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    header { padding:16px 20px; border-bottom:1px solid #2a2f3a; background:var(--panel);
+             position:sticky; top:0; z-index:5; }
+    header h1 { font-size:16px; margin:0 0 4px; font-weight:600; }
+    .hint { color:var(--muted); font-size:12px; }
+    main { padding:20px; max-width:1100px; margin:0 auto; }
+    .panel { background:var(--panel); border:1px solid #2a2f3a; border-radius:10px;
+             padding:14px 16px; margin-bottom:16px; }
+    .panel h2 { font-size:14px; margin:0 0 10px; font-weight:600; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    input[type=text], input[type=file] { background:var(--panel2); border:1px solid #30363d;
+            color:var(--fg); padding:8px 10px; border-radius:6px; font-size:14px; }
+    input[type=text] { min-width:280px; }
+    button { background:var(--acc); color:#06121f; border:0; padding:8px 14px;
+             border-radius:6px; font-weight:600; cursor:pointer; }
+    button:hover { filter:brightness(1.08); }
+    button:disabled { background:#30363d; color:#6b7280; cursor:not-allowed; filter:none; }
+    .status-line { margin-top:10px; color:var(--muted); min-height:18px; }
+    .job { background:var(--panel); border:1px solid #2a2f3a; border-radius:10px;
+           padding:14px 16px; margin-bottom:18px; }
+    .job .row { display:flex; gap:18px; flex-wrap:wrap; color:var(--muted); }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px;
+            font-weight:600; background:var(--panel2); border:1px solid #30363d; }
+    .pill.done { color:var(--ok); } .pill.needs_review { color:var(--warn); }
+    .pill.rejected, .pill.failed { color:var(--bad); }
+    .step { background:var(--panel); border:1px solid #2a2f3a; border-radius:10px;
+            padding:14px 16px; margin-bottom:14px; }
+    .step h3 { margin:0 0 6px; font-size:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .step .meta { color:var(--muted); font-weight:400; font-size:12px; }
+    .step.document_chunks { border-left:4px solid #8957e5; }
+    .step.rag_context { border-left:4px solid #2d9bf0; }
+    .step.llm { border-left:4px solid #3fb950; }
+    details { margin-top:10px; background:var(--panel2); border-radius:8px; padding:6px 12px; }
+    details[open] { padding-bottom:12px; }
+    summary { cursor:pointer; color:var(--acc); font-weight:600; padding:4px 0; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#0c0e12; border:1px solid #232833;
+          border-radius:6px; padding:10px 12px; margin:8px 0 0; max-height:420px; overflow:auto; }
+    .chunk { border:1px solid #2a2f3a; border-radius:8px; padding:8px 12px; margin:8px 0; }
+    .chunk .tag { color:var(--muted); font-size:12px; }
+    .error { color:var(--bad); padding:20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Консоль пайплайна</h1>
+    <div class="hint">Загрузите документ → дождитесь индексации → отправьте на обработку.
+      Трасса (документ, чанки, промпты, ответы, критик) обновляется вживую.</div>
+  </header>
+  <main>
+    <!-- Шаг 1: загрузка -->
+    <section class="panel">
+      <h2>1. Загрузить документ</h2>
+      <div class="row">
+        <input type="file" id="file" accept=".pdf,.docx,.xlsx" />
+        <button id="uploadBtn">Загрузить</button>
+      </div>
+      <div id="docStatus" class="status-line"></div>
+    </section>
+
+    <!-- Шаг 2: обработка -->
+    <section class="panel">
+      <h2>2. Отправить на обработку</h2>
+      <div class="row">
+        <input type="text" id="productHint" placeholder='product_hint, напр. «блендер МиксерПро 800» (необязательно)' />
+        <button id="genBtn" disabled>Отправить на обработку</button>
+      </div>
+      <div id="jobStatus" class="status-line"></div>
+    </section>
+
+    <!-- Шаг 3: инспект -->
+    <section class="panel">
+      <h2>3. Инспект пайплайна</h2>
+      <div class="row">
+        <input type="text" id="jobId" placeholder="или вставить существующий job_id вручную" />
+        <button onclick="load()">Показать трассу</button>
+      </div>
+      <div id="out" style="margin-top:12px">
+        <div class="job">Здесь появится сводка задачи и пошаговая трасса.</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let docTimer = null, jobTimer = null;
+    const docState = { id: null };
+    const jobState = { id: null };
+
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function j(v) { return JSON.stringify(v, null, 2); }
+    function setStatus(id, text, isError) {
+      $(id).innerHTML = isError
+        ? `<span style="color:var(--bad)">${esc(text)}</span>`
+        : esc(text);
+    }
+    function cls(step) {
+      if (step === "document_chunks") return "document_chunks";
+      if (step === "rag_context") return "rag_context";
+      return "llm";
+    }
+    function usageStr(u) {
+      if (!u) return "";
+      return `tokens: ${u.input_tokens ?? "?"}↓ / ${u.output_tokens ?? "?"}↑`;
+    }
+
+    // ---------- отрисовка трассы (реюзается для живого и ручного просмотра) ----------
+    function renderJob(job) {
+      const status = job.status || "?";
+      let html = `<div class="job"><div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <span class="pill ${status}">${esc(status)}</span>
+        <strong>job ${esc(job.id)}</strong>
+        <span class="meta">попыток: ${job.attempts ?? "?"}</span>
+        ${job.source_coverage != null ? `<span class="meta">покрытие источников: ${job.source_coverage}</span>` : ""}
+      </div>`;
+      if (job.error) html += `<pre style="color:var(--bad)">${esc(job.error)}</pre>`;
+      if (job.result) {
+        html += `<details open><summary>Итоговая карточка (CardDraft)</summary><pre>${esc(j(job.result))}</pre></details>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+    function renderDocumentChunks(step) {
+      const data = step.parsed_output || {};
+      const chunks = data.chunks || [];
+      let html = `<div class="step document_chunks"><h3>Документ и чанки
+        <span class="meta">agent: ${esc(step.agent)} · чанков: ${chunks.length}</span></h3>`;
+      const doc = chunks.map((c) => c.text || "").join("\n\n");
+      html += `<details><summary>Собранный документ (конкатенация чанков)</summary><pre>${esc(doc)}</pre></details>`;
+      html += `<details open><summary>Чанки по отдельности</summary>`;
+      for (const c of chunks) {
+        html += `<div class="chunk"><div class="tag">#${esc(c.ordinal)} · chunk_id ${esc(c.chunk_id)} · doc ${esc(c.doc_id)}${c.page != null ? " · стр. " + esc(c.page) : ""}</div><pre>${esc(c.text)}</pre></div>`;
+      }
+      html += `</details></div>`;
+      return html;
+    }
+    function renderRagContext(step) {
+      const ctx = step.raw_completion || "";
+      return `<div class="step rag_context"><h3>RAG-контекст (что ушло в генератор)
+        <span class="meta">agent: ${esc(step.agent)}</span></h3>
+        <details open><summary>Контекст с метками [chunk_id]</summary><pre>${esc(ctx)}</pre></details></div>`;
+    }
+    function renderLlm(step) {
+      let html = `<div class="step llm"><h3>${esc(step.step || "agent")}
+        <span class="meta">agent: ${esc(step.agent)} · model: ${esc(step.model)} · ${usageStr(step.usage)}</span></h3>`;
+      if (step.prompt_text != null)
+        html += `<details open><summary>Промпт (system + user)</summary><pre>${esc(step.prompt_text)}</pre></details>`;
+      if (step.raw_completion != null)
+        html += `<details><summary>Сырой ответ LLM</summary><pre>${esc(step.raw_completion)}</pre></details>`;
+      if (step.parsed_output != null)
+        html += `<details open><summary>Распарсенный ответ</summary><pre>${esc(j(step.parsed_output))}</pre></details>`;
+      html += `</div>`;
+      return html;
+    }
+    function renderStep(step) {
+      if (step.step === "document_chunks") return renderDocumentChunks(step);
+      if (step.step === "rag_context") return renderRagContext(step);
+      return renderLlm(step);
+    }
+    function render(data) {
+      let html = renderJob(data.job);
+      const steps = data.steps || [];
+      if (!steps.length) {
+        html += `<div class="job">Трасса пуста. Возможно, job ещё не запускался или использован путь /cards (без документов).</div>`;
+      } else {
+        for (const s of steps) html += renderStep(s);
+      }
+      $("out").innerHTML = html;
+    }
+
+    // ---------- шаг 1: загрузка документа ----------
+    async function uploadDoc() {
+      const f = $("file").files[0];
+      if (!f) { setStatus("docStatus", "выберите файл", true); return; }
+      setStatus("docStatus", "Загрузка…");
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const res = await fetch("/documents", { method: "POST", body: fd });
+        if (!res.ok) { setStatus("docStatus", "Ошибка загрузки: " + res.status, true); return; }
+        const d = await res.json();
+        docState.id = d.id;
+        setStatus("docStatus", `Документ ${d.id} — статус: ${d.status}`);
+        startDocPoll();
+      } catch (e) { setStatus("docStatus", "Ошибка: " + e, true); }
+    }
+    function startDocPoll() {
+      if (docTimer) clearInterval(docTimer);
+      pollDoc();
+      docTimer = setInterval(pollDoc, 2000);
+    }
+    async function pollDoc() {
+      if (!docState.id) return;
+      try {
+        const res = await fetch("/documents/" + encodeURIComponent(docState.id));
+        if (!res.ok) { setStatus("docStatus", "Ошибка опроса: " + res.status, true); return; }
+        const d = await res.json();
+        const extra = d.chunks_count != null ? ` · чанков: ${d.chunks_count}` : "";
+        setStatus("docStatus", `Документ ${d.id} · ${d.filename || ""} — статус: ${d.status}${extra}`);
+        if (d.status === "indexed") {
+          if (docTimer) { clearInterval(docTimer); docTimer = null; }
+          $("genBtn").disabled = false;
+        } else if (d.status === "failed") {
+          if (docTimer) { clearInterval(docTimer); docTimer = null; }
+          setStatus("docStatus", "Разбор не удался: " + (d.error || ""), true);
+        }
+      } catch (e) { /* транзитная ошибка сети — следующий тик */ }
+    }
+
+    // ---------- шаг 2: отправка на обработку ----------
+    async function generateCard() {
+      if (!docState.id) return;
+      const hint = $("productHint").value.trim();
+      setStatus("jobStatus", "Отправка на обработку…");
+      try {
+        const res = await fetch("/generate-card", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document_ids: [docState.id], product_hint: hint }),
+        });
+        if (!res.ok) { setStatus("jobStatus", "Ошибка: " + res.status, true); return; }
+        const d = await res.json();
+        const jid = (typeof d === "string") ? d : d.id;
+        jobState.id = jid;
+        $("jobId").value = jid;
+        setStatus("jobStatus", `Job ${jid} — запущен`);
+        startJobPoll();
+      } catch (e) { setStatus("jobStatus", "Ошибка: " + e, true); }
+    }
+    function startJobPoll() {
+      if (jobTimer) clearInterval(jobTimer);
+      pollJob();
+      jobTimer = setInterval(pollJob, 2500);
+    }
+    async function pollJob() {
+      if (!jobState.id) return;
+      try {
+        const res = await fetch("/debug/" + encodeURIComponent(jobState.id));
+        if (!res.ok) { setStatus("jobStatus", "Ошибка опроса: " + res.status, true); return; }
+        const data = await res.json();
+        setStatus("jobStatus",
+          `Job ${jobState.id} — статус: ${data.job.status} · попыток: ${data.job.attempts ?? "?"}`);
+        render(data);
+        const st = data.job.status;
+        if (["done", "needs_review", "rejected", "failed"].includes(st)) {
+          if (jobTimer) { clearInterval(jobTimer); jobTimer = null; }
+        }
+      } catch (e) { /* транзитная ошибка — следующий тик */ }
+    }
+
+    // ---------- шаг 3: ручной показ существующей трассы ----------
+    async function load() {
+      const id = $("jobId").value.trim();
+      if (!id) return;
+      jobState.id = id;
+      setStatus("jobStatus", "Загрузка трассы…");
+      try {
+        const res = await fetch("/debug/" + encodeURIComponent(id));
+        if (!res.ok) { $("out").innerHTML = `<div class="error">Ошибка ${res.status}</div>`; return; }
+        render(await res.json());
+        setStatus("jobStatus", "Трасса загружена");
+      } catch (e) { $("out").innerHTML = `<div class="error">${esc(e)}</div>`; }
+    }
+
+    $("uploadBtn").addEventListener("click", uploadDoc);
+    $("genBtn").addEventListener("click", generateCard);
+  </script>
+</body>
+</html>

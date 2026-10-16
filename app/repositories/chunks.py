@@ -75,14 +75,26 @@ def search_fts(
     conn: psycopg.Connection, query: str, *, top_k: int | None = None,
     doc_ids: list[str] | None = None,
 ) -> list[dict]:
-    """Полнотекстовый поиск по tsvector ('russian')."""
+    """Полнотекстовый поиск по tsvector ('russian').
+
+    Семантика OR: любое слово запроса должно встретиться в чанке. plainto_tsquery
+    по умолчанию строит И (A & B & C) — для свободного запроса это почти всегда
+    пусто, поэтому оператор &→| (слова нормализованы plainto_tsquery, меняем
+    только оператор — инъекция невозможна).
+    """
     top_k = top_k or settings.retrieval_top_k
     sql = """
         SELECT c.id, c.doc_id, c.text, c.metadata,
                d.filename,
                ts_rank(c.tsv, q.query) AS score
         FROM chunks c JOIN documents d ON d.id = c.doc_id,
-             plainto_tsquery('russian', %s) AS q(query)
+             LATERAL (
+               SELECT CASE
+                        WHEN qt = '' THEN to_tsquery('russian', 'x & !x')
+                        ELSE to_tsquery('russian', replace(qt, ' & ', ' | '))
+                      END AS query
+               FROM (SELECT plainto_tsquery('russian', %s)::text AS qt) _q
+             ) q
         WHERE c.tsv @@ q.query AND d.status = 'indexed'
     """
     args: list = [query]
@@ -105,6 +117,8 @@ def search_hybrid(
 
     score = sum(1 / (rrf_k + rank_i)) по спискам результатов.
     CTE: каждый поиск — свой SELECT с ROW_NUMBER(), JOIN по chunk_id.
+    FTS-нога — OR-семантика (любое слово запроса), иначе свободный запрос
+    почти ничего не находит.
 
     threshold применяется к векторной ноге: чанк, который она принесла с
     косинусом ниже порога, в слияние не попадает. Найденный только полно-
@@ -131,7 +145,13 @@ def search_hybrid(
         ), fts AS (
             SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank(c.tsv, q.query) DESC) AS rank
             FROM chunks c JOIN documents d ON d.id = c.doc_id,
-                 plainto_tsquery('russian', %s) AS q(query)
+                 LATERAL (
+                   SELECT CASE
+                            WHEN qt = '' THEN to_tsquery('russian', 'x & !x')
+                            ELSE to_tsquery('russian', replace(qt, ' & ', ' | '))
+                          END AS query
+                   FROM (SELECT plainto_tsquery('russian', %s)::text AS qt) _q
+                 ) q
             WHERE c.tsv @@ q.query AND d.status = 'indexed'
     """
     args += [top_k * 2, query]
@@ -149,7 +169,7 @@ def search_hybrid(
         LEFT JOIN vec v ON v.id = c.id
         LEFT JOIN fts f ON f.id = c.id
         WHERE (v.id IS NOT NULL OR f.id IS NOT NULL)
-          AND (v.id IS NULL OR v.cosine >= %s)
+          AND (f.id IS NOT NULL OR v.id IS NULL OR v.cosine >= %s)
     """
     args += [top_k * 2, RRF_K, RRF_K, vec, threshold]
     sql += " ORDER BY rrf_score DESC LIMIT %s"
@@ -194,3 +214,41 @@ def _row_to_dict(r) -> dict:
         "filename": r[4],
         "score": float(r[5]) if r[5] is not None else None,
     }
+
+
+def get_chunks_by_doc_ids(conn: psycopg.Connection, doc_ids: list[str]) -> list[dict]:
+    """Все чанки документов в порядке (doc_id, ordinal): для генерации по заданным документам.
+
+    Возвращает тот же контракт, что search_* (chunk_id/doc_id/text/metadata/filename),
+    чтобы build_context собрал контекст БЕЗ similarity-фильтрации: когда документ
+    передан явно, берём весь его текст, а не top-k по cosine (иначе теряется
+    до 75% содержимого — баг с heater_passport).
+    """
+    if not doc_ids:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT c.id, c.doc_id, c.text, c.metadata, d.filename, c.ordinal "
+            "FROM chunks c JOIN documents d ON d.id = c.doc_id "
+            "WHERE c.doc_id = ANY(%s) ORDER BY c.doc_id, c.ordinal",
+            (doc_ids,),
+        )
+        rows = cur.fetchall()
+    out = []
+    for r in rows:
+        meta = dict(r[3]) if isinstance(r[3], dict) else {}
+        meta["ordinal"] = r[5]
+        out.append(
+            {
+                # Совместимость со слепком document_chunks (фронтенд читает page/ordinal
+                # топ-уровнем) + контракт build_context (metadata/filename).
+                "chunk_id": r[0],
+                "doc_id": r[1],
+                "ordinal": r[5],
+                "page": meta.get("page"),
+                "text": r[2],
+                "metadata": meta,
+                "filename": r[4],
+            }
+        )
+    return out
