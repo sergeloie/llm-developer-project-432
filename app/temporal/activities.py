@@ -137,7 +137,7 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
         with db.connection() as conn:
             jobs_repo.set_status(conn, job_id, "retrieving")
         query = product_hint or "карточка товара характеристики"
-        draft, attempts, _verdict, status, guard, _context = asyncio.run(
+        draft, attempts, _verdict, status, guard = asyncio.run(
             rag_pipeline.run_rag_pipeline(query, document_ids or None)
         )
         if guard.suspicious_chunks:
@@ -158,13 +158,16 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
             )
         # Трасса пайплайна: RAG-контекст, ушедший в генератор (с метками [chunk_id]).
         try:
+            context, _guard_report = asyncio.run(
+                rag_pipeline.retrieve_context_async(query, document_ids or None)
+            )
             with db.connection() as conn:
                 traces_repo.insert_step(
                     conn,
                     job_id=job_id,
                     step="rag_context",
                     agent="retrieval",
-                    raw_completion=_context,
+                    raw_completion=context,
                 )
         except Exception as trace_exc:
             log.warning("trace_accounting_failed", error=repr(trace_exc))
