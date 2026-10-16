@@ -1,5 +1,5 @@
 [project]
-name = "product-card-ai"
+name = "hexlet-code"
 version = "0.1.0"
 description = "Сервис, который превращает документы поставщиков в черновик карточки товара"
 requires-python = ">=3.12"
