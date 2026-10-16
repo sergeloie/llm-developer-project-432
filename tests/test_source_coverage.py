@@ -128,7 +128,10 @@ class _CoverageCursor:
 
     def execute(self, sql: str, args: tuple = ()) -> None:
         if sql.startswith("SELECT id, status, attempts, result, error"):
-            self.pending = list(args) and ["j1", "done", 1, self.rows["result"], None]
+            # колонки: id, status, attempts, result, error, guard_report
+            self.pending = list(args) and [
+                "j1", "done", 1, self.rows["result"], None, None,
+            ]
         elif sql.startswith("SELECT id, doc_id, text, metadata FROM chunks"):
             self.pending = [(cid, "d1", text, {}) for cid, text in CHUNKS.items()]
         else:
@@ -157,3 +160,4 @@ def test_job_row_carries_coverage_next_to_the_card():
     assert job["source_coverage"] == 1.0
     assert "source_coverage" not in job["result"]
     assert job["result"]["sources"][0]["chunk_id"] == "c1"
+    assert "guard_report" in job

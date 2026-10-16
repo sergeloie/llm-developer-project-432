@@ -6,6 +6,7 @@ from app.core import db
 from app.core.logging import get_logger, setup_logging
 from app.rag.embedder import embed_documents
 from app.repositories import chunks as chunks_repo
+from app.repositories import documents as docs_repo
 
 log = get_logger(__name__)
 
@@ -28,11 +29,7 @@ def index_pending_chunks(conn, doc_id: str | None = None, batch: int = 256) -> i
         log.info("reindex_batch", batch=len(ids), total=total, doc_id=doc_id or "all")
     if total:
         # документ с неполными векторами возвращается в выдачу поиска
-        conn.execute(
-            "UPDATE documents SET status = 'indexed', error = NULL "
-            "WHERE status IN ('embed_failed', 'parsing') "
-            "AND NOT EXISTS (SELECT 1 FROM chunks c WHERE c.doc_id = documents.id AND c.embedding IS NULL)"
-        )
+        docs_repo.reconcile_indexed(conn, doc_id)
     return total
 
 

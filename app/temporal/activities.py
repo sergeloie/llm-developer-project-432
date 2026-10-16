@@ -14,6 +14,7 @@ LLM-клиент, ходить в сеть.
 """
 import asyncio
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import structlog
@@ -147,7 +148,14 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
                 chunk_ids=guard.suspicious_chunks,
             )
         with db.connection() as conn:
-            jobs_repo.set_status(conn, job_id, status, result=draft, bump_attempts=True)
+            jobs_repo.set_status(
+                conn,
+                job_id,
+                status,
+                result=draft,
+                bump_attempts=True,
+                guard_report=asdict(guard),
+            )
         # Трасса пайплайна: RAG-контекст, ушедший в генератор (с метками [chunk_id]).
         try:
             with db.connection() as conn:

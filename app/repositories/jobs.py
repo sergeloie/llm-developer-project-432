@@ -41,6 +41,7 @@ def create_job(
 def set_status(
     conn: psycopg.Connection, job_id: str, status: str, *, result: CardDraft | None = None,
     error: str | None = None, bump_attempts: bool = False,
+    guard_report: dict | None = None,
 ) -> None:
     sets = ["status = %s", "updated_at = %s"]
     args: list = [status, _now()]
@@ -50,6 +51,9 @@ def set_status(
     if error is not None:
         sets.append("error = %s")
         args.append(error)
+    if guard_report is not None:
+        sets.append("guard_report = %s")
+        args.append(json.dumps(guard_report, ensure_ascii=False))
     if bump_attempts:
         sets.append("attempts = attempts + 1")
     args.append(job_id)
@@ -60,13 +64,20 @@ def set_status(
 def get_job(conn: psycopg.Connection, job_id: str) -> dict | None:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, status, attempts, result, error FROM jobs WHERE id = %s",
+            "SELECT id, status, attempts, result, error, guard_report "
+            "FROM jobs WHERE id = %s",
             (job_id,),
         )
         row = cur.fetchone()
     if not row:
         return None
-    job = {"id": row[0], "status": row[1], "attempts": row[2], "error": row[4]}
+    job = {
+        "id": row[0],
+        "status": row[1],
+        "attempts": row[2],
+        "error": row[4],
+        "guard_report": row[5],
+    }
     if row[3]:
         # psycopg3 возвращает JSONB уже как dict, а не строку
         try:

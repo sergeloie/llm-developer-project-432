@@ -15,6 +15,27 @@ import sys
 import time
 from pathlib import Path
 
+# Почему метрика может быть самой слабой — для отчёта наставнику.
+WEAKEST_EXPLANATIONS = {
+    "field_accuracy": (
+        "Доля характеристик, извлечённых из документа. Низкая — модель не "
+        "достала часть параметров (они лежат вне топ-чанков, в таблицах или в "
+        "неполной спецификации, где их действительно нет), либо нормализация "
+        "сравнения слишком строга к единицам измерения и пунктуации."
+    ),
+    "citation_hit": (
+        "Доля карточек, чьи sources указывают на чанк с ожидаемым текстом. "
+        "Низкая — retrieval отдал не те чанки, или модель сослалась на чанк, "
+        "который не содержит проверочной фразы; бьёт по проверяемости цитат."
+    ),
+    "faithfulness": (
+        "LLM-as-judge: подтверждаемость карточки контекстом (0-1). Низкая — "
+        "карточка содержит утверждения вне контекста (вода, довыдумка), либо "
+        "judge мягок к модели. Метрика помечается NaN, если модель-судья "
+        "недоступна, и тогда слабейшей считается другая метрика."
+    ),
+}
+
 from app.core import db
 from app.core.logging import get_logger, setup_logging
 from app.repositories import documents as docs_repo
@@ -149,15 +170,41 @@ def main() -> None:
             f"{r['faithfulness']!s:>5} {r['confidence']:>4.2f} {r['status']:>11} {r['latency_s']:>4.0f}s"
         )
 
+    weakest_name = None
+    weakest_value = None
     if results:
         avg_fa = sum(r["field_accuracy"] for r in results.values()) / len(results)
         avg_ch = sum(r["citation_hit"] for r in results.values()) / len(results)
         faiths = [r["faithfulness"] for r in results.values() if r["faithfulness"] is not None]
-        print(f"{'СРЕДНЕЕ':25} {avg_fa:>9.2f} {avg_ch:>7.2f} "
-              f"{(sum(faiths)/len(faiths) if faiths else float('nan')):>5.2f}")
+        avg_faith = sum(faiths) / len(faiths) if faiths else float("nan")
+        print(f"{'СРЕДНЕЕ':25} {avg_fa:>9.2f} {avg_ch:>7.2f} {avg_faith:>5.2f}")
 
+        metrics = {
+            "field_accuracy": avg_fa,
+            "citation_hit": avg_ch,
+            "faithfulness": avg_faith,
+        }
+        weakest_name = min(
+            metrics, key=lambda k: metrics[k] if not math.isnan(metrics[k]) else 2.0
+        )
+        weakest_value = metrics[weakest_name]
+        print(
+            f"\nСАМАЯ СЛАБАЯ МЕТРИКА: {weakest_name} = {weakest_value:.2f}\n"
+            f"  почему: {WEAKEST_EXPLANATIONS[weakest_name]}"
+        )
+
+    report = dict(results)
+    report["weakest_metric"] = (
+        {
+            "name": weakest_name,
+            "value": weakest_value,
+            "explanation": WEAKEST_EXPLANATIONS[weakest_name],
+        }
+        if weakest_name is not None
+        else None
+    )
     out = Path(__file__).parent / "report.json"
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nСохранено: {out}")
 
 

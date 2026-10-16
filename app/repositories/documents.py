@@ -47,6 +47,29 @@ def set_chunks_count(conn: psycopg.Connection, doc_id: str, count: int) -> None:
         )
 
 
+def reconcile_indexed(conn: psycopg.Connection, doc_id: str | None = None) -> None:
+    """Поднять документ в 'indexed', когда у него нет чанков без эмбеддинга.
+
+    Условие берётся из БД, а не из памяти reindex: между досчётом векторов и
+    этой сверкой документ мог измениться. Фильтр по doc_id сужает проверку до
+    одного документа — его используют и ingestion, и reindex_all.
+    """
+    sql = (
+        "UPDATE documents SET status = 'indexed', error = NULL "
+        "WHERE status IN ('embed_failed', 'parsing') "
+        "AND NOT EXISTS ("
+        "  SELECT 1 FROM chunks c WHERE c.doc_id = documents.id "
+        "  AND c.embedding IS NULL"
+        ")"
+    )
+    args: list = []
+    if doc_id is not None:
+        sql += " AND documents.id = %s"
+        args.append(doc_id)
+    with conn.cursor() as cur:
+        cur.execute(sql, args)
+
+
 def insert_chunks(conn: psycopg.Connection, chunks: list[dict]) -> None:
     """Батч-вставка чанков. Транзакция: либо все, либо ничего."""
     if not chunks:

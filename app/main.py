@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core import db
 from app.core.logging import setup_logging
+from app.repositories import system as system_repo
 from app.routers import cards, debug, documents, generate, health, jobs, metrics, workflows
 
 
@@ -16,7 +17,7 @@ from app.routers import cards, debug, documents, generate, health, jobs, metrics
 async def lifespan(app: FastAPI):
     setup_logging()
     with db.connection() as conn:  # проверка БД и прогрев пула
-        conn.execute("SELECT 1")
+        system_repo.ping(conn)
     yield
     db.close_pool()
 
