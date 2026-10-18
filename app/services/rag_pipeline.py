@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from app.agents.prompts import context_generator_agent, critic_agent
+from app.agents.prompts import CRITIC_CONTRACT, context_generator_agent, critic_agent
 from app.core import db
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -32,9 +32,12 @@ async def retrieve_context_async(
     """Retrieval → guardrails → сборка контекста. Возвращает (контекст, отчёт)."""
     if doc_ids:
         # Генерация по явно заданным документам: берём ВСЕ их чанки, без порога
-        # сходства. Иначе similarity-top-k (threshold=0.35 + AND-FTS) отбрасывает
-        # до 75% текста, и модель достраивает карточку из имени файла (баг с
-        # heater_passport). Контекст режется по лимиту символов уже в build_context.
+        # сходства. Иначе similarity-top-k (порог settings.retrieval_threshold +
+        # AND-FTS) отбрасывает до 75% текста, и модель достраивает карточку из
+        # имени файла (баг с heater_passport). Контекст режется по лимиту символов
+        # уже в build_context. Поиск/порог здесь не применяются намеренно — замеры
+        # на конкретных документах (где проходят верные результаты и где начинается
+        # мусор) лежат вне этого файла; менять порог без них не стоит.
         with db.connection() as conn:
             chunks = chunks_repo.get_chunks_by_doc_ids(conn, doc_ids)
         chunks, report = await guard_context(chunks)
@@ -138,22 +141,6 @@ def _enrich_sources(
                 ref.score = round(float(score), 4)
 
 
-CRITIC_CONTRACT = (
-    "КОНТРАКТ: что заполняет система, а за что отвечаешь ты.\n"
-    "- sources: doc_id, page и score подставляет система после генерации "
-    "(модель их не видит). Их наличие и любые их значения НЕ дефект; "
-    "исправить их генератор не может — не пиши их в issues.\n"
-    "- sources: твоя ответственность только chunk_id, и он должен "
-    "встречаться в КОНТЕКСТЕ как [chunk_id | ...]. Дефект — chunk_id, "
-    "которого в контексте нет.\n"
-    "- missing_fields: непустой список ожидаем, если чего-то нет в контексте; "
-    "пустой список сам по себе не дефект.\n"
-    "- Не пиши проблемой то, что правилу соответствует (например длину title, "
-    "котая укладывается в 60 символов).\n"
-    "Дефектов нет — verdict approve."
-)
-
-
 def critic_prompt(context: str, draft: CardDraft) -> str:
     """Промпт критика: правила + контракт + контекст + черновик."""
     return (
@@ -237,7 +224,9 @@ async def run_rag_pipeline(
     """Полный RAG-цикл: retrieval → guardrails → (generate → critique)* → guard_output.
 
     max_attempts по умолчанию — settings.max_pipeline_rounds.
-    Возвращает (draft, attempts, verdict, status, guard_report).
+    Возвращает (draft, attempts, verdict, status, guard_report, context):
+    context — ровно то, что ушло в генератор (с замаскированными PII), чтобы
+    его можно было без повторного retrieval положить в трассу и отдать judge.
     """
     rounds = settings.max_pipeline_rounds if max_attempts is None else max_attempts
     context, guard_report = await retrieve_context_async(query, doc_ids)
@@ -245,17 +234,25 @@ async def run_rag_pipeline(
     attempts = 0
     draft = None
     verdict = "rejected"
-    while attempts < rounds:
-        attempts += 1
-        draft = await generate_from_context(
-            context, feedback or None, guard_report.retrieval_scores
-        )
-        report = await critique_with_context(context, draft)
-        if report.verdict == "approve":
-            verdict = "approved"
-            break
-        feedback = report.issues
-        log.info("rag_pipeline_regenerate", attempt=attempts, issues=report.issues)
+    try:
+        while attempts < rounds:
+            attempts += 1
+            draft = await generate_from_context(
+                context, feedback or None, guard_report.retrieval_scores
+            )
+            report = await critique_with_context(context, draft)
+            if report.verdict == "approve":
+                verdict = "approved"
+                break
+            feedback = report.issues
+            log.info("rag_pipeline_regenerate", attempt=attempts, issues=report.issues)
+    except SourceValidationError as exc:
+        # Модель упорно ссылается на выдуманные/несуществующие источники:
+        # карточке верить нельзя, но и валить задачу в failed нельзя — её
+        # должен посмотреть человек. Уходим в needs_review с пустым черновиком,
+        # не тратя повторные вызовы на already-провалившуюся генерацию.
+        log.warning("rag_source_validation_failed", attempts=attempts, error=str(exc)[:300])
+        return None, attempts, "rejected", "needs_review", guard_report, context
 
     if verdict == "approved" and draft is not None:
         # фильтр выхода: следы PII/инъекции в карточке
@@ -270,4 +267,4 @@ async def run_rag_pipeline(
         guard_report,
         cited_chunk_texts(draft) if draft is not None and verdict == "approved" else None,
     )
-    return draft, attempts, verdict, status, guard_report
+    return draft, attempts, verdict, status, guard_report, context

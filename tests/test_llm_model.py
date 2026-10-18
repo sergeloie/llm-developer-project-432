@@ -61,9 +61,12 @@ def test_model_name_unwraps_model_object():
 
 
 def test_card_agents_are_bound_to_model_objects():
+    # Генерация/извлечение — на основной модели; критик — на дешёвой (он лишь
+    # фильтр-проверка, как детектор инъекций и судья), это экономит токены.
     for agent in CARD_AGENTS:
         assert isinstance(agent.model, agents.OpenAIChatCompletionsModel), agent.name
-        assert model_name(agent.model) == settings.llm_model, agent.name
+        expected = settings.llm_model_cheap if agent.name == "Critic" else settings.llm_model
+        assert model_name(agent.model) == expected, agent.name
 
 
 def test_injection_detector_agent_is_bound_to_cheap_model(monkeypatch):
