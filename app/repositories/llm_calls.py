@@ -57,3 +57,23 @@ def by_model(conn: psycopg.Connection) -> list[dict]:
         )
         rows = cur.fetchall()
     return [{"model": r[0], "calls": int(r[1]), "cost": float(r[2] or 0)} for r in rows]
+
+
+def unattributed_cost(conn: psycopg.Connection) -> dict:
+    """Сумма по вызовам без job_id — то, что генерит eval-прогон вне процесса.
+
+    Прогон метрик не привязан к задаче, поэтому его вызовы пишутся с job_id NULL.
+    Базовая линия до/после документа даёт стоимость именно этого документа.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*), sum(cost), sum(prompt_tokens), sum(completion_tokens) "
+            "FROM llm_calls WHERE job_id IS NULL"
+        )
+        n, cost, pt, ct = cur.fetchone()
+    return {
+        "calls": int(n or 0),
+        "cost": float(cost or 0),
+        "prompt_tokens": int(pt or 0),
+        "completion_tokens": int(ct or 0),
+    }

@@ -39,6 +39,7 @@ WEAKEST_EXPLANATIONS = {
 from app.core import db
 from app.core.logging import get_logger, setup_logging
 from app.repositories import documents as docs_repo
+from app.repositories import llm_calls as llm_calls_repo
 from app.services.rag_pipeline import run_rag_pipeline
 
 log = get_logger(__name__)
@@ -116,10 +117,32 @@ async def _judge(context: str, card_json: str) -> float:
 async def eval_document(doc_id: str, golden: dict) -> dict:
     query = golden.get("product", "карточка товара характеристики")
     t0 = time.time()
+    # Базовая линия стоимости: eval не привязан к задаче, его вызовы пишутся
+    # с job_id NULL. Дельта до/после документа — стоимость именно этого документа.
+    with db.connection() as conn:
+        base = llm_calls_repo.unattributed_cost(conn)
     draft, attempts, _verdict, status, _guard, context = await run_rag_pipeline(
         query, [doc_id]
     )
     dt = time.time() - t0
+    if draft is None:
+        # Источники не прошли валидацию — карточку доверять нельзя, она ушла
+        # в needs_review на человека; метрики по ней не считаем.
+        with db.connection() as conn:
+            after = llm_calls_repo.unattributed_cost(conn)
+        return {
+            "attempts": attempts,
+            "status": status,
+            "latency_s": round(dt, 1),
+            "field_accuracy": 0.0,
+            "citation_hit": 0.0,
+            "faithfulness": None,
+            "confidence": 0.0,
+            "missing_fields": ["источники не прошли валидацию модели"],
+            "cost_usd": round(after["cost"] - base["cost"], 4),
+            "prompt_tokens": after["prompt_tokens"] - base["prompt_tokens"],
+            "completion_tokens": after["completion_tokens"] - base["completion_tokens"],
+        }
     card = draft.model_dump()
 
     from app.repositories import chunks as chunks_repo
@@ -133,6 +156,9 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
 
     faith = await _judge(context, draft.model_dump_json())
 
+    with db.connection() as conn:
+        after = llm_calls_repo.unattributed_cost(conn)
+
     return {
         "attempts": attempts,
         "status": status,
@@ -142,6 +168,9 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
         "faithfulness": None if math.isnan(faith) else round(faith, 3),
         "confidence": card["confidence"],
         "missing_fields": card["missing_fields"],
+        "cost_usd": round(after["cost"] - base["cost"], 4),
+        "prompt_tokens": after["prompt_tokens"] - base["prompt_tokens"],
+        "completion_tokens": after["completion_tokens"] - base["completion_tokens"],
     }
 
 
@@ -157,7 +186,7 @@ def main() -> None:
         docs = {d["filename"]: d["id"] for d in docs_repo.list_documents(conn)}
 
     results = {}
-    print(f"{'документ':25} {'field_acc':>9} {'cit_hit':>7} {'faith':>5} {'conf':>4} {'status':>11} {'lat':>5}")
+    print(f"{'документ':25} {'field_acc':>9} {'cit_hit':>7} {'faith':>5} {'conf':>4} {'status':>11} {'lat':>5} {'tok':>6}")
     for name, golden in selected:
         doc_id = docs.get(name)
         if not doc_id:
@@ -165,9 +194,11 @@ def main() -> None:
             continue
         r = asyncio.run(eval_document(doc_id, golden))
         results[name] = r
+        toks = r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
         print(
             f"{name:25} {r['field_accuracy']:>9.2f} {r['citation_hit']:>7.2f} "
-            f"{r['faithfulness']!s:>5} {r['confidence']:>4.2f} {r['status']:>11} {r['latency_s']:>4.0f}s"
+            f"{r['faithfulness']!s:>5} {r['confidence']:>4.2f} {r['status']:>11} "
+            f"{r['latency_s']:>4.0f}s {toks:>6}"
         )
 
     weakest_name = None
@@ -177,7 +208,12 @@ def main() -> None:
         avg_ch = sum(r["citation_hit"] for r in results.values()) / len(results)
         faiths = [r["faithfulness"] for r in results.values() if r["faithfulness"] is not None]
         avg_faith = sum(faiths) / len(faiths) if faiths else float("nan")
+        avg_cost = sum(r["cost_usd"] for r in results.values()) / len(results)
+        avg_tok = sum(
+            r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in results.values()
+        ) / len(results)
         print(f"{'СРЕДНЕЕ':25} {avg_fa:>9.2f} {avg_ch:>7.2f} {avg_faith:>5.2f}")
+        print(f"Средняя стоимость карточки: ${avg_cost:.4f} (~{avg_tok:.0f} токенов)")
 
         metrics = {
             "field_accuracy": avg_fa,
@@ -194,6 +230,17 @@ def main() -> None:
         )
 
     report = dict(results)
+    if results:
+        report["avg_cost_usd"] = round(
+            sum(r["cost_usd"] for r in results.values()) / len(results), 4
+        )
+        report["avg_tokens"] = round(
+            sum(
+                r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
+                for r in results.values()
+            )
+            / len(results)
+        )
     report["weakest_metric"] = (
         {
             "name": weakest_name,
