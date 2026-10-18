@@ -5,10 +5,12 @@
 import re
 from dataclasses import dataclass
 
-_PHONE_RE = re.compile(r"(?:\+7|8)[\s(-]?\d{3}[\s)-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}")
+_PHONE_RE = re.compile(r"(?:\+7|8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]?\d{2}[\s-]?\d{2}")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _INN_RE = re.compile(r"\b\d{10}\b|\b\d{12}\b")
-_CARD_RE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+# Граница после последней цифры, без захвата разделителя: «1234567890123 гиря»
+# маскируется как [CARD_1] гиря, а не [CARD_1]гиря (старый шаблон съедал пробел).
+_CARD_RE = re.compile(r"\b\d(?:[ -]?\d){12,18}\b")
 
 
 @dataclass
@@ -30,6 +32,19 @@ def _inn_checksum(digits: str) -> bool:
         c2 = (sum(w * int(d) for w, d in zip(w2, digits)) % 11) % 10
         return int(digits[10]) == c1 and int(digits[11]) == c2
     return False
+
+
+def _ean13_checksum(digits: str) -> bool:
+    """Контрольная сумма EAN-13: 13-значный штрихкод, а не платёжная карта.
+
+    Если 13-значная последовательность ей проходит, это заводской артикул
+    товара, а не PII — маскировать его не нужно (иначе теряется связь карточки
+    с реальным изделием). Банковские карты — 16/19 знаков, под EAN-13 не попадут.
+    """
+    if len(digits) != 13:
+        return False
+    total = sum(int(d) * (1 if i % 2 == 0 else 3) for i, d in enumerate(digits[:12]))
+    return (10 - (total % 10)) % 10 == int(digits[12])
 
 
 def mask_pii(text: str) -> tuple[str, list[MaskedEntity]]:
@@ -61,7 +76,15 @@ def mask_pii(text: str) -> tuple[str, list[MaskedEntity]]:
         "inn",
         check=lambda s: _inn_checksum(re.sub(r"\D", "", s)),
     )
-    _sub(_CARD_RE, "card", check=lambda s: len(re.sub(r"\D", "", s)) in (13, 16, 19))
+
+    def _card_check(s: str) -> bool:
+        digits = re.sub(r"\D", "", s)
+        # Прошедший контрольную сумму EAN-13 — штрихкод товара, не трогаем.
+        if len(digits) == 13 and _ean13_checksum(digits):
+            return False
+        return len(digits) in (13, 16, 19)
+
+    _sub(_CARD_RE, "card", check=_card_check)
     return result, entities
 
 
