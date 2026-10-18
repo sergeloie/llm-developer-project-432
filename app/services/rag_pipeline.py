@@ -7,13 +7,18 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from app.agents.prompts import CRITIC_CONTRACT, context_generator_agent, critic_agent
+from app.agents.prompts import (
+    CONTEXT_INSTRUCTION,
+    CRITIC_CONTRACT,
+    context_generator_agent,
+    critic_agent,
+)
 from app.core import db
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.guardrails import GuardReport, guard_context, guard_output
 from app.llm.client import run_agent
-from app.rag.context import CONTEXT_INSTRUCTION, build_context, context_chunk_ids
+from app.rag.context import build_context, context_chunk_ids
 from app.rag.retrieval import search
 from app.repositories import chunks as chunks_repo
 from app.schemas.cards import CardDraft, CritiqueReport
@@ -35,9 +40,10 @@ async def retrieve_context_async(
         # сходства. Иначе similarity-top-k (порог settings.retrieval_threshold +
         # AND-FTS) отбрасывает до 75% текста, и модель достраивает карточку из
         # имени файла (баг с heater_passport). Контекст режется по лимиту символов
-        # уже в build_context. Поиск/порог здесь не применяются намеренно — замеры
-        # на конкретных документах (где проходят верные результаты и где начинается
-        # мусор) лежат вне этого файла; менять порог без них не стоит.
+        # уже в build_context. Поиск/порог здесь не применяются намеренно. Замер на
+        # реальном корпусе (docs/retrieval-threshold-measurement.md) показал, что при
+        # генерации по заданным документам важнее сохранить весь текст, чем отсекать
+        # порогом; гибридный поиск с порогом применяется в ветке без document_ids.
         with db.connection() as conn:
             chunks = chunks_repo.get_chunks_by_doc_ids(conn, doc_ids)
         chunks, report = await guard_context(chunks)

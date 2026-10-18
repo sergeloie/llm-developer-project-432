@@ -130,8 +130,11 @@ def test_hybrid_threshold_cuts_vector_leg_but_keeps_fts_only(db_with_chunks):
 def test_fts_search_exact_words(db_with_chunks):
     from app.repositories import chunks as chunks_repo
 
-    # top_k с запасом: в датасете есть свои чанки со словом «гарантия»
-    results = chunks_repo.search_fts(db_with_chunks, "гарантия", top_k=50)
+    # Скоп к фикстурному документу: иначе OR-FTS находит «гарантия» и в реальных
+    # документах БД, и тест становится недетерминированным (зависит от наполненности БД).
+    results = chunks_repo.search_fts(
+        db_with_chunks, "гарантия", top_k=50, doc_ids=["tstdoc1"]
+    )
     assert any(r["chunk_id"] == "tstc3" for r in results)
 
 
@@ -153,7 +156,11 @@ def test_fts_search_uses_or_semantics(db_with_chunks):
     """
     from app.repositories import chunks as chunks_repo
 
-    results = chunks_repo.search_fts(db_with_chunks, "блендера гарантия", top_k=50)
+    # Скоп к фикстурному документу, чтобы тест не зависел от наполненности БД
+    # (без scope OR-FTS притягивает «гарантия» из реальных документов).
+    results = chunks_repo.search_fts(
+        db_with_chunks, "блендера гарантия", top_k=50, doc_ids=["tstdoc1"]
+    )
     ids = {r["chunk_id"] for r in results}
     assert "tstc1" in ids
     assert "tstc3" in ids
@@ -179,7 +186,11 @@ def test_hybrid_keeps_fts_match_with_low_vector_score(db_with_chunks):
     """
     from app.repositories import chunks as chunks_repo
 
-    results = chunks_repo.search_hybrid(db_with_chunks, "мощность", top_k=10)
+    # Скоп к фикстурному документу, чтобы тест не зависел от наполненности БД:
+    # без scope OR-FTS притягивает «Мощность» из реальных документов и вытесняет tstc1.
+    results = chunks_repo.search_hybrid(
+        db_with_chunks, "мощность", top_k=10, doc_ids=["tstdoc1"]
+    )
     ids = [r["chunk_id"] for r in results]
     assert "tstc1" in ids
 

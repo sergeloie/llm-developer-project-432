@@ -58,11 +58,32 @@ curl -X POST localhost:8000/generate-card \
 	-H 'Content-Type: application/json' \
 	-d '{"document_ids": ["<id>"], "product_hint": "блендер"}'
 
+# сгенерировать карточку ГИБРИДНЫМ ПОИСКОМ (document_ids пуст → применяется порог retrieval_threshold)
+curl -X POST localhost:8000/generate-card \
+	-H 'Content-Type: application/json' \
+	-d '{"document_ids": [], "product_hint": "кофемашина"}'
+
 # посмотреть статус и результат
 curl localhost:8000/jobs/$JOB_ID
 
 # метрики: токены, стоимость, latency, доля невалидных ответов, статусы
 curl localhost:8000/metrics
+```
+
+Два режима генерации карточки (поле запроса к поиску — `product_hint`):
+- **По `document_ids` (непустой список)** — берутся ВСЕ чанки перечисленных
+  документов, retrieval и порог сходства не применяются (иначе similarity-top-k
+  отбрасывает до 75% текста). Это основной сценарий из примеров выше.
+- **Без `document_ids` (пустой список)** — запускается гибридный поиск
+  (вектор + FTS) по `product_hint` с отсеканием векторной ноги по
+  `retrieval_threshold`. Порог и его замер на реальном корпусе — см.
+  `docs/retrieval-threshold-measurement.md`.
+
+```bash
+# метрики генерации: F1/recall по золотому датасету, PII/injection, источники
+make eval
+# полный прогон (весь датасет) — долго
+FULL=1 make eval
 ```
 
 ## Разработка
