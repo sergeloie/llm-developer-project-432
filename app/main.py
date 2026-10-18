@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core import db
+from app.core.config import settings
 from app.core.logging import setup_logging
 from app.repositories import system as system_repo
 from app.routers import cards, debug, documents, generate, health, jobs, metrics, workflows
@@ -42,13 +43,16 @@ app.include_router(jobs.router)
 app.include_router(workflows.router)
 app.include_router(documents.router)
 app.include_router(generate.router)
-app.include_router(debug.router)
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
-app.mount("/debug-ui", StaticFiles(directory=STATIC_DIR, html=True), name="debug-ui")
+# Отладочный эндпоинт и UI отдают внутреннюю трассу пайплайна без авторизации —
+# только в разработке. В проде DEBUG_ENDPOINTS_ENABLED=false их не поднимает.
+if settings.debug_endpoints_enabled:
+    app.include_router(debug.router)
 
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+    os.makedirs(STATIC_DIR, exist_ok=True)
+    app.mount("/debug-ui", StaticFiles(directory=STATIC_DIR, html=True), name="debug-ui")
 
-@app.get("/debug", include_in_schema=False)
-async def debug_redirect():
-    return RedirectResponse("/debug-ui/")
+    @app.get("/debug", include_in_schema=False)
+    async def debug_redirect():
+        return RedirectResponse("/debug-ui/")

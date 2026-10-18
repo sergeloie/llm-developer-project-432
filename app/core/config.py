@@ -83,6 +83,11 @@ class Settings(BaseSettings):
 
     suspicious_chunk_limit: int = 2
 
+    # Отладочный эндпоинт /debug и его UI отдают трассу пайплайна (чанки, промпты,
+    # ответы LLM) без авторизации. В разработке удобно, в проде — выключить, иначе
+    # внутренние данные пайплайна доступны по HTTP любому. По умолчанию вкл.
+    debug_endpoints_enabled: bool = True
+
     upload_max_mb: int = 10
     chunk_size: int = 700
     chunk_overlap: int = 120
