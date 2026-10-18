@@ -130,6 +130,13 @@
       if (job.result) {
         html += `<details open><summary>Итоговая карточка (CardDraft)</summary><pre>${esc(j(job.result))}</pre></details>`;
       }
+      if (status === "awaiting_human") {
+        html += `<div class="row" style="margin-top:10px">
+          <button onclick="decide('${esc(job.id)}','approve')">Одобрить карточку</button>
+          <button onclick="decide('${esc(job.id)}','reject')">Отклонить</button>
+          <span class="meta">карточка готова — нужно решение человека</span>
+        </div>`;
+      }
       html += `</div>`;
       return html;
     }
@@ -179,6 +186,18 @@
         for (const s of steps) html += renderStep(s);
       }
       $("out").innerHTML = html;
+    }
+
+    // ---------- готовая карточка ждёт решения человека ----------
+    async function decide(jobId, decision) {
+      const path = decision === "approve" ? "approve" : "request-changes";
+      try {
+        const res = await fetch("/workflows/" + encodeURIComponent(jobId) + "/" + path, {
+          method: "POST",
+        });
+        if (!res.ok) { setStatus("jobStatus", "Ошибка сигнала: " + res.status, true); return; }
+        setStatus("jobStatus", decision === "approve" ? "Карточка одобрена." : "Карточка отклонена.");
+      } catch (e) { setStatus("jobStatus", "Ошибка: " + e, true); }
     }
 
     // ---------- шаг 1: загрузка документа ----------

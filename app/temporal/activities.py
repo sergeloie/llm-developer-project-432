@@ -22,6 +22,8 @@ from temporalio import activity
 
 from app.core import db
 from app.core.logging import get_logger
+from app.guardrails import GuardReport
+from app.guardrails.pii import mask_pii
 from app.repositories import chunks as chunks_repo
 from app.repositories import documents as docs_repo
 from app.repositories import jobs as jobs_repo
@@ -107,18 +109,23 @@ def delete_document_file_activity(path: str) -> None:
 
 
 @activity.defn
-def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = "") -> str:
-    """Полный RAG-пайплайн: retrieval → генерация → критик → статус в базе.
+def rag_retrieve_activity(job_id: str, document_ids: list[str], product_hint: str = "") -> dict:
+    """Первый шаг RAG-карточки: чанки → retrieval → трасса.
 
-    Пайплайн async, activity блокирующая: она уже исполняется в отдельном
-    потоке, поэтому цикл событий поднимается здесь своим asyncio.run.
+    Отдельный шаг: если воркер упадёт на генерации, повторный прогон начнёт не
+    с нуля, а с этого шага — контекст уже в истории процесса. Трасса пишется
+    замаскированной: контакты из КП не уходят в соседнюю таблицу и не отдаются
+    по HTTP без авторизации (/debug).
     """
     from app.services import rag_pipeline
 
     structlog.contextvars.bind_contextvars(job_id=job_id)
-    # Трасса пайплайна: чанки документа — то, что реально увидит модель.
     try:
         with db.connection() as conn:
+            raw_chunks = chunks_repo.get_chunks_by_doc_ids(conn, document_ids or [])
+            safe_chunks = [
+                {**ch, "text": mask_pii(ch.get("text", ""))[0]} for ch in raw_chunks
+            ]
             traces_repo.insert_step(
                 conn,
                 job_id=job_id,
@@ -126,58 +133,107 @@ def rag_card_activity(job_id: str, document_ids: list[str], product_hint: str = 
                 agent="parser",
                 parsed_output={
                     "document_ids": document_ids,
-                    "chunks": chunks_repo.get_chunks_by_doc_ids(conn, document_ids or []),
+                    "chunks": safe_chunks,
                 },
             )
     except Exception as trace_exc:
         log.warning("trace_accounting_failed", error=repr(trace_exc))
-    # Соединение берётся на каждую запись статуса, а не на весь пайплайн: держать
-    # его занятым, пока отвечает модель, значит занять место в пуле на минуты.
+
+    query = product_hint or "карточка товара характеристики"
+    context, guard = asyncio.run(rag_pipeline.retrieve_context_async(query, document_ids or None))
+    if guard.suspicious_chunks:
+        with db.connection() as conn:
+            blocked = docs_repo.mark_chunks_suspicious(conn, guard.suspicious_chunks)
+        log.info(
+            "guard_flagged_chunks", job_id=job_id, flagged=blocked,
+            chunk_ids=guard.suspicious_chunks,
+        )
     try:
         with db.connection() as conn:
-            jobs_repo.set_status(conn, job_id, "retrieving")
-        query = product_hint or "карточка товара характеристики"
-        draft, attempts, _verdict, status, guard = asyncio.run(
-            rag_pipeline.run_rag_pipeline(query, document_ids or None)
-        )
-        if guard.suspicious_chunks:
-            with db.connection() as conn:
-                blocked = docs_repo.mark_chunks_suspicious(conn, guard.suspicious_chunks)
-            log.info(
-                "guard_flagged_chunks", job_id=job_id, flagged=blocked,
-                chunk_ids=guard.suspicious_chunks,
+            traces_repo.insert_step(
+                conn,
+                job_id=job_id,
+                step="rag_context",
+                agent="retrieval",
+                raw_completion=context,
             )
+    except Exception as trace_exc:
+        log.warning("trace_accounting_failed", error=repr(trace_exc))
+    return {
+        "context": context,
+        "guard_report": asdict(guard),
+        "suspicious_chunks": guard.suspicious_chunks,
+    }
+
+
+@activity.defn
+def rag_generate_activity(
+    context: str, feedback_json: str | None, scores_json: str | None
+) -> str:
+    """Один шаг генерации черновика. Отдельный шаг = устойчивость к рестарту.
+
+    Возвращает JSON карточки либо пустую строку, если модель упорно ссылается
+    на выдуманные/несуществующие источники (SourceValidationError): карточку
+    доверять нельзя, процесс уходит в needs_review, а не failed.
+    """
+    from app.services import rag_pipeline
+
+    feedback = json.loads(feedback_json) if feedback_json else None
+    scores = json.loads(scores_json) if scores_json else None
+    try:
+        draft = asyncio.run(rag_pipeline.generate_from_context(context, feedback, scores))
+    except rag_pipeline.SourceValidationError as exc:
+        log.warning("rag_source_validation_failed", error=str(exc)[:300])
+        return ""
+    return draft.model_dump_json()
+
+
+@activity.defn
+def rag_critique_activity(context: str, draft_json: str) -> str:
+    """Один шаг критики черновика. Отдельный шаг = устойчивость к рестарту."""
+    from app.services import rag_pipeline
+
+    structlog.contextvars.bind_contextvars()
+    draft = CardDraft.model_validate_json(draft_json)
+    report = asyncio.run(rag_pipeline.critique_with_context(context, draft))
+    return report.model_dump_json()
+
+
+@activity.defn
+def rag_finalize_activity(
+    job_id: str, draft_json: str, guard_report_json: str, verdict: str
+) -> tuple[str, str]:
+    """Финализация: фильтр выхода PII, терминальный статус, запись в базу.
+
+    Возвращает (JSON карточки, статус). Пустой draft_json → needs_review
+    (выдуманные источники): карточку показываем человеку, задачу не валим в failed.
+    """
+    from app.services import rag_pipeline
+
+    structlog.contextvars.bind_contextvars(job_id=job_id)
+    guard = GuardReport(**json.loads(guard_report_json))
+    if not draft_json:
         with db.connection() as conn:
             jobs_repo.set_status(
-                conn,
-                job_id,
-                status,
-                result=draft,
-                bump_attempts=True,
-                guard_report=asdict(guard),
+                conn, job_id, "needs_review", bump_attempts=True, guard_report=asdict(guard)
             )
-        # Трасса пайплайна: RAG-контекст, ушедший в генератор (с метками [chunk_id]).
-        try:
-            context, _guard_report = asyncio.run(
-                rag_pipeline.retrieve_context_async(query, document_ids or None)
-            )
-            with db.connection() as conn:
-                traces_repo.insert_step(
-                    conn,
-                    job_id=job_id,
-                    step="rag_context",
-                    agent="retrieval",
-                    raw_completion=context,
-                )
-        except Exception as trace_exc:
-            log.warning("trace_accounting_failed", error=repr(trace_exc))
-        log.info(
-            "rag_job_finished", job_id=job_id, status=status, attempts=attempts,
-            masked_pii=guard.masked_pii, suspicious=len(guard.suspicious_chunks),
+        return "", "needs_review"
+    draft = CardDraft.model_validate_json(draft_json)
+    cleaned, issues = rag_pipeline.guard_output(draft.model_dump_json())
+    if issues:
+        log.warning("guard_output_issues", issues=issues)
+    draft = CardDraft.model_validate_json(cleaned)
+    cited = rag_pipeline.cited_chunk_texts(draft)
+    status = rag_pipeline.decide_status(
+        draft, verdict, guard, cited if verdict == "approved" else None
+    )
+    with db.connection() as conn:
+        jobs_repo.set_status(
+            conn,
+            job_id,
+            status,
+            result=draft,
+            bump_attempts=True,
+            guard_report=asdict(guard),
         )
-        return draft.model_dump_json()
-    except Exception as exc:
-        with db.connection() as conn:
-            jobs_repo.set_status(conn, job_id, "failed", error=repr(exc))
-        log.error("rag_generate_failed", job_id=job_id, error=repr(exc))
-        raise
+    return draft.model_dump_json(), status

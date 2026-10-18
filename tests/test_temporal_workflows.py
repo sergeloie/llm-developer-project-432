@@ -139,12 +139,66 @@ def test_card_workflow_success_path_does_not_publish_failed(stub_activity):
 
 
 def test_rag_workflow_publishes_failed(stub_activity):
-    recorder = stub_activity(_Recorder(failing="rag_card_activity"))
+    recorder = stub_activity(_Recorder(failing="rag_retrieve_activity"))
     with pytest.raises(ActivityError):
         asyncio.run(wf.RagCardWorkflow().run("job-6", ["doc-1"], "блендер"))
 
     assert recorder.status() == "failed"
-    assert "rag_card_activity" in recorder.reason()
+    assert "rag_retrieve_activity" in recorder.reason()
+
+
+def _rag_results(generate_json: str, finalize: tuple[str, str]) -> dict:
+    """Результаты activity для RAG-карточки: retrieval всегда отдаёт контекст.
+
+    rag_retrieve_activity возвращает dict (в рантайме Temporal сериализует его
+    туда-обратно), поэтому в recorder'е — настоящий dict, а не JSON-строка.
+    """
+    guard = {
+        "masked_pii": 0,
+        "suspicious_chunks": [],
+        "blocked_reasons": [],
+        "retrieval_scores": {},
+    }
+    return {
+        "rag_retrieve_activity": {
+            "context": "ctx",
+            "guard_report": guard,
+            "suspicious_chunks": [],
+        },
+        "rag_generate_activity": generate_json,
+        "rag_critique_activity": APPROVE,
+        "rag_finalize_activity": finalize,
+    }
+
+
+def test_rag_workflow_success_path_awaits_human(stub_activity):
+    instance = wf.RagCardWorkflow()
+    results = _rag_results('{"title": "Блендер"}', ('{"title": "Блендер"}', "done"))
+    recorder = stub_activity(_Recorder(failing="none", results=results), instance=instance)
+
+    draft = asyncio.run(instance.run("job-7", ["doc-2"], "блендер"))
+
+    assert draft == '{"title": "Блендер"}'
+    assert recorder.statuses() == [
+        "retrieving",
+        "generating",
+        "critiquing",
+        "awaiting_human",
+        "approved",
+    ]
+
+
+def test_rag_workflow_fabricated_sources_skips_human(stub_activity):
+    """Выдуманные источники → needs_review: карточку не ждём, human не нужен."""
+    results = _rag_results("", ("", "needs_review"))
+    recorder = stub_activity(_Recorder(failing="none", results=results))
+
+    draft = asyncio.run(wf.RagCardWorkflow().run("job-8", ["doc-3"], "блендер"))
+
+    assert draft == ""
+    # retrieve → generate, затем короткий выход: нет критики и нет ожидания человека.
+    assert recorder.statuses() == ["retrieving", "generating"]
+    assert "awaiting_human" not in recorder.statuses()
 
 
 def test_parse_workflow_marks_document_failed(stub_activity):
