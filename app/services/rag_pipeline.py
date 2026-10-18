@@ -219,40 +219,41 @@ def decide_status(
 
 
 async def run_rag_pipeline(
-    query: str, doc_ids: list[str] | None = None, max_attempts: int | None = None
+    query: str,
+    doc_ids: list[str] | None = None,
+    max_attempts: int | None = None,
+    context: str | None = None,
+    guard_report: GuardReport | None = None,
 ):
     """Полный RAG-цикл: retrieval → guardrails → (generate → critique)* → guard_output.
 
     max_attempts по умолчанию — settings.max_pipeline_rounds.
-    Возвращает (draft, attempts, verdict, status, guard_report, context):
-    context — ровно то, что ушло в генератор (с замаскированными PII), чтобы
-    его можно было без повторного retrieval положить в трассу и отдать judge.
+    Возвращает (draft, attempts, verdict, status, guard_report).
+
+    context и guard_report можно передать снаружи (eval переиспользует уже
+    полученный retrieval, чтобы не гонять детектор инъекций дважды); иначе
+    они извлекаются здесь. Выдуманные/несуществующие источники поднимают
+    SourceValidationError — решение уводить задачу в needs_review (а не failed)
+    принимает вызывающий (RagCardWorkflow / eval), а не этот пайплайн.
     """
     rounds = settings.max_pipeline_rounds if max_attempts is None else max_attempts
-    context, guard_report = await retrieve_context_async(query, doc_ids)
+    if context is None or guard_report is None:
+        context, guard_report = await retrieve_context_async(query, doc_ids)
     feedback: list[str] = []
     attempts = 0
     draft = None
     verdict = "rejected"
-    try:
-        while attempts < rounds:
-            attempts += 1
-            draft = await generate_from_context(
-                context, feedback or None, guard_report.retrieval_scores
-            )
-            report = await critique_with_context(context, draft)
-            if report.verdict == "approve":
-                verdict = "approved"
-                break
-            feedback = report.issues
-            log.info("rag_pipeline_regenerate", attempt=attempts, issues=report.issues)
-    except SourceValidationError as exc:
-        # Модель упорно ссылается на выдуманные/несуществующие источники:
-        # карточке верить нельзя, но и валить задачу в failed нельзя — её
-        # должен посмотреть человек. Уходим в needs_review с пустым черновиком,
-        # не тратя повторные вызовы на already-провалившуюся генерацию.
-        log.warning("rag_source_validation_failed", attempts=attempts, error=str(exc)[:300])
-        return None, attempts, "rejected", "needs_review", guard_report, context
+    while attempts < rounds:
+        attempts += 1
+        draft = await generate_from_context(
+            context, feedback or None, guard_report.retrieval_scores
+        )
+        report = await critique_with_context(context, draft)
+        if report.verdict == "approve":
+            verdict = "approved"
+            break
+        feedback = report.issues
+        log.info("rag_pipeline_regenerate", attempt=attempts, issues=report.issues)
 
     if verdict == "approved" and draft is not None:
         # фильтр выхода: следы PII/инъекции в карточке
@@ -267,4 +268,4 @@ async def run_rag_pipeline(
         guard_report,
         cited_chunk_texts(draft) if draft is not None and verdict == "approved" else None,
     )
-    return draft, attempts, verdict, status, guard_report, context
+    return draft, attempts, verdict, status, guard_report

@@ -115,7 +115,7 @@ def test_rag_pipeline_happy_path(rag_setup, monkeypatch):
         rp, "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    draft, attempts, verdict, status, _guard, _ctx = asyncio.run(
+    draft, attempts, verdict, status, _guard = asyncio.run(
         rp.run_rag_pipeline("блендер", [DOC_ID])
     )
     assert verdict == "approved" and attempts == 1
@@ -128,8 +128,9 @@ def test_rag_pipeline_happy_path(rag_setup, monkeypatch):
 
 
 def test_rag_pipeline_hallucinated_source_rejected(rag_setup, monkeypatch):
-    """Модель упорно ссылается на выдуманный chunk_id — карточку доверять нельзя,
-    но задача не проваливается в failed: уходит в needs_review на человека."""
+    """Модель упорно ссылается на выдуманный chunk_id — пайплайн поднимает
+    SourceValidationError. Решение уводить задачу в needs_review (вместо failed)
+    принимает вызывающий (RagCardWorkflow / eval), а не сам пайплайн."""
     from app.services import rag_pipeline as rp
 
     _patch_llm(monkeypatch, _card_json(chunk_id="deadbeef0000"))
@@ -137,12 +138,8 @@ def test_rag_pipeline_hallucinated_source_rejected(rag_setup, monkeypatch):
         rp, "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    draft, _attempts, verdict, status, _guard, _ctx = asyncio.run(
-        rp.run_rag_pipeline("блендер", [DOC_ID])
-    )
-    assert draft is None
-    assert verdict == "rejected"
-    assert status == "needs_review"
+    with pytest.raises(rp.SourceValidationError):
+        asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
 
 
 def test_rag_pipeline_low_confidence_needs_review(rag_setup, monkeypatch):
@@ -153,7 +150,7 @@ def test_rag_pipeline_low_confidence_needs_review(rag_setup, monkeypatch):
         rp, "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    _draft, _a, _v, status, _g, _ctx = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
+    _draft, _a, _v, status, _g = asyncio.run(rp.run_rag_pipeline("блендер", [DOC_ID]))
     assert status == "needs_review"
 
 
@@ -264,7 +261,7 @@ def test_run_rag_pipeline_gives_critic_the_source_contract(rag_setup, monkeypatc
         "retrieve_context_async",
         _fake_retrieve("[tstragc1 | blender_test.pdf | стр. 1]\n" + CHUNK_TEXTS["tstragc1"]),
     )
-    _draft, attempts, verdict, _status, _g, _ctx = asyncio.run(
+    _draft, attempts, verdict, _status, _g = asyncio.run(
         rp.run_rag_pipeline("блендер", [DOC_ID])
     )
     assert verdict == "rejected"

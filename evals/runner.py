@@ -40,7 +40,11 @@ from app.core import db
 from app.core.logging import get_logger, setup_logging
 from app.repositories import documents as docs_repo
 from app.repositories import llm_calls as llm_calls_repo
-from app.services.rag_pipeline import run_rag_pipeline
+from app.services.rag_pipeline import (
+    SourceValidationError,
+    retrieve_context_async,
+    run_rag_pipeline,
+)
 
 log = get_logger(__name__)
 
@@ -121,18 +125,22 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
     # с job_id NULL. Дельта до/после документа — стоимость именно этого документа.
     with db.connection() as conn:
         base = llm_calls_repo.unattributed_cost(conn)
-    draft, attempts, _verdict, status, _guard, context = await run_rag_pipeline(
-        query, [doc_id]
-    )
+    # retrieval один раз — и для пайплайна, и для судьи (без повторного прогона
+    # детектора инъекций). run_rag_pipeline поднимает SourceValidationError, если
+    # модель упорно ссылается на выдуманные/несуществующие источники: тогда
+    # карточку показываем человеку (needs_review), а не валим eval.
+    context, guard = await retrieve_context_async(query, [doc_id])
     dt = time.time() - t0
-    if draft is None:
-        # Источники не прошли валидацию — карточку доверять нельзя, она ушла
-        # в needs_review на человека; метрики по ней не считаем.
+    try:
+        draft, attempts, _verdict, status, _guard = await run_rag_pipeline(
+            query, [doc_id], context=context, guard_report=guard
+        )
+    except SourceValidationError:
         with db.connection() as conn:
             after = llm_calls_repo.unattributed_cost(conn)
         return {
-            "attempts": attempts,
-            "status": status,
+            "attempts": 0,
+            "status": "needs_review",
             "latency_s": round(dt, 1),
             "field_accuracy": 0.0,
             "citation_hit": 0.0,
