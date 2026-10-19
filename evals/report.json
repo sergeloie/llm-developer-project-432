@@ -1,0 +1,101 @@
+{
+  "blender_passport.pdf": {
+    "attempts": 1,
+    "status": "done",
+    "latency_s": 0.0,
+    "field_accuracy": 1.0,
+    "citation_hit": 1.0,
+    "faithfulness": 0.95,
+    "confidence": 0.95,
+    "missing_fields": [],
+    "cost_usd": 0.0,
+    "prompt_tokens": 5255,
+    "completion_tokens": 1063
+  },
+  "blender_kp.docx": {
+    "attempts": 1,
+    "status": "done",
+    "latency_s": 0.0,
+    "field_accuracy": 0.0,
+    "citation_hit": 1.0,
+    "faithfulness": 0.95,
+    "confidence": 0.75,
+    "missing_fields": [
+      "Гарантия",
+      "Материал корпуса",
+      "Тип питания",
+      "Количество скоростей/режимов",
+      "Размеры упаковки",
+      "Вес товара"
+    ],
+    "cost_usd": 0.0,
+    "prompt_tokens": 4797,
+    "completion_tokens": 865
+  },
+  "kettle_spec.xlsx": {
+    "attempts": 2,
+    "status": "done",
+    "latency_s": 0.0,
+    "field_accuracy": 0.0,
+    "citation_hit": 0.0,
+    "faithfulness": 0.95,
+    "confidence": 0.75,
+    "missing_fields": [
+      "Гарантия",
+      "Цвет",
+      "Материал корпуса (точное название)",
+      "Тип нагревателя",
+      "Длина шнура",
+      "Емкость чаши"
+    ],
+    "cost_usd": 0.0,
+    "prompt_tokens": 5594,
+    "completion_tokens": 1297
+  },
+  "kettle_manual.pdf": {
+    "attempts": 1,
+    "status": "done",
+    "latency_s": 2.5,
+    "field_accuracy": 1.0,
+    "citation_hit": 1.0,
+    "faithfulness": 0.95,
+    "confidence": 0.92,
+    "missing_fields": [
+      "Цвет корпуса",
+      "Габариты (размеры)",
+      "Материал ручки",
+      "Тип управления (кнопка/рычаг)",
+      "Страна производства",
+      "Класс энергопотребления"
+    ],
+    "cost_usd": 0.0,
+    "prompt_tokens": 4276,
+    "completion_tokens": 1271
+  },
+  "boiler_scan.pdf": {
+    "attempts": 3,
+    "status": "rejected",
+    "latency_s": 0.0,
+    "field_accuracy": 1.0,
+    "citation_hit": 1.0,
+    "faithfulness": 0.0,
+    "confidence": 0.0,
+    "missing_fields": [
+      "Название товара",
+      "Описание товара",
+      "Характеристики (мощность, объем и т.д.)",
+      "Преимущества",
+      "Ключевые слова для SEO"
+    ],
+    "cost_usd": 0.0,
+    "prompt_tokens": 3805,
+    "completion_tokens": 643
+  },
+  "avg_cost_usd": 0.0,
+  "avg_tokens": 5773,
+  "weakest_metric": {
+    "name": "field_accuracy",
+    "value": 0.6,
+    "explanation": "Доля характеристик, извлечённых из документа. Низкая — модель не достала часть параметров (они лежат вне топ-чанков, в таблицах или в неполной спецификации, где их действительно нет), либо нормализация сравнения слишком строга к единицам измерения и пунктуации."
+  }
+}
