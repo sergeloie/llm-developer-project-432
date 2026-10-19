@@ -80,10 +80,10 @@ curl localhost:8000/metrics
   `docs/retrieval-threshold-measurement.md`.
 
 ```bash
-# метрики генерации: F1/recall по золотому датасету, PII/injection, источники
+# метрики генерации: field_accuracy, citation_hit, faithfulness
 make eval
 # полный прогон (весь датасет) — долго
-FULL=1 make eval
+make eval FULL=1
 ```
 
 ## Разработка
@@ -149,14 +149,16 @@ make infra-down  # остановить контейнеры и удалить �
 их действительно нет), либо нормализация сравнения слишком строга к единицам
 измерения и пунктуации.
 
-Полный отчёт — `evals/report.json` (он под `.gitignore`, поэтому таблица
-выше — единственное место, где метрики видны наставнику).
+Полный отчёт — `evals/report.json` (он под `.gitignore`, поэтому таблица выше —
+единственное место, где метрики видны наставнику).
 
 ## Переменные окружения
 
-`.env.example` — единственный список переменных: каждая строка там — поле
+`.env.example` — единственный список переменных: почти каждая строка там — поле
 `Settings` в `app/core/config.py`, имя переменной совпадает с именем поля в
-верхнем регистре. Сам файл `.env` необязателен: значения по умолчанию совпадают
+верхнем регистре; исключения — `PG_PORT`, `TEMPORAL_PORT` и `TEMPORAL_UI_PORT`,
+это переменные `docker compose`, их приложение не читает. Сам файл `.env`
+необязателен: значения по умолчанию совпадают
 с `docker compose` и с локальным сервером моделей на `127.0.0.1:1234`, поэтому
 сервис поднимается и без него.
 
@@ -184,8 +186,9 @@ make infra-down  # остановить контейнеры и удалить �
 `SOURCE_COVERAGE_THRESHOLD` / `MAX_FIX_ATTEMPTS` /
 `MAX_PIPELINE_ROUNDS`, `SUSPICIOUS_CHUNK_LIMIT`, `UPLOAD_MAX_MB`,
 `DEBUG_ENDPOINTS_ENABLED` (в проде — `false`: `/debug` и `/debug-ui` отдают
-трассу пайплайна без авторизации),
-`TEMPORAL_UI_PORT`.
+трассу пайплайна без авторизации).
+`TEMPORAL_UI_PORT` — порт веб-интерфейса Temporal, тоже переменная `docker compose`,
+а не `Settings`.
 
 ## Структура
 
@@ -193,9 +196,9 @@ make infra-down  # остановить контейнеры и удалить �
 app/
 ├── main.py            приложение и сквозной request_id
 ├── core/              конфигурация, база, логи, раннер миграций
-├── routers/           HTTP: cards, jobs, documents, generate, workflows, health, metrics
+├── routers/           HTTP: cards, jobs, documents, generate, workflows, health, metrics, debug
 ├── services/          сценарии: базовый пайплайн, RAG-пайплайн, разбор документов, контракт результата
-├── agents/            промпты extractor, generator, critic
+├── agents/            промпты extractor, generator, context_generator, fixer, critic
 ├── llm/               клиент модели и учёт стоимости вызовов
 ├── rag/               эмбеддинги, поиск, сборка контекста
 ├── parsers/           pdf, docx, xlsx, нормализация, чанкинг
@@ -205,7 +208,7 @@ app/
 └── temporal/          процессы: разбор, карточка, модерация
 db/migrations/         SQL-миграции
 evals/                 прогон метрик на золотом датасете
-scripts/               массовая загрузка данных через API (make bulk)
+scripts/               bulk-загрузка через API (make bulk), индексация корпуса и замер порога retrieval
 tests/                 тесты
 data/                  документы поставщиков и золотой датасет
 ```
