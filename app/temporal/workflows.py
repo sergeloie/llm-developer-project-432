@@ -156,7 +156,7 @@ class RagCardWorkflow:
                 await self._publish(job_id, "generating")
                 draft_json = await workflow.execute_activity(
                     rag_generate_activity,
-                    args=[context, feedback_json, scores_json],
+                    args=[context, feedback_json, scores_json, job_id],
                     start_to_close_timeout=ACTIVITY_TIMEOUT,
                     retry_policy=RETRY,
                 )
@@ -168,7 +168,7 @@ class RagCardWorkflow:
                 report = CritiqueReport.model_validate_json(
                     await workflow.execute_activity(
                         rag_critique_activity,
-                        args=[context, draft_json],
+                        args=[context, draft_json, job_id],
                         start_to_close_timeout=ACTIVITY_TIMEOUT,
                         retry_policy=RETRY,
                     )

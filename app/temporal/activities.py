@@ -168,7 +168,7 @@ def rag_retrieve_activity(job_id: str, document_ids: list[str], product_hint: st
 
 @activity.defn
 def rag_generate_activity(
-    context: str, feedback_json: str | None, scores_json: str | None
+    context: str, feedback_json: str | None, scores_json: str | None, job_id: str
 ) -> str:
     """Один шаг генерации черновика. Отдельный шаг = устойчивость к рестарту.
 
@@ -178,6 +178,7 @@ def rag_generate_activity(
     """
     from app.services import rag_pipeline
 
+    structlog.contextvars.bind_contextvars(job_id=job_id)
     feedback = json.loads(feedback_json) if feedback_json else None
     scores = json.loads(scores_json) if scores_json else None
     try:
@@ -189,11 +190,11 @@ def rag_generate_activity(
 
 
 @activity.defn
-def rag_critique_activity(context: str, draft_json: str) -> str:
+def rag_critique_activity(context: str, draft_json: str, job_id: str) -> str:
     """Один шаг критики черновика. Отдельный шаг = устойчивость к рестарту."""
     from app.services import rag_pipeline
 
-    structlog.contextvars.bind_contextvars()
+    structlog.contextvars.bind_contextvars(job_id=job_id)
     draft = CardDraft.model_validate_json(draft_json)
     report = asyncio.run(rag_pipeline.critique_with_context(context, draft))
     return report.model_dump_json()

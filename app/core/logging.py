@@ -14,7 +14,7 @@ def _force_utf8(stream) -> None:
     if stream is None:
         return
     try:
-        stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:  # noqa: S110  переконфигурация — лучшее усилие, неудача не критична
         pass
 

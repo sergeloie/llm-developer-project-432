@@ -47,6 +47,20 @@ def _ean13_checksum(digits: str) -> bool:
     return (10 - (total % 10)) % 10 == int(digits[12])
 
 
+def _luhn_ok(digits: str) -> bool:
+    """Контрольная сумма Luhn: отличает платёжную карту от ряда цифр (цен)."""
+    total = 0
+    parity = len(digits) % 2
+    for i, ch in enumerate(digits):
+        n = int(ch)
+        if i % 2 == parity:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
+
 def mask_pii(text: str) -> tuple[str, list[MaskedEntity]]:
     """Заменить PII на плейсхолдеры [PHONE_1], [EMAIL_1], [INN_1], [CARD_1].
 
@@ -79,10 +93,13 @@ def mask_pii(text: str) -> tuple[str, list[MaskedEntity]]:
 
     def _card_check(s: str) -> bool:
         digits = re.sub(r"\D", "", s)
+        if len(digits) not in (13, 16, 19):
+            return False
         # Прошедший контрольную сумму EAN-13 — штрихкод товара, не трогаем.
         if len(digits) == 13 and _ean13_checksum(digits):
             return False
-        return len(digits) in (13, 16, 19)
+        # Платёжная карта проходит Luhn; ряд цен/случайные цифры — нет.
+        return _luhn_ok(digits)
 
     _sub(_CARD_RE, "card", check=_card_check)
     return result, entities

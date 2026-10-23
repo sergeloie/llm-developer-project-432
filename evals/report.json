@@ -1,101 +1,99 @@
 {
   "blender_passport.pdf": {
-    "attempts": 1,
-    "status": "done",
-    "latency_s": 0.0,
+    "attempts": 3,
+    "status": "rejected",
+    "latency_s": 88.7,
     "field_accuracy": 1.0,
     "citation_hit": 1.0,
     "faithfulness": 0.95,
-    "confidence": 0.95,
-    "missing_fields": [],
+    "confidence": 0.8,
+    "missing_fields": [
+      "Максимальная температура",
+      "Защита от перегрева",
+      "Скорость вращения",
+      "Диаметр чаши"
+    ],
     "cost_usd": 0.0,
-    "prompt_tokens": 5255,
-    "completion_tokens": 1063
+    "prompt_tokens": 12677,
+    "completion_tokens": 3468
   },
   "blender_kp.docx": {
-    "attempts": 1,
+    "attempts": 2,
     "status": "done",
-    "latency_s": 0.0,
+    "latency_s": 44.4,
     "field_accuracy": 0.0,
     "citation_hit": 1.0,
-    "faithfulness": 0.95,
-    "confidence": 0.75,
+    "faithfulness": 0.9,
+    "confidence": 0.65,
     "missing_fields": [
       "Гарантия",
       "Материал корпуса",
-      "Тип питания",
-      "Количество скоростей/режимов",
-      "Размеры упаковки",
-      "Вес товара"
+      "Объем чашки",
+      "Количество скоростей",
+      "Тип питания"
     ],
     "cost_usd": 0.0,
-    "prompt_tokens": 4797,
-    "completion_tokens": 865
+    "prompt_tokens": 8251,
+    "completion_tokens": 1702
   },
   "kettle_spec.xlsx": {
-    "attempts": 2,
+    "attempts": 1,
     "status": "done",
-    "latency_s": 0.0,
+    "latency_s": 18.5,
     "field_accuracy": 0.0,
     "citation_hit": 0.0,
     "faithfulness": 0.95,
-    "confidence": 0.75,
+    "confidence": 0.65,
     "missing_fields": [
       "Гарантия",
       "Цвет",
-      "Материал корпуса (точное название)",
-      "Тип нагревателя",
+      "Время закипания",
+      "Тип крышки",
       "Длина шнура",
-      "Емкость чаши"
+      "Материал ручки",
+      "Наличие автоотключения"
     ],
     "cost_usd": 0.0,
-    "prompt_tokens": 5594,
-    "completion_tokens": 1297
+    "prompt_tokens": 3437,
+    "completion_tokens": 969
   },
   "kettle_manual.pdf": {
     "attempts": 1,
     "status": "done",
-    "latency_s": 2.5,
+    "latency_s": 19.0,
     "field_accuracy": 1.0,
     "citation_hit": 1.0,
-    "faithfulness": 0.95,
-    "confidence": 0.92,
-    "missing_fields": [
-      "Цвет корпуса",
-      "Габариты (размеры)",
-      "Материал ручки",
-      "Тип управления (кнопка/рычаг)",
-      "Страна производства",
-      "Класс энергопотребления"
-    ],
+    "faithfulness": 1.0,
+    "confidence": 1.0,
+    "missing_fields": [],
     "cost_usd": 0.0,
-    "prompt_tokens": 4276,
-    "completion_tokens": 1271
+    "prompt_tokens": 4210,
+    "completion_tokens": 960
   },
   "boiler_scan.pdf": {
     "attempts": 3,
     "status": "rejected",
-    "latency_s": 0.0,
+    "latency_s": 33.1,
     "field_accuracy": 1.0,
     "citation_hit": 1.0,
     "faithfulness": 0.0,
     "confidence": 0.0,
     "missing_fields": [
-      "Название товара",
-      "Описание товара",
-      "Характеристики (мощность, объем и т.д.)",
-      "Преимущества",
-      "Ключевые слова для SEO"
+      "Мощность",
+      "Объем",
+      "Цвет",
+      "Гарантия",
+      "Материал корпуса"
     ],
     "cost_usd": 0.0,
-    "prompt_tokens": 3805,
-    "completion_tokens": 643
+    "prompt_tokens": 4718,
+    "completion_tokens": 1235
   },
   "avg_cost_usd": 0.0,
-  "avg_tokens": 5773,
+  "avg_tokens": 8918,
   "weakest_metric": {
     "name": "field_accuracy",
-    "value": 0.6,
+    "value": 0.5,
     "explanation": "Доля характеристик, извлечённых из документа. Низкая — модель не достала часть параметров (они лежат вне топ-чанков, в таблицах или в неполной спецификации, где их действительно нет), либо нормализация сравнения слишком строга к единицам измерения и пунктуации."
   }
 }

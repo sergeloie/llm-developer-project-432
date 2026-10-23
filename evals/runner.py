@@ -130,12 +130,12 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
     # модель упорно ссылается на выдуманные/несуществующие источники: тогда
     # карточку показываем человеку (needs_review), а не валим eval.
     context, guard = await retrieve_context_async(query, [doc_id])
-    dt = time.time() - t0
     try:
         draft, attempts, _verdict, status, _guard = await run_rag_pipeline(
             query, [doc_id], context=context, guard_report=guard
         )
     except SourceValidationError:
+        dt = time.time() - t0
         with db.connection() as conn:
             after = llm_calls_repo.unattributed_cost(conn)
         return {
@@ -151,6 +151,7 @@ async def eval_document(doc_id: str, golden: dict) -> dict:
             "prompt_tokens": after["prompt_tokens"] - base["prompt_tokens"],
             "completion_tokens": after["completion_tokens"] - base["completion_tokens"],
         }
+    dt = time.time() - t0
     card = draft.model_dump()
 
     from app.repositories import chunks as chunks_repo
@@ -194,6 +195,7 @@ def main() -> None:
         docs = {d["filename"]: d["id"] for d in docs_repo.list_documents(conn)}
 
     results = {}
+    excluded: set[str] = set()
     print(f"{'документ':25} {'field_acc':>9} {'cit_hit':>7} {'faith':>5} {'conf':>4} {'status':>11} {'lat':>5} {'tok':>6}")
     for name, golden in selected:
         doc_id = docs.get(name)
@@ -202,6 +204,11 @@ def main() -> None:
             continue
         r = asyncio.run(eval_document(doc_id, golden))
         results[name] = r
+        # Документы без золотых ожиданий (скан без текстового слоя) дают
+        # field_accuracy/citation_hit = 1.00 по пустому множеству и завышают
+        # средние — в средние они не идут, но остаются в таблице по документу.
+        if not (golden.get("characteristics") or golden.get("source_probes")):
+            excluded.add(name)
         toks = r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
         print(
             f"{name:25} {r['field_accuracy']:>9.2f} {r['citation_hit']:>7.2f} "
@@ -212,16 +219,28 @@ def main() -> None:
     weakest_name = None
     weakest_value = None
     if results:
-        avg_fa = sum(r["field_accuracy"] for r in results.values()) / len(results)
-        avg_ch = sum(r["citation_hit"] for r in results.values()) / len(results)
-        faiths = [r["faithfulness"] for r in results.values() if r["faithfulness"] is not None]
+        included = [n for n in results if n not in excluded]
+        avg_fa = sum(results[n]["field_accuracy"] for n in included) / len(included)
+        avg_ch = sum(results[n]["citation_hit"] for n in included) / len(included)
+        faiths = [
+            results[n]["faithfulness"]
+            for n in included
+            if results[n]["faithfulness"] is not None
+        ]
         avg_faith = sum(faiths) / len(faiths) if faiths else float("nan")
-        avg_cost = sum(r["cost_usd"] for r in results.values()) / len(results)
+        avg_cost = sum(results[n]["cost_usd"] for n in included) / len(included)
         avg_tok = sum(
-            r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in results.values()
-        ) / len(results)
+            results[n].get("prompt_tokens", 0) + results[n].get("completion_tokens", 0)
+            for n in included
+        ) / len(included)
         print(f"{'СРЕДНЕЕ':25} {avg_fa:>9.2f} {avg_ch:>7.2f} {avg_faith:>5.2f}")
         print(f"Средняя стоимость карточки: ${avg_cost:.4f} (~{avg_tok:.0f} токенов)")
+        if excluded:
+            print(
+                "Исключены из средних (нет золотых ожиданий — field_accuracy/"
+                "citation_hit = 1.00 по пустому множеству): "
+                + ", ".join(sorted(excluded))
+            )
 
         metrics = {
             "field_accuracy": avg_fa,
@@ -239,15 +258,16 @@ def main() -> None:
 
     report = dict(results)
     if results:
+        included = [n for n in results if n not in excluded]
         report["avg_cost_usd"] = round(
-            sum(r["cost_usd"] for r in results.values()) / len(results), 4
+            sum(results[n]["cost_usd"] for n in included) / len(included), 4
         )
         report["avg_tokens"] = round(
             sum(
-                r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
-                for r in results.values()
+                results[n].get("prompt_tokens", 0) + results[n].get("completion_tokens", 0)
+                for n in included
             )
-            / len(results)
+            / len(included)
         )
     report["weakest_metric"] = (
         {
